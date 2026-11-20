@@ -185,6 +185,9 @@ dependencies {
     } else {
         implementation(projects.crashlyticsEmpty)
     }
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 sentry {

@@ -143,4 +143,41 @@ class JerryWakeSessionTest {
         assertNull(partialSession.acceptInstantPartial("hey jarvis volume 1", 10))
         assertEquals(JerryCommand.SetVolume(100), partialSession.acceptFinal("hey jarvis volume 10", 200))
     }
+
+    @Test fun supportsExtendedWakeVariantsAndGuardsPartialCommits() {
+        assertEquals(JerryCommand.Pause, JerryWakeSession().acceptFinal("hay jarvis pause", 0))
+        assertEquals(JerryCommand.Mute, JerryWakeSession().acceptFinal("hey service mute", 0))
+        assertEquals(JerryCommand.SetShuffle(true), JerryWakeSession().acceptFinal("jervis shuffle on", 0))
+        assertEquals(
+            JerryCommand.PlayGenreOrMood("smooth jazz"),
+            JerryWakeSession().acceptFinal("how jarvis ply smoth jas", 0),
+        )
+
+        // Partial-commit traps must NOT early-commit in Stage 1
+        listOf(
+            "hey jarvis play",
+            "hey jarvis play music",
+            "hey jarvis play something",
+            "hey jarvis add to queue",
+        ).forEach { partial ->
+            val s = JerryWakeSession()
+            s.observePartial(partial, 0)
+            assertNull(partial, s.acceptInstantPartial(partial, 10))
+        }
+
+        // Verify play music by Drake resolves cleanly on final after blocked Stage-1 partial
+        val artistSession = JerryWakeSession()
+        artistSession.observePartial("hey jarvis play music", 0)
+        assertNull(artistSession.acceptInstantPartial("hey jarvis play music", 10))
+        assertEquals(
+            JerryCommand.PlayArtist("Drake", shuffle = false),
+            artistSession.acceptFinal("hey jarvis play music by Drake", 100),
+        )
+
+        // Exact 8000ms wake window boundary (t=7999 succeeds, t=8000 expires)
+        val boundarySession = JerryWakeSession()
+        assertNull(boundarySession.acceptFinal("hey jarvis", 0))
+        assertEquals(JerryCommand.Unmute, boundarySession.acceptFinal("unmute", 7999))
+        assertFalse(boundarySession.awaitingCommand)
+    }
 }

@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic.ui.screen.home
 
+import com.maxrave.simpmusic.expect.AppUpdateState
+import com.maxrave.simpmusic.expect.AppUpdater
 import com.maxrave.simpmusic.expect.ui.JerrySettingsSheet
 import com.maxrave.simpmusic.jerry.JarvisController
 
@@ -2854,6 +2856,27 @@ fun SettingScreen(
                                 dismiss = runBlocking { getString(Res.string.cancel) },
                             ),
                         )
+                    },
+                )
+                val appUpdateState by AppUpdater.state.collectAsStateWithLifecycle()
+                val updateButtonSubtitle =
+                    when (val st = appUpdateState) {
+                        AppUpdateState.Idle -> "One-click download & install latest update inside the app"
+                        AppUpdateState.Checking -> "Checking for latest release..."
+                        is AppUpdateState.Downloading -> st.statusText
+                        is AppUpdateState.Installing -> st.statusText
+                        is AppUpdateState.Error -> "Update failed: ${st.message} (tap to retry)"
+                    }
+                val updateBusy =
+                    appUpdateState is AppUpdateState.Checking ||
+                        appUpdateState is AppUpdateState.Downloading ||
+                        appUpdateState is AppUpdateState.Installing
+                SettingItem(
+                    title = "Update App",
+                    subtitle = updateButtonSubtitle,
+                    isEnable = !updateBusy,
+                    onClick = {
+                        AppUpdater.startUpdate()
                     },
                 )
                 SettingItem(

@@ -64,15 +64,21 @@ class JerryWakeSession {
             else -> return null
         }
         if (body.isEmpty()) return null
+        if (JerryGrammar.hasIncompleteCommandTail(body)) return null
         val cmd = JerryCommandParser.parse(body)
         return when (cmd) {
             is JerryCommand.Pause,
             is JerryCommand.Stop,
             is JerryCommand.Next,
             is JerryCommand.Previous,
-            is JerryCommand.Resume,
             is JerryCommand.VolumeUp,
             is JerryCommand.VolumeDown,
+            is JerryCommand.Mute,
+            is JerryCommand.Unmute,
+            is JerryCommand.RestartTrack,
+            is JerryCommand.ClearQueue,
+            is JerryCommand.ShowQueue,
+            is JerryCommand.Dislike,
             -> {
                 reset()
                 cmd

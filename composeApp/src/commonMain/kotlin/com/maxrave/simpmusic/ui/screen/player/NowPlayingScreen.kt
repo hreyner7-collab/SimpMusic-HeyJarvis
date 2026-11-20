@@ -405,6 +405,13 @@ fun NowPlayingScreenContent(
     var showQueueBottomSheet by rememberSaveable {
         mutableStateOf(false)
     }
+    val queueRequested by sharedViewModel.queueRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(queueRequested, nowPlayingStyle) {
+        if (queueRequested && nowPlayingStyle != DataStoreManager.NOW_PLAYING_STYLE_APPLE_MUSIC) {
+            showQueueBottomSheet = true
+            sharedViewModel.consumeQueueRequest()
+        }
+    }
     // A queue row's ⋯ in the Apple Music style, whose queue is a tab of this screen rather than a
     // sheet: its position and the track that was there. The other styles' queue sheet hosts its own.
     var queueMoreFor by remember { mutableStateOf<Pair<Int, Track>?>(null) }

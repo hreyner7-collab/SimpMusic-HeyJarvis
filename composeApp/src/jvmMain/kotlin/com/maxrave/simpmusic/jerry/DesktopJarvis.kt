@@ -7,7 +7,10 @@ import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
 import com.maxrave.domain.mediaservice.handler.PlayerEvent
+import com.maxrave.domain.repository.AccountRepository
 import com.maxrave.domain.repository.AlbumRepository
+import com.maxrave.domain.repository.ArtistRepository
+import com.maxrave.domain.repository.HomeRepository
 import com.maxrave.domain.repository.LocalPlaylistRepository
 import com.maxrave.domain.repository.PlaylistRepository
 import com.maxrave.domain.repository.SearchRepository
@@ -73,55 +76,6 @@ object DesktopJarvis {
                 ")\\b",
             RegexOption.IGNORE_CASE,
         )
-
-    private val stage1GrammarJson: String =
-        listOf(
-            "hey jarvis", "hi jarvis", "hello jarvis", "okay jarvis", "ok jarvis", "yo jarvis", "jarvis",
-            "j jarvis", "jay jarvis", "he jarvis", "eh jarvis", "they jarvis", "o jarvis", "k jarvis", "kay jarvis",
-            "hey javis", "hey jarvus", "hey jervis", "hey harvis",
-            "next", "skip", "skip song", "next song", "next track", "play next", "play next song", "play the next song",
-            "skip this", "skip this song", "skip it", "skip track", "skip this track", "skip the song", "next one",
-            "next up", "forward", "skip forward", "go forward", "another song", "play another", "play another song",
-            "change song", "change the song", "switch song", "switch the song", "different song", "skip one",
-            "previous", "back", "go back", "previous song", "previous track", "play previous", "play previous song",
-            "play the previous song", "last song", "last track", "last one", "previous one", "back one",
-            "go back a song", "back a song", "go back one", "before", "after", "another", "different", "change", "switch",
-            "song before", "song before it", "song before this", "the song before", "the song before it",
-            "the song before this", "play the song before", "play the song before it", "play the song before this",
-            "track before", "track before it", "track before this",
-            "play", "resume", "play music", "play the music", "resume music", "play some music", "start music",
-            "start the music", "start playing", "resume playback", "resume the music", "resume playing", "unpause",
-            "continue", "continue playing", "continue music", "keep playing",
-            "pause", "pause music", "pause the music", "pause it", "pause playback", "pause song", "pause the song",
-            "pause this", "pause this song", "pause playing", "hold on",
-            "stop", "stop music", "stop the music", "stop it", "stop playing", "stop playback", "stop song",
-            "stop the song", "stop this", "stop this song", "quiet", "be quiet", "shut up", "mute",
-            "volume", "set", "level", "to", "percent", "set volume", "set the volume", "volume to",
-            "set volume to", "set the volume to", "volume level",
-            "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-            "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred",
-            "a hundred", "one hundred",
-            "all", "way", "all the way up", "all the way down", "volume all the way up", "volume all the way down",
-            "turn volume all the way up", "turn volume all the way down",
-            "max", "maximum", "max volume", "maximum volume", "full volume",
-            "min", "minimum", "min volume", "minimum volume", "lowest volume",
-            "medium", "medium volume", "half", "half volume", "middle volume",
-            "volume up", "turn volume up", "turn the volume up", "louder", "turn it up", "turn up", "turn up volume",
-            "turn up the volume", "make it louder", "higher", "increase volume", "increase the volume",
-            "raise volume", "raise the volume",
-            "volume down", "turn volume down", "turn the volume down", "quieter", "turn it down", "turn down",
-            "turn down volume", "turn down the volume", "make it quieter", "make it quiet", "lower", "lower volume",
-            "lower the volume", "softer", "make it softer", "decrease volume", "decrease the volume",
-            "mix", "mixes", "my mix", "my mixes", "remix", "remixes", "my remixes", "all remixes", "all of my remixes",
-            "play remixes", "play my remixes", "discover", "discovery", "discover mix", "discovery mix", "play mix", "play mixes",
-            "play a mix", "play some mixes", "play random mix", "play discover mix", "play discovery mix",
-            "replay", "replay mix", "supermix", "my supermix", "release", "new release mix", "archive", "archive mix",
-            "party", "party mix", "chill", "chill mix", "romantic", "romantic mix",
-            "focus", "focus mix", "workout", "workout mix", "energy", "energy mix", "commute", "commute mix",
-            "liked", "liked music", "favorite", "favorites", "downloaded", "most", "played", "most played",
-            "please", "can you", "could you", "would you", "for me", "now", "right now",
-            "[unk]",
-        ).joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
 
     fun start() {
         if (running.value) return
@@ -219,6 +173,8 @@ object DesktopJarvis {
                 getKoin().get<SongRepository>(),
                 getKoin().get<StreamRepository>(),
                 object : JerryVolume {
+                    @Volatile private var preMuteVolume: Float? = null
+
                     private fun applyVolume(next: Float) {
                         mediaHandler.player.volume = next
                         playbackScope.launch {
@@ -228,17 +184,37 @@ object DesktopJarvis {
                     }
 
                     override fun adjust(up: Boolean) {
-                        applyVolume((mediaHandler.player.volume + if (up) 0.1f else -0.1f).coerceIn(0f, 1f))
+                        val next = (mediaHandler.player.volume + if (up) 0.1f else -0.1f).coerceIn(0f, 1f)
+                        if (next > 0f) preMuteVolume = next
+                        applyVolume(next)
                     }
 
                     override fun setLevel(percent: Int) {
-                        applyVolume((percent / 100f).coerceIn(0f, 1f))
+                        val next = (percent / 100f).coerceIn(0f, 1f)
+                        if (next > 0f) preMuteVolume = next
+                        applyVolume(next)
+                    }
+
+                    override suspend fun mute() {
+                        val current = mediaHandler.player.volume
+                        if (current > 0f) preMuteVolume = current
+                        applyVolume(0f)
+                    }
+
+                    override suspend fun unmute() {
+                        if (mediaHandler.player.volume > 0f) return
+                        val restore = preMuteVolume?.takeIf { it > 0f } ?: 0.5f
+                        applyVolume(restore)
                     }
                 },
                 playlistRepository = getKoin().get<PlaylistRepository>(),
                 localPlaylistRepository = getKoin().get<LocalPlaylistRepository>(),
                 albumRepository = getKoin().get<AlbumRepository>(),
                 scope = playbackScope,
+                artistRepository = getKoin().get<ArtistRepository>(),
+                homeRepository = getKoin().get<HomeRepository>(),
+                dataStoreManager = dataStoreManager,
+                accountRepository = getKoin().get<AccountRepository>(),
             )
             val coordinator = JerryCommandCoordinator(playback)
             val session = JerryWakeSession()
@@ -247,7 +223,11 @@ object DesktopJarvis {
             val dir = voskModelDir()
             logLine("loading stage1 vosk model: ${dir.name}")
             voskModel = Model(dir.absolutePath)
-            stage1Recognizer = Recognizer(voskModel, SAMPLE_RATE.toFloat(), stage1GrammarJson)
+            stage1Recognizer = runCatching {
+                Recognizer(voskModel, SAMPLE_RATE.toFloat(), JerryGrammar.stage1GrammarJson)
+            }.getOrElse {
+                Recognizer(voskModel, SAMPLE_RATE.toFloat())
+            }
 
             parakeet = loadParakeetRecognizer()
             if (parakeet == null) {
@@ -288,15 +268,7 @@ object DesktopJarvis {
 
             fun executeCommand(command: JerryCommand): Long {
                 logLine("command: $command")
-                if (
-                    command is JerryCommand.VolumeUp ||
-                    command is JerryCommand.VolumeDown ||
-                    command is JerryCommand.SetVolume ||
-                    command is JerryCommand.PlayQuery ||
-                    command is JerryCommand.Resume ||
-                    command is JerryCommand.Next ||
-                    command is JerryCommand.Previous
-                ) {
+                if (command !is JerryCommand.Pause && command !is JerryCommand.Stop) {
                     restoreDuck()
                 }
                 JarvisStatus.set(JarvisPhase.Thinking)
@@ -507,7 +479,12 @@ object DesktopJarvis {
                         !hasUnk -> {
                             val parsed = JerryCommandParser.parse(candidate)
                             val speechFinished = now - lastSpeechAtMs >= 350L
-                            if (parsed != null && parsed !is JerryCommand.PlayQuery && speechFinished) {
+                            if (
+                                parsed != null &&
+                                !isQueryBearingCommand(parsed) &&
+                                !JerryGrammar.hasIncompleteCommandTail(candidate) &&
+                                speechFinished
+                            ) {
                                 if (session.observePartial(cleanStage1, now)) {
                                     duckMusic()
                                     JarvisStatus.set(JarvisPhase.Awake)
@@ -659,10 +636,23 @@ object DesktopJarvis {
         }
     }
 
+    private fun isQueryBearingCommand(command: JerryCommand): Boolean = when (command) {
+        is JerryCommand.PlayQuery,
+        is JerryCommand.PlayArtist,
+        is JerryCommand.PlaySong,
+        is JerryCommand.PlayAlbum,
+        is JerryCommand.PlayPlaylist,
+        is JerryCommand.PlayGenreOrMood,
+        is JerryCommand.PlayRadio,
+        is JerryCommand.PlayNextQuery,
+        is JerryCommand.AddToQueueQuery,
+        -> true
+        else -> false
+    }
+
     private fun isAmbiguousBarePlayPartial(cleanPartial: String, alreadyAwake: Boolean): Boolean {
         val candidate = extractCommandCandidate(cleanPartial, alreadyAwake) ?: return false
-        val lower = candidate.lowercase(Locale.ROOT).trim()
-        return lower == "play" || lower.endsWith(" play")
+        return JerryGrammar.hasIncompleteCommandTail(candidate)
     }
 
     private fun stripUnkAndCollapse(raw: String): String =

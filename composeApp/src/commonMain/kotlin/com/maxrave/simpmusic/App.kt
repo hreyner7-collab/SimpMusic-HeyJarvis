@@ -39,9 +39,13 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.Alignment
+import com.maxrave.simpmusic.expect.AppUpdateState
+import com.maxrave.simpmusic.expect.AppUpdater
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.luminance
@@ -74,6 +78,8 @@ import com.maxrave.simpmusic.expect.ui.layerBackdrop
 import com.maxrave.simpmusic.expect.ui.rememberBackdrop
 import com.maxrave.simpmusic.extension.copy
 import com.maxrave.simpmusic.jerry.JarvisIndicator
+import com.maxrave.simpmusic.jerry.JarvisUiEvents
+import com.maxrave.simpmusic.jerry.JerryNavTarget
 import com.maxrave.simpmusic.ui.component.AppBottomNavigationBar
 import com.maxrave.simpmusic.ui.component.AppNavigationRail
 import com.maxrave.simpmusic.ui.component.DesktopSidebar
@@ -86,6 +92,7 @@ import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.navigation.destination.home.AnalyticsDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.HomeDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.NotificationDestination
+import com.maxrave.simpmusic.ui.navigation.destination.home.SettingsDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.WrappedDestination
 import com.maxrave.simpmusic.ui.navigation.destination.library.LibraryDestination
 import com.maxrave.simpmusic.ui.navigation.destination.library.LibraryDynamicPlaylistDestination
@@ -504,6 +511,87 @@ fun App(
             }
         }
     }
+    val latestShowAnalyticsTab by rememberUpdatedState(showAnalyticsTab)
+    val latestShowMixForYouTab by rememberUpdatedState(showMixForYouTab)
+    val latestIsShowMiniPlayer by rememberUpdatedState(isShowMiniPlayer)
+    val latestIsShowNowPlaylistScreen by rememberUpdatedState(isShowNowPlaylistScreen)
+    LaunchedEffect(navController) {
+        fun androidx.navigation.NavOptionsBuilder.tabOptions() {
+            popUpTo(navController.graph.startDestinationId) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+        JarvisUiEvents.navEvents.collect { target ->
+            when (target) {
+                JerryNavTarget.HOME -> {
+                    isShowNowPlaylistScreen = false
+                    navController.navigate(HomeDestination) { tabOptions() }
+                }
+                JerryNavTarget.SEARCH -> {
+                    isShowNowPlaylistScreen = false
+                    navController.navigate(SearchDestination) { tabOptions() }
+                }
+                JerryNavTarget.LIBRARY -> {
+                    isShowNowPlaylistScreen = false
+                    navController.navigate(LibraryDestination) { tabOptions() }
+                }
+                JerryNavTarget.SETTINGS -> {
+                    isShowNowPlaylistScreen = false
+                    navController.navigate(SettingsDestination) { launchSingleTop = true }
+                }
+                JerryNavTarget.MIX_FOR_YOU -> {
+                    if (latestShowMixForYouTab) {
+                        isShowNowPlaylistScreen = false
+                        navController.navigate(MixForYouDestination) { tabOptions() }
+                    }
+                }
+                JerryNavTarget.ANALYTICS -> {
+                    if (latestShowAnalyticsTab) {
+                        isShowNowPlaylistScreen = false
+                        navController.navigate(AnalyticsDestination) { tabOptions() }
+                    }
+                }
+                JerryNavTarget.NOW_PLAYING -> {
+                    if (latestIsShowMiniPlayer) {
+                        if (navController.currentBackStackEntry?.destination?.hierarchy?.any {
+                                it.hasRoute(FullscreenDestination::class)
+                            } == true
+                        ) {
+                            navController.popBackStack()
+                        }
+                        isShowNowPlaylistScreen = true
+                    }
+                }
+                JerryNavTarget.QUEUE -> {
+                    if (latestIsShowMiniPlayer) {
+                        if (navController.currentBackStackEntry?.destination?.hierarchy?.any {
+                                it.hasRoute(FullscreenDestination::class)
+                            } == true
+                        ) {
+                            navController.popBackStack()
+                        }
+                        viewModel.requestQueue()
+                        isShowNowPlaylistScreen = true
+                    }
+                }
+                JerryNavTarget.FULLSCREEN -> {
+                    if (latestIsShowMiniPlayer) {
+                        isShowNowPlaylistScreen = false
+                        navController.navigate(FullscreenDestination) { launchSingleTop = true }
+                    }
+                }
+                JerryNavTarget.BACK -> {
+                    if (latestIsShowNowPlaylistScreen) {
+                        isShowNowPlaylistScreen = false
+                    } else {
+                        navController.popBackStack()
+                    }
+                }
+            }
+        }
+    }
     var isScrolledToTop by rememberSaveable {
         mutableStateOf(false)
     }
@@ -914,6 +1002,11 @@ fun App(
 
                 if (shouldShowUpdateDialog) {
                     val response = updateData ?: return@Scaffold
+                    val appUpdateState by AppUpdater.state.collectAsStateWithLifecycle()
+                    val isBusy =
+                        appUpdateState is AppUpdateState.Checking ||
+                            appUpdateState is AppUpdateState.Downloading ||
+                            appUpdateState is AppUpdateState.Installing
                     AlertDialog(
                         properties =
                             DialogProperties(
@@ -921,28 +1014,38 @@ fun App(
                                 dismissOnClickOutside = false,
                             ),
                         onDismissRequest = {
-                            shouldShowUpdateDialog = false
-                            viewModel.showedUpdateDialog = false
+                            if (!isBusy) {
+                                shouldShowUpdateDialog = false
+                                viewModel.showedUpdateDialog = false
+                                AppUpdater.resetState()
+                            }
                         },
                         confirmButton = {
                             TextButton(
+                                enabled = !isBusy,
                                 onClick = {
-                                    shouldShowUpdateDialog = false
-                                    viewModel.showedUpdateDialog = false
-                                    openUrl("https://simpmusic.org/download")
+                                    AppUpdater.startUpdate(response.tagName)
                                 },
                             ) {
                                 Text(
-                                    stringResource(Res.string.download),
+                                    text =
+                                        when (appUpdateState) {
+                                            is AppUpdateState.Checking -> "Checking..."
+                                            is AppUpdateState.Downloading -> "Downloading..."
+                                            is AppUpdateState.Installing -> "Installing..."
+                                            else -> "Update App"
+                                        },
                                     style = typo().bodySmall,
                                 )
                             }
                         },
                         dismissButton = {
                             TextButton(
+                                enabled = !isBusy,
                                 onClick = {
                                     shouldShowUpdateDialog = false
                                     viewModel.showedUpdateDialog = false
+                                    AppUpdater.resetState()
                                 },
                             ) {
                                 Text(
@@ -1010,6 +1113,31 @@ fun App(
                                             vertical = 8.dp,
                                         ),
                                 )
+                                when (val st = appUpdateState) {
+                                    is AppUpdateState.Checking -> {
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                                        Text("Checking for latest release...", style = typo().bodySmall)
+                                    }
+                                    is AppUpdateState.Downloading -> {
+                                        LinearProgressIndicator(
+                                            progress = { (st.progressPercent / 100f).coerceIn(0f, 1f) },
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                        )
+                                        Text(st.statusText, style = typo().bodySmall)
+                                    }
+                                    is AppUpdateState.Installing -> {
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                                        Text(st.statusText, style = typo().bodySmall)
+                                    }
+                                    is AppUpdateState.Error -> {
+                                        Text(
+                                            text = "Update error: ${st.message}",
+                                            style = typo().bodySmall,
+                                            modifier = Modifier.padding(vertical = 6.dp),
+                                        )
+                                    }
+                                    AppUpdateState.Idle -> Unit
+                                }
                                 Markdown(
                                     response.body,
                                     typography =

@@ -145,6 +145,14 @@ fun NowPlayingContentAppleMusic(
         )
     }
     LaunchedEffect(viewState) { sharedViewModel.setLastPlayerViewTab(viewState.name) }
+    val queueRequested by sharedViewModel.queueRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(queueRequested) {
+        if (queueRequested) {
+            viewState = AppleMusicView.QUEUE
+            sharedViewModel.setLastPlayerViewTab(AppleMusicView.QUEUE.name)
+            sharedViewModel.consumeQueueRequest()
+        }
+    }
 
     // Lyrics can disappear mid-session (provider swap gone offline, a track that simply has none)
     // — fall back to MAIN rather than stranding the user on an empty body, matching the dock's own

@@ -14,8 +14,6 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
-import android.media.audiofx.AutomaticGainControl
-import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -25,8 +23,12 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
+import com.maxrave.domain.repository.AccountRepository
 import com.maxrave.domain.repository.AlbumRepository
+import com.maxrave.domain.repository.ArtistRepository
+import com.maxrave.domain.repository.HomeRepository
 import com.maxrave.domain.repository.LocalPlaylistRepository
 import com.maxrave.domain.repository.PlaylistRepository
 import com.maxrave.domain.repository.SearchRepository
@@ -65,6 +67,10 @@ class JerryVoiceService : Service(), KoinComponent {
     private val playlistRepository: PlaylistRepository by inject()
     private val localPlaylistRepository: LocalPlaylistRepository by inject()
     private val albumRepository: AlbumRepository by inject()
+    private val artistRepository: ArtistRepository by inject()
+    private val homeRepository: HomeRepository by inject()
+    private val dataStoreManager: DataStoreManager by inject()
+    private val accountRepository: AccountRepository by inject()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val main = Handler(Looper.getMainLooper())
@@ -131,6 +137,10 @@ class JerryVoiceService : Service(), KoinComponent {
                 localPlaylistRepository = localPlaylistRepository,
                 albumRepository = albumRepository,
                 scope = scope,
+                artistRepository = artistRepository,
+                homeRepository = homeRepository,
+                dataStoreManager = dataStoreManager,
+                accountRepository = accountRepository,
             ),
         )
         if (tts == null) initTts()
@@ -172,7 +182,7 @@ class JerryVoiceService : Service(), KoinComponent {
             val modelDir = ensureModel()
             val m = Model(modelDir.absolutePath)
             loadedModel = m
-            val grm = runCatching { Recognizer(m, SAMPLE_RATE.toFloat(), WAKE_AND_COMMAND_GRAMMAR) }
+            val grm = runCatching { Recognizer(m, SAMPLE_RATE.toFloat(), JerryGrammar.stage1GrammarJson) }
                 .getOrElse { Recognizer(m, SAMPLE_RATE.toFloat()) }
             grammarRecognizer = grm
             val free = Recognizer(m, SAMPLE_RATE.toFloat())
@@ -260,7 +270,7 @@ class JerryVoiceService : Service(), KoinComponent {
                         session.awaitingCommand to (grmText.isNotBlank() && session.hasWakeWord(grmText))
                     }
                     val needsFree = (wasAwaiting || grmHasWake) &&
-                        (grmText.contains("[unk]", ignoreCase = true) || hasTrailingPlayPrefix(grmText))
+                        (grmText.contains("[unk]", ignoreCase = true) || JerryGrammar.hasIncompleteCommandTail(grmText))
                     val finalText = if (needsFree) {
                         recognizeFree(free, freeChunk, utterancePcm, utteranceLen).ifBlank { grmText }
                     } else {
@@ -309,7 +319,7 @@ class JerryVoiceService : Service(), KoinComponent {
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
         val bufferBytes = maxOf(if (minBuf > 0) minBuf * 2 else 0, CHUNK_BYTES * 8)
 
-        for (source in intArrayOf(MediaRecorder.AudioSource.VOICE_COMMUNICATION, MediaRecorder.AudioSource.MIC)) {
+        for (source in intArrayOf(MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)) {
             val record = try {
                 AudioRecord(source, SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT, bufferBytes)
             } catch (_: Exception) {
@@ -327,16 +337,6 @@ class JerryVoiceService : Service(), KoinComponent {
             } else {
                 null
             }
-            val ns = if (NoiseSuppressor.isAvailable()) {
-                runCatching { NoiseSuppressor.create(sessionId)?.apply { enabled = true } }.getOrNull()
-            } else {
-                null
-            }
-            val agc = if (AutomaticGainControl.isAvailable()) {
-                runCatching { AutomaticGainControl.create(sessionId)?.apply { enabled = true } }.getOrNull()
-            } else {
-                null
-            }
 
             val started = runCatching {
                 record.startRecording()
@@ -344,12 +344,10 @@ class JerryVoiceService : Service(), KoinComponent {
             }.getOrDefault(false)
 
             if (started) {
-                return AudioPipeline(record, aec, ns, agc)
+                return AudioPipeline(record, aec)
             }
 
             aec?.let { runCatching { it.release() } }
-            ns?.let { runCatching { it.release() } }
-            agc?.let { runCatching { it.release() } }
             runCatching { record.stop() }
             runCatching { record.release() }
         }
@@ -446,25 +444,8 @@ class JerryVoiceService : Service(), KoinComponent {
         }
     }
 
-    private fun shouldTryInstantPartial(partial: String): Boolean {
-        if (!partial.contains("play", ignoreCase = true)) return true
-        return !hasTrailingPlayPrefix(partial)
-    }
-
-    /**
-     * Bare "play" is both a Resume alias and the prefix of "play <song name>"; avoid committing
-     * an instant partial or skipping free-vocabulary decoding when "play" is trailing.
-     */
-    private fun hasTrailingPlayPrefix(text: String): Boolean {
-        val clean = text
-            .replace(UNK_REGEX, " ")
-            .replace(WHITESPACE_REGEX, " ")
-            .trim()
-            .replace(TRAILING_POLITE_REGEX, "")
-            .trim()
-            .lowercase(Locale.ROOT)
-        return clean == "play" || clean.endsWith(" play")
-    }
+    private fun shouldTryInstantPartial(partial: String): Boolean =
+        !JerryGrammar.hasIncompleteCommandTail(partial)
 
     private fun extractJsonField(json: String?, key: String): String =
         runCatching { JSONObject(json ?: "{}").optString(key, "") }.getOrDefault("")
@@ -624,8 +605,6 @@ class JerryVoiceService : Service(), KoinComponent {
     private class AudioPipeline(
         val record: AudioRecord,
         private val aec: AcousticEchoCanceler?,
-        private val ns: NoiseSuppressor?,
-        private val agc: AutomaticGainControl?,
     ) {
         fun stop() {
             runCatching { record.stop() }
@@ -635,8 +614,6 @@ class JerryVoiceService : Service(), KoinComponent {
             runCatching { record.stop() }
             runCatching { record.release() }
             aec?.let { runCatching { it.release() } }
-            ns?.let { runCatching { it.release() } }
-            agc?.let { runCatching { it.release() } }
         }
     }
 
@@ -708,60 +685,6 @@ class JerryVoiceService : Service(), KoinComponent {
         }
 
         private val UNK_REGEX = Regex("\\[unk\\]", RegexOption.IGNORE_CASE)
-        private val WHITESPACE_REGEX = Regex("\\s+")
-        private val TRAILING_POLITE_REGEX = Regex(
-            "(?:[\\s,.:;!?-]+\\b(?:hey[\\s,]+jarvis|jarvis|please|for\\s+me|right\\s+now|now))+$",
-            RegexOption.IGNORE_CASE,
-        )
-
-        // Constrained grammar matching vosk-model-small-en-us-0.15 vocabulary (+ [unk]) for noise-immune
-        // wake detection and low-latency transport control; out-of-grammar song queries fall back to free decoding.
-        private const val WAKE_AND_COMMAND_GRAMMAR = "[" +
-            "\"hey jarvis\",\"hi jarvis\",\"hello jarvis\",\"ok jarvis\",\"okay jarvis\"," +
-            "\"yo jarvis\",\"hay jarvis\",\"how jarvis\",\"home jarvis\",\"jarvis\",\"hey jervis\",\"jervis\"," +
-            "\"j jarvis\",\"jay jarvis\",\"he jarvis\",\"eh jarvis\",\"they jarvis\",\"o jarvis\",\"k jarvis\",\"kay jarvis\"," +
-            "\"next\",\"skip\",\"skip song\",\"next song\",\"next track\",\"play next\",\"play next song\"," +
-            "\"play the next song\",\"skip this\",\"skip this song\",\"skip it\",\"skip track\",\"skip this track\"," +
-            "\"skip the song\",\"next one\",\"next up\",\"forward\",\"skip forward\",\"go forward\"," +
-            "\"another song\",\"play another\",\"play another song\",\"change song\",\"change the song\"," +
-            "\"switch song\",\"switch the song\",\"different song\",\"skip one\"," +
-            "\"previous\",\"back\",\"go back\",\"previous song\",\"previous track\",\"play previous\"," +
-            "\"play previous song\",\"play the previous song\",\"last song\",\"last track\",\"last one\",\"previous one\"," +
-            "\"back one\",\"go back a song\",\"back a song\",\"go back one\",\"before\",\"after\",\"another\",\"different\"," +
-            "\"change\",\"switch\",\"song before\",\"song before it\",\"song before this\",\"the song before\"," +
-            "\"the song before it\",\"the song before this\",\"play the song before\",\"play the song before it\"," +
-            "\"play the song before this\",\"track before\",\"track before it\",\"track before this\"," +
-            "\"resume\",\"play music\",\"play the music\",\"resume music\",\"play some music\",\"start music\"," +
-            "\"start the music\",\"start playing\",\"resume playback\",\"resume the music\",\"resume playing\",\"unpause\"," +
-            "\"continue\",\"continue playing\",\"continue music\",\"keep playing\"," +
-            "\"pause\",\"pause music\",\"pause the music\",\"pause it\",\"pause playback\",\"pause song\"," +
-            "\"pause the song\",\"pause this\",\"pause this song\",\"pause playing\",\"hold on\"," +
-            "\"stop\",\"stop music\",\"stop the music\",\"stop it\",\"stop playing\",\"stop playback\"," +
-            "\"stop song\",\"stop the song\",\"stop this\",\"stop this song\",\"quiet\",\"be quiet\",\"shut up\",\"mute\"," +
-            "\"volume\",\"set\",\"level\",\"to\",\"percent\",\"set volume\",\"set the volume\",\"volume to\"," +
-            "\"set volume to\",\"set the volume to\",\"volume level\"," +
-            "\"zero\",\"one\",\"two\",\"three\",\"four\",\"five\",\"six\",\"seven\",\"eight\",\"nine\",\"ten\"," +
-            "\"twenty\",\"thirty\",\"forty\",\"fifty\",\"sixty\",\"seventy\",\"eighty\",\"ninety\",\"hundred\"," +
-            "\"a hundred\",\"one hundred\",\"all\",\"way\",\"all the way up\",\"all the way down\"," +
-            "\"volume all the way up\",\"volume all the way down\",\"turn volume all the way up\",\"turn volume all the way down\"," +
-            "\"max\",\"maximum\",\"max volume\",\"maximum volume\",\"full volume\"," +
-            "\"min\",\"minimum\",\"min volume\",\"minimum volume\",\"lowest volume\"," +
-            "\"medium\",\"medium volume\",\"half\",\"half volume\",\"middle volume\"," +
-            "\"volume up\",\"turn volume up\",\"turn the volume up\",\"louder\",\"turn it up\",\"turn up\"," +
-            "\"turn up volume\",\"turn up the volume\",\"make it louder\",\"higher\",\"increase volume\"," +
-            "\"increase the volume\",\"raise volume\",\"raise the volume\"," +
-            "\"volume down\",\"turn volume down\",\"turn the volume down\",\"quieter\",\"turn it down\",\"turn down\"," +
-            "\"turn down volume\",\"turn down the volume\",\"make it quieter\",\"make it quiet\",\"lower\"," +
-            "\"lower volume\",\"lower the volume\",\"softer\",\"make it softer\",\"decrease volume\",\"decrease the volume\"," +
-            "\"mix\",\"mixes\",\"my mix\",\"my mixes\",\"remix\",\"remixes\",\"my remixes\",\"all remixes\",\"all of my remixes\"," +
-            "\"play remixes\",\"play my remixes\",\"discover\",\"discovery\",\"discover mix\",\"discovery mix\",\"play mix\",\"play mixes\"," +
-            "\"play a mix\",\"play some mixes\",\"play random mix\",\"play discover mix\",\"play discovery mix\"," +
-            "\"replay\",\"replay mix\",\"supermix\",\"my supermix\",\"release\",\"new release mix\",\"archive\",\"archive mix\"," +
-            "\"party\",\"party mix\",\"chill\",\"chill mix\",\"romantic\",\"romantic mix\"," +
-            "\"focus\",\"focus mix\",\"workout\",\"workout mix\",\"energy\",\"energy mix\",\"commute\",\"commute mix\"," +
-            "\"liked\",\"liked music\",\"favorite\",\"favorites\",\"downloaded\",\"most\",\"played\",\"most played\"," +
-            "\"please\",\"can you\",\"could you\",\"would you\",\"for me\",\"right now\",\"now\",\"[unk]\"" +
-            "]"
 
         val listening = MutableStateFlow(false)
 

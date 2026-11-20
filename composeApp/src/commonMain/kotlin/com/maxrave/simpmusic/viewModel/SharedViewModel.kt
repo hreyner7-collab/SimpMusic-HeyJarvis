@@ -209,6 +209,17 @@ class SharedViewModel(
         _fullscreenLyricsRequest.value = false
     }
 
+    private val _queueRequest = MutableStateFlow(false)
+    val queueRequest: StateFlow<Boolean> = _queueRequest
+
+    fun requestQueue() {
+        _queueRequest.value = true
+    }
+
+    fun consumeQueueRequest() {
+        _queueRequest.value = false
+    }
+
     private var getFormatFlowJob: Job? = null
 
     var playlistId: MutableStateFlow<String?> = MutableStateFlow(null)
