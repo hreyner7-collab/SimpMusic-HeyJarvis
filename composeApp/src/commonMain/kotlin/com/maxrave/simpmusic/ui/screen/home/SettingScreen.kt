@@ -58,10 +58,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import com.maxrave.simpmusic.ui.icon.Search
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -140,6 +143,7 @@ import com.maxrave.simpmusic.ui.component.EndOfPage
 import com.maxrave.simpmusic.ui.component.LoadingDialog
 import com.maxrave.simpmusic.ui.component.RippleIconButton
 import com.maxrave.simpmusic.ui.component.SettingGroup
+import com.maxrave.simpmusic.ui.component.LocalSettingSearchQuery
 import com.maxrave.simpmusic.ui.component.SettingItem
 import com.maxrave.simpmusic.ui.icon.ArrowBackIosNew
 import com.maxrave.simpmusic.ui.icon.Close
@@ -666,6 +670,12 @@ fun SettingScreen(
     var showJerrySheet by rememberSaveable {
         mutableStateOf(false)
     }
+    var isSearchingSettings by rememberSaveable {
+        mutableStateOf(false)
+    }
+    var settingsSearchQuery by rememberSaveable {
+        mutableStateOf("")
+    }
 
     LaunchedEffect(true) {
         viewModel.getAllGoogleAccount()
@@ -707,6 +717,7 @@ fun SettingScreen(
                     }
             },
     )
+    CompositionLocalProvider(LocalSettingSearchQuery provides settingsSearchQuery.trim()) {
     LazyColumn(
         state = settingListState,
         contentPadding = innerPadding,
@@ -724,6 +735,13 @@ fun SettingScreen(
                 // where the pinned copy appears; the list's top padding already clears the status bar.
                 SettingTopBar(
                     onBack = { navController.navigateUp() },
+                    isSearching = isSearchingSettings,
+                    searchQuery = settingsSearchQuery,
+                    onSearchQueryChange = { settingsSearchQuery = it },
+                    onToggleSearch = {
+                        isSearchingSettings = !isSearchingSettings
+                        if (!isSearchingSettings) settingsSearchQuery = ""
+                    },
                     windowInsets = WindowInsets(0),
                     modifier =
                         Modifier.layout { measurable, constraints ->
@@ -2945,6 +2963,7 @@ fun SettingScreen(
             EndOfPage()
         }
     }
+    }
     VerticalScrollBar(
         scrollState = settingListState,
         modifier = Modifier.padding(top = innerPadding.calculateTopPadding(), bottom = DesktopMiniPlayerClearance),
@@ -3558,12 +3577,19 @@ fun SettingScreen(
     // AlbumScreen's mutedPaletteBg capture).
     val settingBarTint = MaterialTheme.colorScheme.background
     AnimatedVisibility(
-        visible = showPinnedBar,
+        visible = showPinnedBar || isSearchingSettings,
         enter = fadeIn() + slideInVertically(),
         exit = fadeOut() + slideOutVertically(),
     ) {
         SettingTopBar(
             onBack = { navController.navigateUp() },
+            isSearching = isSearchingSettings,
+            searchQuery = settingsSearchQuery,
+            onSearchQueryChange = { settingsSearchQuery = it },
+            onToggleSearch = {
+                isSearchingSettings = !isSearchingSettings
+                if (!isSearchingSettings) settingsSearchQuery = ""
+            },
             // The house recipe from AlbumScreen's bars, thinned: ultraThin's built-in tint stacked
             // on this page's dark ground read as a solid lid. 0.3 keeps the blur doing the work and
             // the tint only settling legibility.
@@ -3580,15 +3606,42 @@ fun SettingScreen(
 @Composable
 private fun SettingTopBar(
     onBack: () -> Unit,
+    isSearching: Boolean = false,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    onToggleSearch: () -> Unit = {},
     modifier: Modifier = Modifier,
     windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
 ) {
     TopAppBar(
         title = {
-            Text(
-                text = stringResource(Res.string.settings),
-                style = typo().titleMedium,
-            )
+            if (isSearching) {
+                TextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = {
+                        Text(
+                            text = "Search settings...",
+                            style = typo().bodyMedium,
+                        )
+                    },
+                    singleLine = true,
+                    textStyle = typo().bodyMedium,
+                    colors =
+                        TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                        ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                Text(
+                    text = stringResource(Res.string.settings),
+                    style = typo().titleMedium,
+                )
+            }
         },
         navigationIcon = {
             Box(Modifier.padding(horizontal = 5.dp)) {
@@ -3598,7 +3651,27 @@ private fun SettingTopBar(
                     true,
                     tint = MaterialTheme.colorScheme.onSurface,
                 ) {
-                    onBack()
+                    if (isSearching) {
+                        onToggleSearch()
+                    } else {
+                        onBack()
+                    }
+                }
+            }
+        },
+        actions = {
+            Box(Modifier.padding(horizontal = 5.dp)) {
+                RippleIconButton(
+                    if (isSearching) SimpIcons.Close else SimpIcons.Search,
+                    Modifier.size(32.dp),
+                    true,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                ) {
+                    if (isSearching && searchQuery.isNotEmpty()) {
+                        onSearchQueryChange("")
+                    } else {
+                        onToggleSearch()
+                    }
                 }
             }
         },

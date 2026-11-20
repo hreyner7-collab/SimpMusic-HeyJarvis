@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +37,8 @@ import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.ui.theme.LocalIsDarkTheme
 import com.maxrave.simpmusic.ui.theme.typo
 
+val LocalSettingSearchQuery = compositionLocalOf { "" }
+
 @Composable
 fun SettingItem(
     title: String = "Title",
@@ -46,6 +49,12 @@ fun SettingItem(
     switch: Pair<Boolean, ((Boolean) -> Unit)>? = null,
     otherView: @Composable (() -> Unit)? = null,
 ) {
+    val searchQuery = LocalSettingSearchQuery.current
+    if (searchQuery.isNotBlank()) {
+        val matchesTitle = title.contains(searchQuery, ignoreCase = true)
+        val matchesSubtitle = subtitle.contains(searchQuery, ignoreCase = true)
+        if (!matchesTitle && !matchesSubtitle) return
+    }
     // isEnable only greys the row out; it deliberately writes nothing.
     //
     // There used to be an onDisable callback fired from a LaunchedEffect(isEnable) here, to clear a
