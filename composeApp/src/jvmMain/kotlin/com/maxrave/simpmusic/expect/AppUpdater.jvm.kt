@@ -96,27 +96,34 @@ actual object AppUpdater {
                 scriptFile.writeText(
                     """
                     ${d}ErrorActionPreference = 'SilentlyContinue'
-                    ${d}deadline = (Get-Date).AddSeconds(30)
-                    while ((Get-Process -Id $pid -ErrorAction SilentlyContinue) -and (Get-Date) -lt ${d}deadline) {
+                    Start-Sleep -Milliseconds 600
+                    ${d}deadline = (Get-Date).AddSeconds(20)
+                    while ((Get-Process -Name SimpMusic -ErrorAction SilentlyContinue) -and (Get-Date) -lt ${d}deadline) {
+                        Stop-Process -Name SimpMusic -Force -ErrorAction SilentlyContinue
                         Start-Sleep -Milliseconds 300
                     }
-                    Stop-Process -Name SimpMusic -Force -ErrorAction SilentlyContinue
                     Start-Sleep -Milliseconds 500
                     ${d}src = '${sourceDir.absolutePath.replace("'", "''")}'
                     ${d}dst = '${installDir.absolutePath.replace("'", "''")}'
+                    ${d}exe = '${exePath.replace("'", "''")}'
                     if (!(Test-Path ${d}dst)) { New-Item -ItemType Directory -Path ${d}dst -Force | Out-Null }
-                    Copy-Item -Path (Join-Path ${d}src '*') -Destination ${d}dst -Recurse -Force
+                    & robocopy ${d}src ${d}dst /MIR /R:8 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
                     Remove-Item -Path '${zipFile.absolutePath.replace("'", "''")}' -Force -ErrorAction SilentlyContinue
                     Remove-Item -Path '${stagingDir.absolutePath.replace("'", "''")}' -Recurse -Force -ErrorAction SilentlyContinue
-                    if (Test-Path '${exePath.replace("'", "''")}') {
-                        Start-Process -FilePath '${exePath.replace("'", "''")}'
+                    if (Test-Path ${d}exe) {
+                        Start-Process -FilePath ${d}exe -WorkingDirectory ${d}dst
                     }
                     """.trimIndent(),
                     Charsets.UTF_8,
                 )
 
-                _state.value = AppUpdateState.Installing("Installing & restarting...")
+                _state.value = AppUpdateState.Installing("Closing app, installing & restarting...")
                 ProcessBuilder(
+                    "cmd.exe",
+                    "/c",
+                    "start",
+                    "",
+                    "/B",
                     "powershell.exe",
                     "-NoProfile",
                     "-WindowStyle",
@@ -127,8 +134,8 @@ actual object AppUpdater {
                     scriptFile.absolutePath,
                 ).start()
 
-                Thread.sleep(400)
-                exitProcess(0)
+                Thread.sleep(300)
+                Runtime.getRuntime().halt(0)
             } catch (t: Throwable) {
                 _state.value = AppUpdateState.Error(t.message ?: "Update failed")
             }
