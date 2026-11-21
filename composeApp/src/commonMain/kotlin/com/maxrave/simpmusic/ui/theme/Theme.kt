@@ -56,8 +56,8 @@ private val LightAppColors =
 
 val LocalAppColors = staticCompositionLocalOf { DarkAppColors }
 
-/** The one corner every rounded artwork takes — covers, thumbnails, sleeves — as Spotify's 4dp. */
-val ArtworkShape = RoundedCornerShape(4.dp)
+/** Smooth Apple Music-style rounded artwork corners across covers, thumbnails, and sleeves. */
+val ArtworkShape = RoundedCornerShape(10.dp)
 
 /** True in dark theme. Provided by [AppTheme] so platform glass (blur/tint) can adapt reliably. */
 val LocalIsDarkTheme = staticCompositionLocalOf { true }
@@ -120,6 +120,37 @@ private fun ColorScheme.withNeutralLightSurfaces(): ColorScheme =
         inverseOnSurface = Color(0xFFF1F1F1),
     )
 
+/**
+ * Apple Music-inspired dark surfaces: pure neutral obsidian/charcoal elevation ramp (iOS/macOS
+ * systemGray5/6) with crisp off-white typography and vibrant Apple Music crimson (#FA2D48) when
+ * using the default brand color. Custom/wallpaper colors keep their dynamic primary accent.
+ */
+private fun ColorScheme.withAppleMusicDarkSurfaces(useAppleMusicAccent: Boolean): ColorScheme =
+    copy(
+        primary = if (useAppleMusicAccent) Color(0xFFFA2D48) else primary,
+        onPrimary = if (useAppleMusicAccent) Color.White else onPrimary,
+        primaryContainer = if (useAppleMusicAccent) Color(0xFF3A1219) else primaryContainer,
+        onPrimaryContainer = if (useAppleMusicAccent) Color(0xFFFFB3BC) else onPrimaryContainer,
+        background = Color(0xFF0A0A0C),
+        onBackground = Color(0xFFF5F5F7),
+        surface = Color(0xFF0A0A0C),
+        onSurface = Color(0xFFF5F5F7),
+        surfaceVariant = Color(0xFF242426),
+        onSurfaceVariant = Color(0xFF98989F),
+        surfaceTint = if (useAppleMusicAccent) Color(0xFFFA2D48) else primary,
+        surfaceBright = Color(0xFF323236),
+        surfaceDim = Color(0xFF050507),
+        surfaceContainerLowest = Color(0xFF000000),
+        surfaceContainerLow = Color(0xFF141416),
+        surfaceContainer = Color(0xFF1C1C1E),
+        surfaceContainerHigh = Color(0xFF242426),
+        surfaceContainerHighest = Color(0xFF2C2C2E),
+        outline = Color(0xFF48484A),
+        outlineVariant = Color(0xFF2C2C2E),
+        inverseSurface = Color(0xFFF5F5F7),
+        inverseOnSurface = Color(0xFF1C1C1E),
+    )
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AppTheme(
@@ -132,6 +163,7 @@ fun AppTheme(
         () -> Unit,
 ) {
     val isDark = isDarkTheme(themeMode)
+    val useAppleMusicAccent = themeColorSource == DataStoreManager.THEME_COLOR_DEFAULT
     val wallpaperScheme =
         if (themeColorSource == DataStoreManager.THEME_COLOR_WALLPAPER) {
             platformDynamicColorScheme(isDark)
@@ -144,15 +176,15 @@ fun AppTheme(
         } else {
             seed
         }
-    // Light pins the neutrals to a neutral-grey ramp (the seed otherwise tints them warm/cream);
-    // dark keeps the generated neutrals as they are.
     val colorScheme =
         wallpaperScheme
             ?: rememberDynamicColorScheme(
                 seedColor = seedColor,
                 isDark = isDark,
                 style = PaletteStyle.TonalSpot,
-                modifyColorScheme = { cs -> if (isDark) cs else cs.withNeutralLightSurfaces() },
+                modifyColorScheme = { cs ->
+                    if (isDark) cs.withAppleMusicDarkSurfaces(useAppleMusicAccent) else cs.withNeutralLightSurfaces()
+                },
             )
     // Immersive screens stay dark even at light theme (see [ForceDarkContent]). Resolve their scheme
     // once here instead of letting every such subtree build a palette of its own.
@@ -164,6 +196,7 @@ fun AppTheme(
                 seedColor = seedColor,
                 isDark = true,
                 style = PaletteStyle.TonalSpot,
+                modifyColorScheme = { cs -> cs.withAppleMusicDarkSurfaces(useAppleMusicAccent) },
             )
         }
     SystemBarAppearanceEffect(isDark)

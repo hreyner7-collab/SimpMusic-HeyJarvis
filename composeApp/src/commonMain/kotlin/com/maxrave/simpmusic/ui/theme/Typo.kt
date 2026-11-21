@@ -63,6 +63,7 @@ fun typo(
                 TextStyle(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.1).sp,
                     fontFamily = fontFamily,
                     color = titleColor,
                     textDirection = textDirection,
@@ -72,6 +73,7 @@ fun typo(
                 TextStyle(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.2).sp,
                     fontFamily = fontFamily,
                     color = titleColor,
                     textDirection = textDirection,
@@ -79,8 +81,9 @@ fun typo(
                 ),
             titleLarge =
                 TextStyle(
-                    fontSize = 25.sp,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.45).sp,
                     fontFamily = fontFamily,
                     color = titleColor,
                     textDirection = textDirection,
@@ -117,6 +120,7 @@ fun typo(
                 TextStyle(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Normal,
+                    letterSpacing = (-0.25).sp,
                     fontFamily = fontFamily,
                     color = bodyColor,
                     textDirection = textDirection,
@@ -124,8 +128,9 @@ fun typo(
                 ),
             headlineMedium =
                 TextStyle(
-                    fontSize = 20.sp,
+                    fontSize = 21.sp,
                     fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.35).sp,
                     fontFamily = fontFamily,
                     color = bodyColor,
                     textDirection = textDirection,
@@ -133,8 +138,9 @@ fun typo(
                 ),
             headlineLarge =
                 TextStyle(
-                    fontSize = 23.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.4).sp,
                     fontFamily = fontFamily,
                     color = bodyColor,
                     textDirection = textDirection,

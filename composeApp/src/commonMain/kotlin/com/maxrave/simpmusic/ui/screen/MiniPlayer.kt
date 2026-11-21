@@ -23,6 +23,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -168,7 +169,7 @@ fun MiniPlayer(
     /** Lets the queue's song sheets open artist and album pages; the Desktop capsule's queue needs it. */
     navController: NavController? = null,
 ) {
-    val isLiquidGlassEnabled by sharedViewModel.getEnableLiquidGlass().collectAsStateWithLifecycle(DataStoreManager.FALSE)
+    val isLiquidGlassEnabled by sharedViewModel.getEnableLiquidGlass().collectAsStateWithLifecycle(DataStoreManager.TRUE)
     val controllerState by sharedViewModel.controllerState.collectAsStateWithLifecycle()
     val timelineState by sharedViewModel.timeline.collectAsStateWithLifecycle()
     // The Desktop capsule's quality line between its timestamps — see toAudioQualityLabel.
@@ -647,6 +648,10 @@ fun MiniPlayer(
                     } else {
                         Modifier.background(MaterialTheme.colorScheme.surfaceContainer, capsuleShape)
                     },
+                ).border(
+                    1.dp,
+                    if (isDarkTheme) Color.White.copy(alpha = 0.11f) else Color.Black.copy(alpha = 0.08f),
+                    capsuleShape,
                 ).clip(capsuleShape)
                 .clickable {
                     onClick()

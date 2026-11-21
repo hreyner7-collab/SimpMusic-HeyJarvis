@@ -5,37 +5,35 @@ import androidx.compose.ui.graphics.Color
 // ===== Brand =====
 
 /**
- * Brand seed color. The whole Material 3 ColorScheme is generated from this
+ * Brand seed color — Apple Music crimson. The whole Material 3 ColorScheme is generated from this
  * color at runtime — see [AppTheme].
  */
-val seed = Color(0xFF8ECAE6)
+val seed = Color(0xFFFA233B)
 
 // ===== Semantic colors (not derivable from the color scheme) =====
 
 /** Liked/favorite state (heart buttons, favorite tiles). */
-val favoriteColor = Color(0xFFFF4081)
+val favoriteColor = Color(0xFFFA233B)
 
-/** Currently playing lyric line. */
-val lyricActiveColor = Color(0xFFFFFF00)
+/** Currently playing lyric line — luminous white, Apple Music style. */
+val lyricActiveColor = Color(0xFFFFFFFF)
 
-val shimmerBackground = Color(0x7E383737)
-val shimmerLine = Color(0xFF4D4848)
+val shimmerBackground = Color(0x7E2C2C2E)
+val shimmerLine = Color(0xFF3A3A3C)
 
 // Light-theme counterparts of the shimmer tokens.
 val shimmerBackgroundLight = Color(0x7EDCD8D8)
 val shimmerLineLight = Color(0xFFCFC8C8)
 
-val overlay = Color(0x32242424)
-val blackMoreOverlay = Color(0x8f242424)
+val overlay = Color(0x321C1C1E)
+val blackMoreOverlay = Color(0x8F141416)
 
 // ===== Desktop shell =====
-// Spotify-style layering for the desktop window: the window itself takes the extreme, panels
-// step one shade back towards the middle so they read as raised. The light panel is not here —
-// it comes from colorScheme.surfaceContainer, which already sits at the right distance.
+// Apple Music macOS-style layering: pure black window frame with elevated obsidian-charcoal panels.
 
 val desktopWindowDark = Color(0xFF000000)
-val desktopWindowLight = Color(0xFFFFFFFF)
-val desktopPanelDark = Color(0xFF121212)
+val desktopWindowLight = Color(0xFFF5F5F7)
+val desktopPanelDark = Color(0xFF141416)
 
 // ===== Desktop window controls =====
 // The macOS traffic lights. Fixed by convention rather than by theme — users read these by

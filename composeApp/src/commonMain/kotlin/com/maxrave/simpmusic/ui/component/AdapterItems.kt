@@ -309,9 +309,9 @@ fun SectionHeaderButton(
             colors =
                 ButtonDefaults
                     .textButtonColors()
-                    .copy(contentColor = MaterialTheme.colorScheme.onSurface),
+                    .copy(contentColor = MaterialTheme.colorScheme.primary),
         ) {
-            Text(text, style = typo().bodySmall)
+            Text(text, style = typo().bodySmall.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary))
         }
     }
 }

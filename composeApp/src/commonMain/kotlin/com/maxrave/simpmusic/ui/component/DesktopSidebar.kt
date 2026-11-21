@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.scrollable
@@ -247,12 +248,14 @@ fun DesktopSidebar(
     }
     // Home's header: nothing behind it at the top of the list, the list blurred once it scrolls under.
     val blurAlpha by animateFloatAsState(if (atTop) 0f else 1f, tween(300), label = "sidebarHeaderBlur")
+    val panelShape = RoundedCornerShape(16.dp)
     Box(
         modifier
             .width(width)
             .fillMaxHeight()
-            .clip(RoundedCornerShape(12.dp))
-            .background(containerColor),
+            .clip(panelShape)
+            .background(containerColor)
+            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), panelShape),
     ) {
         // Off, the controls draw flat and nothing reads the recording.
         if (LocalLiquidGlassEnabled.current) Box(Modifier.matchParentSize().layerBackdrop(backdrop))
@@ -417,16 +420,24 @@ private fun SidebarNavRow(
     icon: @Composable () -> Unit,
 ) {
     val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val navShape = RoundedCornerShape(12.dp)
     Row(
         Modifier
             .padding(horizontal = if (collapsed) 12.dp else 8.dp)
-            .then(if (collapsed) Modifier.size(48.dp) else Modifier.fillMaxWidth().height(48.dp))
-            .then(if (selected) Modifier.liquidGlass(backdrop, RoundedCornerShape(24.dp), highlight = SidebarGlassRim) else Modifier)
-            .clip(RoundedCornerShape(24.dp))
+            .then(if (collapsed) Modifier.size(48.dp) else Modifier.fillMaxWidth().height(44.dp))
+            .then(
+                if (selected) {
+                    Modifier
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f), navShape)
+                        .liquidGlass(backdrop, navShape, highlight = SidebarGlassRim)
+                } else {
+                    Modifier
+                },
+            ).clip(navShape)
             .clickable(onClick = onClick)
             .padding(horizontal = if (collapsed) 0.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.spacedBy(16.dp),
+        horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.spacedBy(14.dp),
     ) {
         CompositionLocalProvider(LocalContentColor provides color) { icon() }
         if (!collapsed) {
