@@ -220,12 +220,14 @@ actual object AppUpdater {
         ZipInputStream(zipFile.inputStream().buffered()).use { zis ->
             while (true) {
                 val entry = zis.nextEntry ?: break
-                val outFile = File(targetDir, entry.name)
+                val normalizedName = entry.name.replace('\\', '/')
+                val isDir = entry.isDirectory || normalizedName.endsWith("/")
+                val outFile = File(targetDir, normalizedName)
                 val canonicalOut = outFile.canonicalPath
                 if (!canonicalOut.startsWith(canonicalTarget)) {
                     throw SecurityException("Blocked zip slip entry: ${entry.name}")
                 }
-                if (entry.isDirectory) {
+                if (isDir) {
                     outFile.mkdirs()
                 } else {
                     outFile.parentFile?.mkdirs()
