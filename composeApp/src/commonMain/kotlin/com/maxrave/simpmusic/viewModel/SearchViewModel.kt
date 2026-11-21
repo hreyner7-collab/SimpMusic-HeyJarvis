@@ -179,17 +179,20 @@ class SearchViewModel(
         }
     }
 
+    private var searchJob: kotlinx.coroutines.Job? = null
+    private var suggestJob: kotlinx.coroutines.Job? = null
+
     fun deleteSearchHistory() {
         viewModelScope.launch {
             searchRepository.deleteSearchHistory()
-            delay(1000)
             getSearchHistory()
         }
     }
 
     fun searchSongs(query: String) {
+        searchJob?.cancel()
         _searchScreenUIState.value = SearchScreenUIState.Loading
-        viewModelScope.launch {
+        searchJob = viewModelScope.launch {
             searchRepository.getSearchDataSong(query).collect { values ->
                 when (values) {
                     is Resource.Success -> {
@@ -210,32 +213,69 @@ class SearchViewModel(
     }
 
     fun searchAll(query: String) {
+        searchJob?.cancel()
         _searchScreenUIState.value = SearchScreenUIState.Loading
-        viewModelScope.launch {
+        searchJob = viewModelScope.launch {
             var song = ArrayList<SongsResult>()
-            val video = ArrayList<VideosResult>()
+            var video = ArrayList<VideosResult>()
             var album = ArrayList<AlbumsResult>()
             var artist = ArrayList<ArtistsResult>()
             var playlist = ArrayList<PlaylistsResult>()
             var featuredPlaylist = ArrayList<PlaylistsResult>()
             var podcast = ArrayList<PlaylistsResult>()
-            val temp: ArrayList<SearchResultType> = ArrayList()
+
+            fun publishCurrent() {
+                val combined = ArrayList<SearchResultType>()
+                if (artist.size >= 3) {
+                    for (i in 0..2) {
+                        combined += artist[i]
+                    }
+                } else {
+                    combined.addAll(artist)
+                }
+                combined.addAll(song)
+                combined.addAll(video)
+                combined.addAll(album)
+                combined.addAll(playlist)
+                combined.addAll(featuredPlaylist)
+                combined.addAll(podcast)
+                _searchScreenState.update { state ->
+                    state.copy(
+                        searchType = SearchType.ALL,
+                        searchAllResult = combined,
+                        searchSongsResult = song,
+                        searchArtistsResult = artist,
+                        searchAlbumsResult = album,
+                        searchPlaylistsResult = playlist,
+                        searchVideosResult = video,
+                        searchFeaturedPlaylistsResult = featuredPlaylist,
+                        searchPodcastsResult = podcast,
+                    )
+                }
+                if (combined.isNotEmpty()) {
+                    _searchScreenUIState.value = SearchScreenUIState.Success
+                }
+            }
 
             val job1 =
                 launch {
                     searchRepository.getSearchDataSong(query).collect { values ->
-                        when (values) {
-                            is Resource.Success -> values.data?.let { song = it }
-                            is Resource.Error -> {}
+                        if (values is Resource.Success) {
+                            values.data?.let {
+                                song = it
+                                publishCurrent()
+                            }
                         }
                     }
                 }
             val job2 =
                 launch {
                     searchRepository.getSearchDataArtist(query).collect { values ->
-                        when (values) {
-                            is Resource.Success -> values.data?.let { artist = it }
-                            is Resource.Error -> {}
+                        if (values is Resource.Success) {
+                            values.data?.let {
+                                artist = it
+                                publishCurrent()
+                            }
                         }
                     }
                 }
@@ -244,45 +284,55 @@ class SearchViewModel(
                     searchRepository
                         .getSearchDataAlbum(query)
                         .collect { values ->
-                            when (values) {
-                                is Resource.Success -> values.data?.let { album = it }
-                                is Resource.Error -> {}
+                            if (values is Resource.Success) {
+                                values.data?.let {
+                                    album = it
+                                    publishCurrent()
+                                }
                             }
                         }
                 }
             val job4 =
                 launch {
                     searchRepository.getSearchDataPlaylist(query).collect { values ->
-                        when (values) {
-                            is Resource.Success -> values.data?.let { playlist = it }
-                            is Resource.Error -> {}
+                        if (values is Resource.Success) {
+                            values.data?.let {
+                                playlist = it
+                                publishCurrent()
+                            }
                         }
                     }
                 }
             val job5 =
                 launch {
                     searchRepository.getSearchDataVideo(query).collect { values ->
-                        when (values) {
-                            is Resource.Success -> values.data?.let { video.addAll(it) }
-                            is Resource.Error -> {}
+                        if (values is Resource.Success) {
+                            values.data?.let {
+                                video = ArrayList(it)
+                                publishCurrent()
+                            }
                         }
                     }
                 }
             val job6 =
                 launch {
                     searchRepository.getSearchDataFeaturedPlaylist(query).collect { values ->
-                        when (values) {
-                            is Resource.Success -> values.data?.let { featuredPlaylist = it }
-                            is Resource.Error -> {}
+                        if (values is Resource.Success) {
+                            values.data?.let {
+                                featuredPlaylist = it
+                                publishCurrent()
+                            }
                         }
                     }
                 }
             val job7 =
                 launch {
                     searchRepository.getSearchDataPodcast(query).collect { values ->
-                        when (values) {
-                            is Resource.Success -> values.data?.let { podcast = it }
-                            is Resource.Error -> {}
+                        if (values is Resource.Success) {
+                            values.data?.let {
+                                podcast = it
+                                publishCurrent()
+                            }
                         }
                     }
                 }
@@ -295,39 +345,7 @@ class SearchViewModel(
             job7.join()
 
             try {
-                if (artist.size >= 3) {
-                    for (i in 0..2) {
-                        temp += artist[i]
-                    }
-                    temp.addAll(song)
-                    temp.addAll(video)
-                    temp.addAll(album)
-                    temp.addAll(playlist)
-                    temp.addAll(featuredPlaylist)
-                    temp.addAll(podcast)
-                } else {
-                    temp.addAll(artist)
-                    temp.addAll(song)
-                    temp.addAll(video)
-                    temp.addAll(album)
-                    temp.addAll(playlist)
-                    temp.addAll(featuredPlaylist)
-                    temp.addAll(podcast)
-                }
-
-                _searchScreenState.update { state ->
-                    state.copy(
-                        searchType = SearchType.ALL,
-                        searchAllResult = temp,
-                        searchSongsResult = song,
-                        searchArtistsResult = artist,
-                        searchAlbumsResult = album,
-                        searchPlaylistsResult = playlist,
-                        searchVideosResult = video,
-                        searchFeaturedPlaylistsResult = featuredPlaylist,
-                        searchPodcastsResult = podcast,
-                    )
-                }
+                publishCurrent()
                 _searchScreenUIState.value = SearchScreenUIState.Success
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -337,7 +355,9 @@ class SearchViewModel(
     }
 
     fun suggestQuery(query: String) {
-        viewModelScope.launch {
+        suggestJob?.cancel()
+        suggestJob = viewModelScope.launch {
+            delay(80)
             searchRepository.getSuggestQuery(query).collect { values ->
                 when (values) {
                     is Resource.Success -> {

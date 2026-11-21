@@ -49,7 +49,7 @@ fun UnofficialBuildScreen() {
             modifier = Modifier.widthIn(max = 480.dp),
         )
         Button(
-            onClick = { openUrl("https://simpmusic.org/download") },
+            onClick = { openUrl("https://github.com/hreyner7-collab/SimpMusic-HeyJarvis/releases") },
             modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
         ) {
             // typo() bakes a body colour into its styles; the label must take the button's own.

@@ -382,7 +382,7 @@ fun ArtistScreen(
                                                         .memoryCachePolicy(CachePolicy.ENABLED)
                                                         .diskCacheKey(headerImageUrl)
                                                         .memoryCacheKey(headerImageUrl)
-                                                        .crossfade(550)
+                                                        .crossfade(120)
                                                         .build(),
                                                 placeholder = rememberHolderPainter(),
                                                 error = rememberHolderPainter(),
@@ -418,7 +418,7 @@ fun ArtistScreen(
                                                         ImageRequest
                                                             .Builder(LocalPlatformContext.current)
                                                             .data(headerImageUrl)
-                                                            .crossfade(550)
+                                                            .crossfade(120)
                                                             .build(),
                                                     contentDescription = null,
                                                     contentScale =

@@ -137,19 +137,17 @@ fun SongFullWidthItems(
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
     val songRepository: SongRepository = koinInject<SongRepository>()
-    val storedSong by songRepository
-        .getSongAsFlow(songEntity?.videoId ?: track?.videoId ?: "")
-        .collectAsState(initial = null)
+    val itemVideoId = track?.videoId ?: songEntity?.videoId ?: ""
+    val songFlow = remember(songRepository, itemVideoId) { songRepository.getSongAsFlow(itemVideoId) }
+    val storedSong by songFlow.collectAsState(initial = songEntity)
     val downloadState = storedSong?.downloadState ?: DownloadState.STATE_NOT_DOWNLOADED
     // The list's own model says what its source said; the stored row adds what playback learned
     // since, which is the only way a queue row is marked — the queue response shows no LIVE chip.
     val isLive = track?.isLive == true || songEntity?.isLive == true || storedSong?.isLive == true
     val offsetX = remember { Animatable(initialValue = 0f) }
-    var heightDp by remember { mutableStateOf(0.dp) }
 
     Box(
-        modifier =
-        modifier,
+        modifier = modifier,
     ) {
         Crossfade(
             offsetX.value >= maxOffset / 2,
@@ -161,8 +159,7 @@ fun SongFullWidthItems(
                 Box(
                     modifier =
                         Modifier
-                            .height(heightDp)
-                            .aspectRatio(1f)
+                            .size(56.dp)
                             .padding(start = 15.dp)
                             .align(Alignment.CenterStart),
                     contentAlignment = Alignment.Center,
@@ -176,10 +173,10 @@ fun SongFullWidthItems(
                 }
             }
         }
-        val itemVideoId = track?.videoId ?: songEntity?.videoId ?: ""
         Box(
             modifier =
-                modifier
+                Modifier
+                    .fillMaxWidth()
                     .offset { IntOffset(offsetX.value.roundToInt(), 0) }
                     .background(
                         if (isSelected) seed.copy(alpha = 0.18f) else Color.Transparent,
@@ -197,7 +194,7 @@ fun SongFullWidthItems(
                             } else {
                                 null
                             },
-                    ).animateContentSize()
+                    )
                     // Keyed on selectionMode so the swipe detector is torn down when selection
                     // starts — keyed on Unit it would keep running with the stale flag captured.
                     .pointerInput(selectionMode) {
@@ -224,10 +221,6 @@ fun SongFullWidthItems(
                                     }
                                 },
                             )
-                        }
-                    }.onGloballyPositioned { coordinates ->
-                        with(density) {
-                            heightDp = coordinates.size.height.toDp()
                         }
                     },
         ) {

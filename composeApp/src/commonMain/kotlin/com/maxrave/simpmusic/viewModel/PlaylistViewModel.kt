@@ -27,6 +27,7 @@ import com.maxrave.domain.utils.toPlaylistEntity
 import com.maxrave.domain.utils.toSongEntity
 import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.Logger
+import com.maxrave.simpmusic.utils.FastPageCache
 import com.maxrave.simpmusic.viewModel.PlaylistUIState.Error
 import com.maxrave.simpmusic.viewModel.PlaylistUIState.Loading
 import com.maxrave.simpmusic.viewModel.PlaylistUIState.Success
@@ -152,7 +153,6 @@ class PlaylistViewModel(
     ) {
         viewModelScope.launch {
             playlistRepository.updatePlaylistDownloadState(id, state)
-            delay(500)
             _playlistEntity.update {
                 it?.copy(downloadState = state)
             }
@@ -181,6 +181,34 @@ class PlaylistViewModel(
     }
 
     fun getData(id: String) {
+        val cachedPlaylist = FastPageCache.getPlaylist(id)
+        if (cachedPlaylist != null) {
+            val data = cachedPlaylist.browse
+            _uiState.value =
+                Success(
+                    data =
+                        PlaylistState(
+                            id = data.id,
+                            title = data.title,
+                            isRadio = cachedPlaylist.isRadio,
+                            author = data.author,
+                            thumbnail = data.thumbnails.lastOrNull()?.url,
+                            description = data.description,
+                            trackCount = data.trackCount,
+                            year = data.year,
+                            shuffleEndpoint = if (cachedPlaylist.isRadio) null else data.shuffleEndpoint,
+                            radioEndpoint = if (cachedPlaylist.isRadio) null else data.radioEndpoint,
+                        ),
+                )
+            _tracks.value = data.tracks
+            _continuation.value = cachedPlaylist.continuation
+            _tracksListState.value =
+                if (cachedPlaylist.continuation.isNullOrEmpty()) ListState.PAGINATION_EXHAUST else ListState.IDLE
+            if (!cachedPlaylist.isRadio) {
+                getPlaylistEntity(id = data.id, playlistBrowse = data)
+            }
+            return
+        }
         resetData()
         viewModelScope.launch {
             // Check radio
@@ -195,7 +223,14 @@ class PlaylistViewModel(
                         val data = res.data
                         when (res) {
                             is Resource.Success if (data != null) -> {
-                                Logger.d(tag, "Radio data: $data")
+                                FastPageCache.putPlaylist(
+                                    id,
+                                    FastPageCache.PlaylistSnapshot(
+                                        browse = data.first,
+                                        continuation = data.second,
+                                        isRadio = true,
+                                    ),
+                                )
                                 _uiState.value =
                                     Success(
                                         data =
@@ -232,8 +267,14 @@ class PlaylistViewModel(
                         val data = res.data
                         when (res) {
                             is Resource.Success if (data != null) -> {
-                                Logger.d(tag, "Playlist data: $data")
-                                log("Playlist endpoint: ${data.first.shuffleEndpoint}")
+                                FastPageCache.putPlaylist(
+                                    id,
+                                    FastPageCache.PlaylistSnapshot(
+                                        browse = data.first,
+                                        continuation = data.second,
+                                        isRadio = false,
+                                    ),
+                                )
                                 _uiState.value =
                                     Success(
                                         data =
@@ -327,7 +368,6 @@ class PlaylistViewModel(
                         playlistRepository.insertAndReplacePlaylist(
                             playlistBrowse.toPlaylistEntity(),
                         )
-                        delay(500)
                         playlistRepository.getPlaylist(id).collectLatest { playlist ->
                             _playlistEntity.value = playlist
                             playlistRepository.updatePlaylistInLibrary(
@@ -665,6 +705,7 @@ class PlaylistViewModel(
                 ).collect {
                     when (it) {
                         is Resource.Success -> {
+                            FastPageCache.invalidatePlaylist(id)
                             getData(id)
                             makeToast(it.data ?: getString(Res.string.synced))
                         }

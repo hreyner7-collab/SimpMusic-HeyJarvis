@@ -36,6 +36,7 @@ import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.Logger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -141,30 +142,49 @@ class JerryMediaPlayback(
         tryPlayLibraryCollection(query)?.let { return it }
         tryPlayUserLibrary(query)?.let { return it }
 
-        val artist = searchRepository.getSearchDataArtist(query)
-            .firstOrNull { it is Resource.Success || it is Resource.Error }
-        val normalizedQuery = normalizeMatchKey(query)
-        val artistList = (artist as? Resource.Success)?.data.orEmpty()
-        val artistMatch = artistList.firstOrNull { it.artist.equals(query, ignoreCase = true) }
-            ?: artistList.firstOrNull { normalizeMatchKey(it.artist) == normalizedQuery }
-        if (artistMatch != null && artistMatch.radioId.isNotBlank()) {
-            val radio = songRepository.getRadioFromEndpoint(YouTubeWatchEndpoint(playlistId = artistMatch.radioId))
-                .firstOrNull { it is Resource.Success || it is Resource.Error }
-            val tracks = (radio as? Resource.Success)?.data?.first
-            if (!tracks.isNullOrEmpty()) {
-                startQueue(
-                    tracks = tracks,
-                    playlistId = artistMatch.radioId,
-                    playlistName = "${artistMatch.artist} radio",
-                    playlistType = PlaylistType.RADIO,
-                    configType = Config.PLAYLIST_CLICK,
-                    continuation = (radio as? Resource.Success)?.data?.second,
-                )
-                return "${artistMatch.artist} radio"
+        return kotlinx.coroutines.coroutineScope {
+            val songDeferred =
+                async {
+                    searchRepository
+                        .getSearchDataSong(query)
+                        .firstOrNull { it is Resource.Success || it is Resource.Error }
+                }
+            val artist =
+                searchRepository
+                    .getSearchDataArtist(query)
+                    .firstOrNull { it is Resource.Success || it is Resource.Error }
+            val normalizedQuery = normalizeMatchKey(query)
+            val artistList = (artist as? Resource.Success)?.data.orEmpty()
+            val artistMatch =
+                artistList.firstOrNull { it.artist.equals(query, ignoreCase = true) }
+                    ?: artistList.firstOrNull { normalizeMatchKey(it.artist) == normalizedQuery }
+            if (artistMatch != null && artistMatch.radioId.isNotBlank()) {
+                val radio =
+                    songRepository
+                        .getRadioFromEndpoint(YouTubeWatchEndpoint(playlistId = artistMatch.radioId))
+                        .firstOrNull { it is Resource.Success || it is Resource.Error }
+                val tracks = (radio as? Resource.Success)?.data?.first
+                if (!tracks.isNullOrEmpty()) {
+                    songDeferred.cancel()
+                    startQueue(
+                        tracks = tracks,
+                        playlistId = artistMatch.radioId,
+                        playlistName = "${artistMatch.artist} radio",
+                        playlistType = PlaylistType.RADIO,
+                        configType = Config.PLAYLIST_CLICK,
+                        continuation = (radio as? Resource.Success)?.data?.second,
+                    )
+                    return@coroutineScope "${artistMatch.artist} radio"
+                }
             }
+            val songs = songDeferred.await()
+            val results = (songs as? Resource.Success)?.data
+            if (results.isNullOrEmpty()) throw JerryPlaybackException("No results for $query")
+            val best = selectBestSong(results, query)
+            val finalTrack = best.toTrack()
+            startSingleTrack(finalTrack)
+            finalTrack.title
         }
-
-        return playSong(query)
     }
 
     override suspend fun playArtist(artist: String, shuffle: Boolean): String {
@@ -957,17 +977,33 @@ class JerryMediaPlayback(
                 ?: playSearchedPlaylist(fallback.first)
         }
 
-        val mixes = fetchMixesForYou()
-        val matched = findBestMixMatch(normalized, mixes)
-        if (matched != null) {
-            playMixByBrowseId(matched.browseId, matched.title)?.let { return it }
-        }
-
         val wellKnownTarget = when (normalized) {
             "discover", "discovery" -> "discover mix"
             "supermix" -> "my supermix"
             else -> normalized
         }
+        val looksLikeMixQuery =
+            "mix" in normalized ||
+                "discover" in normalized ||
+                "supermix" in normalized ||
+                "replay" in normalized ||
+                "new release" in normalized ||
+                "liked music" in normalized ||
+                WELL_KNOWN_MIXES.any { (title, _) ->
+                    val knownNorm = normalizeMixTitle(title)
+                    knownNorm == wellKnownTarget || knownNorm.removePrefix("my ") == wellKnownTarget.removePrefix("my ")
+                }
+        val mixes =
+            if (looksLikeMixQuery || cachedMixes.isNotEmpty()) {
+                fetchMixesForYou()
+            } else {
+                emptyList()
+            }
+        val matched = findBestMixMatch(normalized, mixes)
+        if (matched != null) {
+            playMixByBrowseId(matched.browseId, matched.title)?.let { return it }
+        }
+
         val known = WELL_KNOWN_MIXES.firstOrNull { (title, _) ->
             val knownNorm = normalizeMixTitle(title)
             knownNorm == wellKnownTarget || knownNorm.removePrefix("my ") == wellKnownTarget.removePrefix("my ")
@@ -1026,9 +1062,9 @@ class JerryMediaPlayback(
             }
         val combined = (fresh + likedMixes)
             .distinctBy { it.browseId.removePrefix("VL") }
+        cachedMixesAtMs = now
         if (combined.isNotEmpty()) {
             cachedMixes = combined
-            cachedMixesAtMs = now
         }
         Logger.d(TAG, "fetchMixesForYou loaded ${combined.size} mixes: ${combined.joinToString { it.title }}")
         return combined.ifEmpty { cachedMixes }

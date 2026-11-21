@@ -451,7 +451,7 @@ fun NowPlayingContentSpotify(
                                                     .data(state.screenData.canvasData?.url)
                                                     .diskCachePolicy(CachePolicy.ENABLED)
                                                     .diskCacheKey(state.screenData.canvasData?.url)
-                                                    .crossfade(550)
+                                                    .crossfade(120)
                                                     .build(),
                                             contentDescription = null,
                                             modifier = Modifier.fillMaxSize(),
@@ -570,7 +570,7 @@ fun NowPlayingContentSpotify(
                                                         .data(artworkUrl)
                                                         .diskCachePolicy(CachePolicy.ENABLED)
                                                         .diskCacheKey(artworkUrl + "BIGGER")
-                                                        .crossfade(550)
+                                                        .crossfade(120)
                                                         .build(),
                                                 contentDescription = "",
                                                 onSuccess = {
@@ -1509,7 +1509,7 @@ fun NowPlayingContentSpotify(
                                                     .data(thumb)
                                                     .diskCachePolicy(CachePolicy.ENABLED)
                                                     .diskCacheKey(thumb)
-                                                    .crossfade(550)
+                                                    .crossfade(120)
                                                     .build(),
                                             placeholder = rememberHolderPainter(),
                                             error = rememberHolderPainter(),

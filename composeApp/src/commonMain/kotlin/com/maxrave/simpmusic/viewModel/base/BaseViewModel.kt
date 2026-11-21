@@ -83,14 +83,25 @@ abstract class BaseViewModel :
         )
     }
 
-    protected fun getString(resId: StringResource): String =
-        runBlocking {
-            org.jetbrains.compose.resources
-                .getString(resId)
-        }
+    private val stringCache = HashMap<StringResource, String>()
 
-    // Loading dialog
-    private val _showLoadingDialog: MutableStateFlow<Pair<Boolean, String>> = MutableStateFlow(false to getString(Res.string.loading))
+    protected fun getString(resId: StringResource): String {
+        synchronized(stringCache) {
+            stringCache[resId]?.let { return it }
+        }
+        val resolved =
+            runBlocking {
+                org.jetbrains.compose.resources
+                    .getString(resId)
+            }
+        synchronized(stringCache) {
+            stringCache[resId] = resolved
+        }
+        return resolved
+    }
+
+    // Loading dialog — initialize lazily with "" so constructing any ViewModel never blocks the Main thread with runBlocking.
+    private val _showLoadingDialog: MutableStateFlow<Pair<Boolean, String>> = MutableStateFlow(false to "")
     val showLoadingDialog: StateFlow<Pair<Boolean, String>> get() = _showLoadingDialog
 
     fun showLoadingDialog(message: String? = null) {
@@ -98,7 +109,7 @@ abstract class BaseViewModel :
     }
 
     fun hideLoadingDialog() {
-        _showLoadingDialog.value = false to getString(Res.string.loading)
+        _showLoadingDialog.value = false to ""
     }
 
     private fun getNowPlayingVideoId() {

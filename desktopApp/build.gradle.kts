@@ -151,29 +151,21 @@ compose.desktop {
         mainClass = "com.maxrave.simpmusic.MainKt"
         jvmArgs += listOf(
             "--add-opens=java.base/java.nio=ALL-UNNAMED",
-            "-XX:ActiveProcessorCount=2",
-            "-Dkotlinx.coroutines.scheduler.core.pool.size=2",
-            "-Dkotlinx.coroutines.scheduler.max.pool.size=64",
-            "-XX:ParallelGCThreads=2",
-            "-XX:ConcGCThreads=1",
-            "-XX:CICompilerCount=2",
-            "-Xms32m",
-            "-Xmx256m",
+            // RAM-safe heap sizing (~25% of host RAM) so 4 GB PCs don't over-commit while 16 GB PCs scale smoothly.
+            "-Xms64m",
+            "-XX:MaxRAMPercentage=25.0",
+            "-XX:MinHeapFreeRatio=15",
+            "-XX:MaxHeapFreeRatio=30",
             "-XX:+UseG1GC",
-            "-XX:G1HeapRegionSize=1m",
             "-XX:MaxGCPauseMillis=30",
-            "-XX:+UseStringDeduplication",
             "-XX:+CompactStrings",
-            "-XX:G1PeriodicGCInterval=30000",
-            "-XX:+G1PeriodicGCInvokesConcurrent",
-            "-XX:MaxHeapFreeRatio=15",
-            "-XX:MinHeapFreeRatio=5",
-            "-XX:-ShrinkHeapInSteps",
-            "-XX:ReservedCodeCacheSize=48m",
-            "-XX:InitialCodeCacheSize=8m",
-            "-XX:MaxMetaspaceSize=256m",
-            "-XX:MaxDirectMemorySize=128m",
-            "-Xss512k",
+            "-XX:ReservedCodeCacheSize=192m",
+            "-XX:InitialCodeCacheSize=32m",
+            "-XX:MaxMetaspaceSize=512m",
+            "-XX:MaxDirectMemorySize=512m",
+            "-XX:+UseStringDeduplication",
+            "-XX:TieredStopAtLevel=4",
+            "-Xshare:auto",
         )
 
         nativeDistributions {
@@ -275,10 +267,6 @@ afterEvaluate {
 
         // Marks a dev run, so the app reads remote-config-dev.json instead of the one real users get.
         systemProperty("simpmusic.dev", "true")
-
-        // Skiko's frame counter: prints "[timestamp] FPS avg (min-max)" to the console every 2 s.
-        // Temporary, to measure what liquid glass costs per frame on Desktop.
-        systemProperty("skiko.fps.enabled", "true")
 
         // Pass the bundled natives path to the runtime for `./gradlew desktopApp:run`.
         val osArch = System.getProperty("os.arch").lowercase()

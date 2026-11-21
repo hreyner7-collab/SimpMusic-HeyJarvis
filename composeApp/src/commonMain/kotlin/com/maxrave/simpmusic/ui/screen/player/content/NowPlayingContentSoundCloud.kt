@@ -837,7 +837,7 @@ private fun SoundCloudArtwork(
                 .data(artworkUrl)
                 .diskCachePolicy(CachePolicy.ENABLED)
                 .diskCacheKey(artworkUrl + "BIGGER")
-                .crossfade(550)
+                .crossfade(120)
                 .build()
         // Re-enter when a prefetched cover becomes current, even if its URL is unchanged, so the
         // memory-cache success still hands the new track's bitmap to the shell.

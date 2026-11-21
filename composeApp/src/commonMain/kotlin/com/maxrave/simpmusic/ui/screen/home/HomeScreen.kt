@@ -352,7 +352,7 @@ fun HomeScreen(
     // leaving the tint as it was.
     val headerImage by viewModel.homeBackground.collectAsStateWithLifecycle()
     var headerImageFailed by remember(headerImage) { mutableStateOf(false) }
-    val networkLoader = rememberNetworkLoader(HttpClient(CIO))
+    val networkLoader = rememberNetworkLoader(com.maxrave.simpmusic.utils.DominantColorCache.httpClient)
     val dominantColorState =
         rememberDominantColorState(
             defaultColor = backgroundColor,
@@ -428,7 +428,7 @@ fun HomeScreen(
 
     val onRefresh: () -> Unit = {
         isRefreshing = true
-        viewModel.getHomeItemList(params)
+        viewModel.getHomeItemList(params, forceRefresh = true)
         Logger.w("HomeScreen", "onRefresh")
     }
     LaunchedEffect(key1 = reloadDestination) {
@@ -458,21 +458,10 @@ fun HomeScreen(
             showReviewDialog = true
         } else if ((openAppTime == 1 || openAppTime % 15 == 0) && openAppTime <= 60 && !shareLyricsPermissions) {
             showRequestShareLyricsPermissions = true
-        } else if (openAppTime == 5) {
-            // Blog promo: one-shot after 5 app opens, bump key suffix to re-promote later
-            if (sharedViewModel.getString(BLOG_PROMO_KEY) != "true") {
-                showBlogPromoDialog = true
-            }
-        } else if (openAppTime % 10 == 6 &&
-            openAppTime <= 46 &&
-            sharedViewModel.getString(FOOTGUNS_STAR_KEY) != "true"
-        ) {
-            // kotlin-footguns star prompt: 6, 16, 26, 36, 46 - one open after each review milestone,
-            // and clear of the share-lyrics (15, 45) and blog-promo (5) milestones
-            showFootgunsDialog = true
         } else {
             showReviewDialog = false
             showFootgunsDialog = false
+            showBlogPromoDialog = false
             showRequestShareLyricsPermissions = false
         }
     }
@@ -485,7 +474,7 @@ fun HomeScreen(
                         scrollState.layoutInfo.visibleItemsInfo
                             .lastOrNull()
                             ?.index ?: -9
-                    ) >= (scrollState.layoutInfo.totalItemsCount - 1)
+                    ) >= (scrollState.layoutInfo.totalItemsCount - 3).coerceAtLeast(1)
             }
         }
 
@@ -787,7 +776,7 @@ fun HomeScreen(
                     ) {
                         itemsIndexed(
                             homeShelves,
-                            key = { index, item -> "${item::class.simpleName}_$index" },
+                            key = { index, item -> "${item.title}_$index" },
                             contentType = { _, item -> item::class.simpleName },
                         ) { index, item ->
                             Box {
@@ -821,7 +810,7 @@ fun HomeScreen(
                                                     ImageRequest
                                                         .Builder(LocalPlatformContext.current)
                                                         .data(headerImage)
-                                                        .crossfade(550)
+                                                        .crossfade(120)
                                                         .build(),
                                                 contentDescription = null,
                                                 contentScale = ContentScale.Crop,

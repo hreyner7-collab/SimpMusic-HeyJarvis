@@ -1653,7 +1653,7 @@ fun NowPlayingBottomSheet(
                                     .data(thumb)
                                     .diskCachePolicy(CachePolicy.ENABLED)
                                     .diskCacheKey(thumb)
-                                    .crossfade(550)
+                                    .crossfade(120)
                                     .build(),
                             placeholder = rememberHolderPainter(),
                             error = rememberHolderPainter(),

@@ -53,8 +53,8 @@ object DesktopJarvis {
     private const val RING_SECONDS = 6
     private const val RING_CAPACITY = SAMPLE_RATE * RING_SECONDS
     private const val DUCK_VOLUME = 0.15f
-    private const val SILENCE_TAIL_CHUNKS = 22 // ~880ms quiet tail before finalizing utterance
-    private const val END_OF_SPEECH_SILENCE_MS = 850L // wait for user to finish speaking before committing partial
+    private const val SILENCE_TAIL_CHUNKS = 8 // ~320ms quiet tail before finalizing utterance
+    private const val END_OF_SPEECH_SILENCE_MS = 380L // responsive end-of-speech gate for instant partials
     private const val MAX_STAGE2_ARMED_MS = 10_000L // allow up to 10s of continuous speech before forced decode
     private const val INJECT_SILENCE_CHUNKS = 65 // ~2.6s trailing silence for deterministic injection
 
@@ -87,7 +87,12 @@ object DesktopJarvis {
         stopFlag = false
         remember(true)
         running.value = true
-        thread = Thread({ supervise() }, "hey-jarvis").apply { isDaemon = true; start() }
+        thread =
+            Thread({ supervise() }, "hey-jarvis").apply {
+                isDaemon = true
+                priority = Thread.MIN_PRIORITY
+                start()
+            }
     }
 
     fun stop() {
@@ -483,7 +488,7 @@ object DesktopJarvis {
                         }
                         !hasUnk -> {
                             val parsed = JerryCommandParser.parse(candidate)
-                            val speechFinished = now - lastSpeechAtMs >= 350L
+                            val speechFinished = now - lastSpeechAtMs >= 180L
                             if (
                                 parsed != null &&
                                 !isQueryBearingCommand(parsed) &&
@@ -551,7 +556,7 @@ object DesktopJarvis {
                     val endOfSpeech =
                         lastSpeechAtMs > 0L &&
                             (now - lastSpeechAtMs >= END_OF_SPEECH_SILENCE_MS) &&
-                            (now - lastPartialChangedAtMs >= 450L)
+                            (now - lastPartialChangedAtMs >= 240L)
                     if (endOfSpeech && !partialHasUnk && !isAmbiguousBarePlayPartial(cleanPartial, session.awaitingCommand)) {
                         val instant = session.acceptInstantPartial(cleanPartial, now)
                         if (instant != null) {
@@ -613,8 +618,11 @@ object DesktopJarvis {
             }
 
             val buf = ByteArray(CHUNK_BYTES)
+            var injectCheckCounter = 0
             while (!stopFlag) {
-                feedInjectedAudioIfPresent()
+                if ((injectCheckCounter++ and 15) == 0) {
+                    feedInjectedAudioIfPresent()
+                }
                 val n = line.read(buf, 0, buf.size)
                 if (n <= 0) continue
                 processPcmChunk(buf, n, System.currentTimeMillis())
@@ -686,6 +694,10 @@ object DesktopJarvis {
     }
 
     private fun loadParakeetRecognizer(): OfflineRecognizer? {
+        if (com.maxrave.simpmusic.utils.isJarvisLowRamEnabled()) {
+            logLine("jarvis low-ram mode enabled; skipping parakeet recognizer")
+            return null
+        }
         val dir = File(System.getProperty("user.home"), ".simpmusic/jerry-model/parakeet-110m-int8")
         val encoder = File(dir, "encoder.int8.onnx")
         val decoder = File(dir, "decoder.int8.onnx")
@@ -702,10 +714,11 @@ object DesktopJarvis {
                 .setDecoder(decoder.absolutePath)
                 .setJoiner(joiner.absolutePath)
                 .build()
+            val numThreads = if (Runtime.getRuntime().availableProcessors() <= 4) 1 else 2
             val modelConfig = OfflineModelConfig.builder()
                 .setTransducer(transducer)
                 .setTokens(tokens.absolutePath)
-                .setNumThreads(2)
+                .setNumThreads(numThreads)
                 .setDebug(false)
                 .setModelType("nemo_transducer")
                 .build()
@@ -819,15 +832,22 @@ object DesktopJarvis {
                 val l = runCatching {
                     (if (candidate == null) AudioSystem.getLine(info) else AudioSystem.getMixer(candidate).getLine(info)) as TargetDataLine
                 }.getOrNull() ?: continue
-                val opened = runCatching { l.open(format); l.start(); true }.getOrDefault(false)
+                val opened = runCatching {
+                    if (!runCatching { l.open(format, CHUNK_BYTES * 4); true }.getOrDefault(false)) {
+                        l.open(format)
+                    }
+                    l.start()
+                    true
+                }.getOrDefault(false)
                 if (!opened) { runCatching { l.close() }; continue }
                 val name = candidate?.name ?: "system default"
                 val buf = ByteArray(CHUNK_BYTES)
                 var peak = 0
-                val end = System.currentTimeMillis() + 1_500
+                val end = System.currentTimeMillis() + 360
                 while (System.currentTimeMillis() < end) {
                     val n = l.read(buf, 0, buf.size)
                     if (n > 0) peak = maxOf(peak, peakOf(buf, n))
+                    if (peak >= minActivePeak) break
                 }
                 logLine("mic \"$name\" peak=$peak")
                 if (peak >= minActivePeak) {

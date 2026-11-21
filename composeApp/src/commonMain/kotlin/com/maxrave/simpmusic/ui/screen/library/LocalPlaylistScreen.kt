@@ -242,17 +242,6 @@ fun LocalPlaylistScreen(
             ),
         label = "shimmer",
     )
-    val infiniteTransition = rememberInfiniteTransition(label = "rotation")
-    val angle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec =
-            infiniteRepeatable(
-                animation = tween(5000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart,
-            ),
-        label = "rotation",
-    )
 
     val lazyState = rememberLazyListState()
     val firstItemVisible by remember {
@@ -543,7 +532,7 @@ fun LocalPlaylistScreen(
                                                 .memoryCachePolicy(CachePolicy.ENABLED)
                                                 .diskCacheKey(uiState.thumbnail)
                                                 .memoryCacheKey(uiState.thumbnail)
-                                                .crossfade(550)
+                                                .crossfade(120)
                                                 .build(),
                                         placeholder = painterPlaylistThumbnail(uiState.title, style = typo().labelMedium, 250.dp to 250.dp),
                                         error = painterPlaylistThumbnail(uiState.title, style = typo().labelMedium, 250.dp to 250.dp),
@@ -742,7 +731,7 @@ fun LocalPlaylistScreen(
                                                     .memoryCachePolicy(CachePolicy.ENABLED)
                                                     .diskCacheKey(uiState.thumbnail)
                                                     .memoryCacheKey(uiState.thumbnail)
-                                                    .crossfade(550)
+                                                    .crossfade(120)
                                                     .build(),
                                             placeholder = painterPlaylistThumbnail(uiState.title, style = typo().labelMedium, 250.dp to 250.dp),
                                             error = painterPlaylistThumbnail(uiState.title, style = typo().labelMedium, 250.dp to 250.dp),
@@ -1335,10 +1324,14 @@ fun LocalPlaylistScreen(
                 }
             }
         }
-        items(count = trackPagingItems.itemCount, key = { index ->
-            val item = trackPagingItems[index]
-            (item?.first?.videoId ?: "") + "item_$index" + item?.second?.inPlaylist + item?.second?.position
-        }) { index ->
+        items(
+            count = trackPagingItems.itemCount,
+            key = { index ->
+                val item = trackPagingItems.peek(index)
+                (item?.first?.videoId ?: "") + "item_$index" + item?.second?.inPlaylist + item?.second?.position
+            },
+            contentType = { "local_playlist_track" },
+        ) { index ->
             val item = trackPagingItems[index]?.first
             if (item != null) {
                 val content = @Composable { mod: Modifier ->

@@ -37,7 +37,7 @@ import kotlin.time.Duration.Companion.nanoseconds
  * Compose asks the [InfiniteAnimationPolicy] in the coroutine context before every frame of an
  * animation that never ends, and every window inherits its context from [governedApplication]:
  *  - a SimpMusic window has focus → as fast as vsync lets them;
- *  - windows on screen, none focused → [UNFOCUSED_FPS];
+ *  - windows on screen, none focused → [unfocusedFps];
  *  - every window minimized or hidden, or the app hidden (⌘H) → those animations wait, and
  *    [AppOnScreen] tells the player to drop its position ticks to one a second and stop decoding video.
  *
@@ -47,7 +47,8 @@ import kotlin.time.Duration.Companion.nanoseconds
  */
 object DesktopFrameGovernor : InfiniteAnimationPolicy {
     private const val TAG = "FrameGovernor"
-    private const val UNFOCUSED_FPS = 30
+    @Volatile
+    var unfocusedFps: Int = 30
     private const val NANOS_PER_SECOND = 1_000_000_000L
 
     private sealed interface Mode {
@@ -61,7 +62,7 @@ object DesktopFrameGovernor : InfiniteAnimationPolicy {
 
     // Starts on screen and unfocused until the first window event says otherwise: a missed event then
     // costs 30 fps, where starting off screen would freeze every animation in the app.
-    private val mode = MutableStateFlow<Mode>(Mode.OnScreen(NANOS_PER_SECOND / UNFOCUSED_FPS))
+    private val mode = MutableStateFlow<Mode>(Mode.OnScreen(NANOS_PER_SECOND / unfocusedFps.coerceIn(5, 60)))
 
     @Volatile
     private var appHidden = false
@@ -108,7 +109,7 @@ object DesktopFrameGovernor : InfiniteAnimationPolicy {
         }
     }
 
-    private fun update() {
+    internal fun update() {
         val anyOnScreen =
             Window.getWindows().any { window ->
                 window.isShowing && !(window is Frame && (window.extendedState and Frame.ICONIFIED) != 0)
@@ -118,7 +119,7 @@ object DesktopFrameGovernor : InfiniteAnimationPolicy {
             when {
                 appHidden || !anyOnScreen -> Mode.OffScreen
                 active != null -> Mode.OnScreen(0L)
-                else -> Mode.OnScreen(NANOS_PER_SECOND / UNFOCUSED_FPS)
+                else -> Mode.OnScreen(NANOS_PER_SECOND / unfocusedFps.coerceIn(5, 60))
             }
         if (next != mode.value) Logger.d(TAG, "Frames: $next")
         mode.value = next

@@ -272,7 +272,7 @@ fun AlbumScreen(
                                                             .memoryCachePolicy(CachePolicy.ENABLED)
                                                             .diskCacheKey(uiState.thumbnail)
                                                             .memoryCacheKey(uiState.thumbnail)
-                                                            .crossfade(550)
+                                                            .crossfade(120)
                                                             .build(),
                                                     placeholder = rememberHolderPainter(),
                                                     error = rememberHolderPainter(),
@@ -428,7 +428,7 @@ fun AlbumScreen(
                                                                 .memoryCachePolicy(CachePolicy.ENABLED)
                                                                 .diskCacheKey(uiState.thumbnail)
                                                                 .memoryCacheKey(uiState.thumbnail)
-                                                                .crossfade(550)
+                                                                .crossfade(120)
                                                                 .build(),
                                                         placeholder = rememberHolderPainter(),
                                                         error = rememberHolderPainter(),

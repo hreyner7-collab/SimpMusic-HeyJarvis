@@ -414,7 +414,7 @@ fun MiniPlayer(
                                         ImageRequest
                                             .Builder(LocalPlatformContext.current)
                                             .data(songEntity?.thumbnails)
-                                            .crossfade(550)
+                                            .crossfade(120)
                                             .build(),
                                     placeholder = rememberHolderPainter(),
                                     error = rememberHolderPainter(),
@@ -761,7 +761,7 @@ fun MiniPlayer(
                                     ImageRequest
                                         .Builder(LocalPlatformContext.current)
                                         .data(songEntity?.thumbnails)
-                                        .crossfade(550)
+                                        .crossfade(120)
                                         .build(),
                                 placeholder = rememberHolderPainter(),
                                 error = rememberHolderPainter(),

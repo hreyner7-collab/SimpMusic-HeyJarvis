@@ -120,12 +120,11 @@ private class PlaylistThumbnailPainter(
     override val intrinsicSize: Size
         get() = size
 
+    private val cachedBrush = Brush.linearGradient(colors = generateGradientFromTitle(title))
+
     override fun DrawScope.onDraw() {
-        val colors = generateGradientFromTitle(title)
         drawRoundRect(
-            brush = Brush.linearGradient(
-                colors = colors
-            ),
+            brush = cachedBrush,
             size = size,
             cornerRadius = CornerRadius(16f, 16f),
         )
@@ -140,8 +139,6 @@ private class PlaylistThumbnailPainter(
                 size.height.toInt(),
             ),
         ))
-        Logger.d("PlaylistThumbnailPainter", "Drawing icon $title")
-        Logger.d("PlaylistThumbnailPainter", "Colors: ${colors.map { it.toArgb() }}")
         val centerX = size.width * 0.9f
         val centerY = size.height * 0.1f
         val circleRadius = size.width * 0.1f / 2
@@ -214,13 +211,19 @@ fun painterPlaylistThumbnail(
             )
         }
     val painterRes = painterResource(Res.drawable.monochrome)
-    return PlaylistThumbnailPainter(
-        size = Size(
-            width = with(density) { sizeDp.first.toPx() },
-            height = with(density) { sizeDp.second.toPx() },
-        ),
-        title = title,
-        textLayoutResult = textLayoutResult,
-        iconPainter = painterRes
-    )
+    val pxSize =
+        remember(density, sizeDp) {
+            Size(
+                width = with(density) { sizeDp.first.toPx() },
+                height = with(density) { sizeDp.second.toPx() },
+            )
+        }
+    return remember(pxSize, title, textLayoutResult, painterRes) {
+        PlaylistThumbnailPainter(
+            size = pxSize,
+            title = title,
+            textLayoutResult = textLayoutResult,
+            iconPainter = painterRes,
+        )
+    }
 }

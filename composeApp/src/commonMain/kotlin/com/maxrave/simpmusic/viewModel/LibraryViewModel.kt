@@ -24,6 +24,9 @@ import com.maxrave.domain.repository.LocalPlaylistRepository
 import com.maxrave.domain.repository.PlaylistRepository
 import com.maxrave.domain.repository.PodcastRepository
 import com.maxrave.domain.repository.SongRepository
+import com.maxrave.domain.repository.SpotifyImportProgress
+import com.maxrave.domain.repository.SpotifyLibraryItem
+import com.maxrave.domain.repository.SpotifyLibraryRepository
 import com.maxrave.domain.utils.LocalResource
 import com.maxrave.domain.utils.Resource
 import com.maxrave.domain.utils.isRadioPlaylistId
@@ -32,8 +35,10 @@ import com.maxrave.simpmusic.ui.screen.library.LibraryDynamicPlaylistType
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -42,6 +47,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.lastOrNull
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.DateTimeUnit
@@ -68,6 +74,7 @@ class LibraryViewModel(
     private val albumRepository: AlbumRepository,
     private val podcastRepository: PodcastRepository,
     private val cacheRepository: CacheRepository,
+    private val spotifyLibraryRepository: SpotifyLibraryRepository,
 ) : BaseViewModel() {
     private val _currentScreen: MutableStateFlow<LibraryChipType> = MutableStateFlow(LibraryChipType.YOUR_LIBRARY)
     val currentScreen: StateFlow<LibraryChipType> get() = _currentScreen.asStateFlow()
@@ -420,6 +427,78 @@ class LibraryViewModel(
             delay(500) // Wait for the database to update
             getRecentlyAdded()
         }
+    }
+
+    val spotifyConnected: StateFlow<Boolean> =
+        spotifyLibraryRepository
+            .isSpotifyConnected()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    private val _spotifyLibrary: MutableStateFlow<LocalResource<List<SpotifyLibraryItem>>> =
+        MutableStateFlow(LocalResource.Success(emptyList()))
+    val spotifyLibrary: StateFlow<LocalResource<List<SpotifyLibraryItem>>> = _spotifyLibrary.asStateFlow()
+
+    private val _spotifyImportProgress: MutableStateFlow<SpotifyImportProgress?> = MutableStateFlow(null)
+    val spotifyImportProgress: StateFlow<SpotifyImportProgress?> = _spotifyImportProgress.asStateFlow()
+
+    private var spotifyImportJob: Job? = null
+
+    fun loadSpotifyLibrary() {
+        viewModelScope.launch {
+            _spotifyLibrary.value = LocalResource.Loading()
+            when (val res = spotifyLibraryRepository.getUserSpotifyLibrary()) {
+                is Resource.Success -> _spotifyLibrary.value = LocalResource.Success(res.data ?: emptyList())
+                is Resource.Error -> _spotifyLibrary.value = LocalResource.Error(res.message ?: "Failed to load Spotify library")
+            }
+        }
+    }
+
+    fun importSpotifyItem(item: SpotifyLibraryItem) {
+        if (spotifyImportJob?.isActive == true) return
+        spotifyImportJob =
+            viewModelScope.launch {
+                spotifyLibraryRepository.importSpotifyItem(item).collect { progress ->
+                    _spotifyImportProgress.value = progress
+                    if (progress.isFinished && progress.targetLocalPlaylistId != null) {
+                        getLocalPlaylist()
+                        loadSpotifyLibrary()
+                    }
+                }
+            }
+    }
+
+    fun syncAllSpotifyLibrary() {
+        if (spotifyImportJob?.isActive == true) return
+        spotifyImportJob =
+            viewModelScope.launch {
+                spotifyLibraryRepository.syncAllSpotifyLibrary().collect { progress ->
+                    _spotifyImportProgress.value = progress
+                    if (progress.isFinished && progress.targetLocalPlaylistId != null) {
+                        getLocalPlaylist()
+                        loadSpotifyLibrary()
+                    }
+                }
+            }
+    }
+
+    fun importFromLink(url: String) {
+        if (spotifyImportJob?.isActive == true) return
+        spotifyImportJob =
+            viewModelScope.launch {
+                spotifyLibraryRepository.importFromLink(url).collect { progress ->
+                    _spotifyImportProgress.value = progress
+                    if (progress.isFinished && progress.targetLocalPlaylistId != null) {
+                        getLocalPlaylist()
+                        if (spotifyConnected.value) {
+                            loadSpotifyLibrary()
+                        }
+                    }
+                }
+            }
+    }
+
+    fun clearSpotifyImportProgress() {
+        _spotifyImportProgress.value = null
     }
 
     companion object {

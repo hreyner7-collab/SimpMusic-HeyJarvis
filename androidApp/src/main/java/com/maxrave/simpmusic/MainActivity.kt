@@ -129,9 +129,12 @@ class MainActivity : AppCompatActivity() {
                 single<AppCompatActivity> { this@MainActivity }
             },
         )
-        // Recreate view model to fix the issue of view model not getting data from the service
-        unloadKoinModules(viewModelModule)
-        loadKoinModules(viewModelModule)
+        // Only recreate viewModelModule when explicitly requested on activity recreation,
+        // avoiding destroying & re-initializing singleton ViewModels on cold start.
+        if (savedInstanceState != null) {
+            unloadKoinModules(viewModelModule)
+            loadKoinModules(viewModelModule)
+        }
         VersionManager.initialize()
         checkForUpdate()
         if (viewModel.recreateActivity.value || viewModel.isServiceRunning) {
@@ -270,7 +273,7 @@ class MainActivity : AppCompatActivity() {
         }
         viewModel.getLocation()
 
-        if (!BuildConfig.DEBUG) viewModel.checkOfficialBuild(packageName, signingCertSha256())
+        // Official-build check disabled so custom / community forks run cleanly.
         setContent {
             App(viewModel)
         }

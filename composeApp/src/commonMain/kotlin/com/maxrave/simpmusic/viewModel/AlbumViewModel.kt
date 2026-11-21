@@ -18,7 +18,9 @@ import com.maxrave.domain.utils.toAlbumEntity
 import com.maxrave.domain.utils.toArrayListTrack
 import com.maxrave.domain.utils.toSongEntity
 import com.maxrave.logger.LogLevel
+import com.maxrave.simpmusic.utils.FastPageCache
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,11 +50,36 @@ class AlbumViewModel(
     fun updateBrowseId(browseId: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(browseId = browseId) }
+            FastPageCache.getAlbum(browseId)?.let { cached ->
+                _uiState.update {
+                    it.copy(
+                        browseId = browseId,
+                        audioPlaylistId = cached.audioPlaylistId,
+                        title = cached.title,
+                        thumbnail = cached.thumbnails?.lastOrNull()?.url,
+                        artist =
+                            cached.artists.firstOrNull() ?: Artist(
+                                id = null,
+                                name = "",
+                            ),
+                        year = cached.year ?: now().year.toString(),
+                        trackCount = cached.trackCount,
+                        description = cached.description,
+                        length = cached.duration ?: "",
+                        listTrack = cached.tracks,
+                        otherVersion = cached.otherVersion,
+                        loadState = LocalPlaylistState.PlaylistLoadState.Success,
+                    )
+                }
+                getAlbumFlow(browseId)
+                return@launch
+            }
             albumRepository.getAlbumData(browseId).collectLatest { res ->
                 when (res) {
                     is Resource.Success -> {
                         val data = res.data
                         if (data != null) {
+                            FastPageCache.putAlbum(browseId, data)
                             _uiState.update {
                                 it.copy(
                                     browseId = browseId,
@@ -85,16 +112,15 @@ class AlbumViewModel(
                             } else {
                                 albumRepository.insertAlbum(data.toAlbumEntity(browseId)).singleOrNull().let {
                                     log("Insert Album $it")
-                                    data.tracks.forEach { track ->
-                                        songRepository
-                                            .insertSong(
-                                                track.toSongEntity().copy(
-                                                    inLibrary = Config.REMOVED_SONG_DATE_TIME,
-                                                ),
-                                            ).singleOrNull()
-                                            ?.let {
-                                                log("Insert Song $it")
-                                            }
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        data.tracks.forEach { track ->
+                                            songRepository
+                                                .insertSong(
+                                                    track.toSongEntity().copy(
+                                                        inLibrary = Config.REMOVED_SONG_DATE_TIME,
+                                                    ),
+                                                ).singleOrNull()
+                                        }
                                     }
                                 }
                             }

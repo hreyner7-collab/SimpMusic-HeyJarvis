@@ -11,6 +11,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -54,6 +56,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -69,6 +73,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
@@ -90,9 +95,12 @@ import com.maxrave.simpmusic.ui.component.rememberHolderPainter
 import com.maxrave.simpmusic.ui.icon.AddCircleOutline
 import com.maxrave.simpmusic.ui.icon.ArrowBackIosNew
 import com.maxrave.simpmusic.ui.icon.CheckCircle
+import com.maxrave.simpmusic.ui.icon.Close
 import com.maxrave.simpmusic.ui.icon.CommentOutline
 import com.maxrave.simpmusic.ui.icon.FastForward
 import com.maxrave.simpmusic.ui.icon.FastRewind
+import com.maxrave.simpmusic.ui.icon.Repeat
+import com.maxrave.simpmusic.utils.AbLoopState
 import com.maxrave.simpmusic.ui.icon.Groups
 import com.maxrave.simpmusic.ui.icon.Headphones
 import com.maxrave.simpmusic.ui.icon.Lyrics
@@ -182,27 +190,21 @@ internal data class AppleMusicTypography(
 @Composable
 internal fun rememberAppleMusicTypography(): AppleMusicTypography {
     val t = typo()
-    return AppleMusicTypography(
-        mainTitle = t.titleMedium,
-        mainArtist = t.bodyMedium.copy(color = AppleMusicSecondaryText),
-        // The compact header — Lyrics, Queue, and the row under a running canvas — carries the
-        // SIZES FullscreenLyricsSheet uses for the same job (LyricsView.kt: labelSmall over
-        // bodySmall), while mainTitle/mainArtist stay 18/13 because they head the controller
-        // layout. Borrow the size from labelSmall but keep the titleMedium ROLE: typo() bakes a
-        // color into every role — title* carry titleColor, body*/label* carry bodyColor — so
-        // switching the title to labelSmall outright would also switch it to the subtitle's grey.
-        compactTitle = t.titleMedium.copy(fontSize = t.labelSmall.fontSize),
-        compactArtist = t.bodySmall.copy(color = AppleMusicSecondaryText),
-        queueSectionHeader = t.titleMedium,
-        queueSectionSubtitle = t.bodySmall.copy(color = AppleMusicSecondaryText),
-        times = t.bodyMedium.copy(color = AppleMusicSecondaryText),
-        footer = t.bodySmall.copy(color = AppleMusicSecondaryText),
-        idleLyric = t.bodyMedium.copy(color = Color.White),
-        idleTranslated = t.bodyMedium.copy(color = Color.Yellow),
-        // The line over the progress bar is the inline lyric line Classic and M3E draw under their
-        // artwork: labelSmall in white, the same role and colour.
-        lyricStrip = t.labelSmall.copy(color = Color.White),
-    )
+    return remember(t) {
+        AppleMusicTypography(
+            mainTitle = t.titleMedium,
+            mainArtist = t.bodyMedium.copy(color = AppleMusicSecondaryText),
+            compactTitle = t.titleMedium.copy(fontSize = t.labelSmall.fontSize),
+            compactArtist = t.bodySmall.copy(color = AppleMusicSecondaryText),
+            queueSectionHeader = t.titleMedium,
+            queueSectionSubtitle = t.bodySmall.copy(color = AppleMusicSecondaryText),
+            times = t.bodyMedium.copy(color = AppleMusicSecondaryText),
+            footer = t.bodySmall.copy(color = AppleMusicSecondaryText),
+            idleLyric = t.bodyMedium.copy(color = Color.White),
+            idleTranslated = t.bodyMedium.copy(color = Color.Yellow),
+            lyricStrip = t.labelSmall.copy(color = Color.White),
+        )
+    }
 }
 
 /**
@@ -480,6 +482,8 @@ internal fun AppleMusicThinSlider(
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     onValueChangeFinished: (() -> Unit)? = null,
+    loopStartFraction: Float? = null,
+    loopEndFraction: Float? = null,
 ) {
     // The slider's "phồng" is a track that thickens while touched/dragged — same spring feel as
     // the button inflate, expressed the way a bar can.
@@ -525,6 +529,32 @@ internal fun AppleMusicThinSlider(
                                 .fillMaxWidth(fraction)
                                 .background(activeColor),
                     )
+                    if (loopStartFraction != null) {
+                        val aFrac = loopStartFraction.coerceIn(0f, 1f)
+                        val bFrac = loopEndFraction?.coerceIn(0f, 1f)
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val markerW = 2.dp.toPx()
+                            val aX = aFrac * size.width
+                            if (bFrac != null && bFrac > aFrac) {
+                                val bX = bFrac * size.width
+                                drawRect(
+                                    color = Color(0xFFFFD54F).copy(alpha = 0.35f),
+                                    topLeft = Offset(aX, 0f),
+                                    size = Size((bX - aX).coerceAtLeast(markerW), size.height),
+                                )
+                                drawRect(
+                                    color = Color(0xFFFFD54F),
+                                    topLeft = Offset((bX - markerW / 2f).coerceIn(0f, size.width - markerW), 0f),
+                                    size = Size(markerW, size.height),
+                                )
+                            }
+                            drawRect(
+                                color = Color(0xFFFFD54F),
+                                topLeft = Offset((aX - markerW / 2f).coerceIn(0f, size.width - markerW), 0f),
+                                size = Size(markerW, size.height),
+                            )
+                        }
+                    }
                 }
             },
             thumb = {
@@ -1006,6 +1036,8 @@ internal fun ColumnScope.AppleMusicPlaybackControls(
             activeColor = if (state.timelineState.isCrossfading) state.sliderTrackColor else AppleMusicTrackActive,
             onValueChange = { actions.onSliderChange(it * 100f) },
             onValueChangeFinished = actions.onSliderChangeFinished,
+            loopStartFraction = state.abLoopState.startFraction(state.timelineState.total),
+            loopEndFraction = state.abLoopState.endFraction(state.timelineState.total),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -1054,6 +1086,14 @@ internal fun AppleMusicBottomCluster(
         } else {
             Spacer(modifier = Modifier.height(16.dp))
         }
+        AppleMusicAbLoopPill(
+            abLoopState = state.abLoopState,
+            activeColor = activePillContainer,
+            activeContentColor = activePillContent,
+            onToggle = actions.onToggleAbLoop,
+            onClear = actions.onClearAbLoop,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 10.dp),
+        )
         AppleMusicActionRow(
             viewState = viewState,
             onSelectView = onSelectView,
@@ -1099,5 +1139,66 @@ internal fun AppleMusicBottomCluster(
                     with(localDensity) { WindowInsets.systemBars.getBottom(localDensity).toDp() } + 36.dp,
                 ),
         )
+    }
+}
+
+@Composable
+internal fun AppleMusicAbLoopPill(
+    abLoopState: AbLoopState,
+    activeColor: Color,
+    activeContentColor: Color,
+    onToggle: () -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val hasPoint = abLoopState.pointAMs != null
+    val label =
+        when {
+            abLoopState.isActive -> {
+                val a = AbLoopState.formatLoopTime(abLoopState.pointAMs!!)
+                val b = AbLoopState.formatLoopTime(abLoopState.pointBMs!!)
+                "A $a – B $b"
+            }
+            abLoopState.pointAMs != null -> {
+                "A ${AbLoopState.formatLoopTime(abLoopState.pointAMs)} · Tap to set B"
+            }
+            else -> "A–B Loop"
+        }
+    val pillBg = if (abLoopState.isActive || hasPoint) activeColor else Color.White.copy(alpha = 0.12f)
+    val pillFg = if (abLoopState.isActive || hasPoint) activeContentColor else Color.White.copy(alpha = 0.78f)
+    Row(
+        modifier =
+            modifier
+                .appleMusicPressInflate()
+                .clip(CircleShape)
+                .background(pillBg)
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 12.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            imageVector = SimpIcons.Repeat,
+            contentDescription = "A-B Loop",
+            tint = pillFg,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            text = label,
+            color = pillFg,
+            fontSize = 11.sp,
+            maxLines = 1,
+        )
+        if (hasPoint) {
+            Icon(
+                imageVector = SimpIcons.Close,
+                contentDescription = "Clear A-B Loop",
+                tint = pillFg,
+                modifier =
+                    Modifier
+                        .size(14.dp)
+                        .clickable(onClick = onClear),
+            )
+        }
     }
 }

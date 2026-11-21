@@ -123,6 +123,8 @@ import com.maxrave.simpmusic.ui.theme.ArtworkShape
 import com.maxrave.simpmusic.ui.theme.LocalForceDarkText
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.viewModel.HomeViewModel
+import com.maxrave.simpmusic.viewModel.SharedViewModel
+import org.koin.compose.koinInject
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -243,7 +245,7 @@ fun HomeSectionHeader(
                         .data(data.thumbnail?.lastOrNull()?.url)
                         .diskCachePolicy(CachePolicy.ENABLED)
                         .diskCacheKey(data.thumbnail?.lastOrNull()?.url)
-                        .crossfade(550)
+                        .crossfade(120)
                         .build(),
                 contentDescription = "",
                 placeholder = rememberHolderPainter(),
@@ -636,7 +638,7 @@ fun HomeItemContentPlaylist(
                             .data(thumb)
                             .diskCachePolicy(CachePolicy.ENABLED)
                             .diskCacheKey(thumb)
-                            .crossfade(550)
+                            .crossfade(120)
                             .build(),
                     placeholder =
                         when (data) {
@@ -869,7 +871,7 @@ fun QuickPicksItem(
                     ImageRequest
                         .Builder(LocalPlatformContext.current)
                         .data(data.thumbnails.lastOrNull()?.url)
-                        .crossfade(550)
+                        .crossfade(120)
                         .diskCacheKey(data.thumbnails.lastOrNull()?.url)
                         .diskCachePolicy(CachePolicy.ENABLED)
                         .build(),
@@ -989,13 +991,16 @@ fun HomeItemSong(
                     .heightIn(min = if (compactCards) 160.dp + cardTextBlockFloor() else 230.dp),
         ) {
             val thumb =
-                data.thumbnails.lastOrNull()?.url?.let {
-                    if (it.contains("w120")) {
-                        Regex("([wh])120").replace(it, "$1544")
-                    } else {
-                        it
+                remember(data.thumbnails) {
+                    data.thumbnails.lastOrNull()?.url?.let {
+                        if (it.contains("w120")) {
+                            it.replace("w120", "w544").replace("h120", "h544")
+                        } else {
+                            it
+                        }
                     }
                 }
+            val holderPainter = rememberHolderPainter()
             Box(Modifier.align(Alignment.CenterHorizontally)) {
                 AsyncImage(
                     model =
@@ -1004,10 +1009,10 @@ fun HomeItemSong(
                             .data(thumb)
                             .diskCachePolicy(CachePolicy.ENABLED)
                             .diskCacheKey(thumb)
-                            .crossfade(550)
+                            .crossfade(120)
                             .build(),
-                    placeholder = rememberHolderPainter(),
-                    error = rememberHolderPainter(),
+                    placeholder = holderPainter,
+                    error = holderPainter,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier =
@@ -1108,7 +1113,7 @@ fun HomeItemVideo(
                             .data(thumb)
                             .diskCachePolicy(CachePolicy.ENABLED)
                             .diskCacheKey(thumb)
-                            .crossfade(550)
+                            .crossfade(120)
                             .build(),
                     placeholder = rememberHolderPainter(),
                     error = rememberHolderPainter(),
@@ -1225,7 +1230,7 @@ fun HomeItemArtist(
                         .data(thumb)
                         .diskCachePolicy(CachePolicy.ENABLED)
                         .diskCacheKey(thumb)
-                        .crossfade(550)
+                        .crossfade(120)
                         .build(),
                 placeholder = rememberHolderPainter(),
                 error = rememberHolderPainter(),
@@ -1343,7 +1348,7 @@ fun ItemVideoChart(
                         .data(thumb)
                         .diskCachePolicy(CachePolicy.ENABLED)
                         .diskCacheKey(thumb)
-                        .crossfade(550)
+                        .crossfade(120)
                         .build(),
                 placeholder = rememberHolderPainter(),
                 error = rememberHolderPainter(),
@@ -1456,7 +1461,7 @@ fun ItemArtistChart(
                         .data(thumb)
                         .diskCachePolicy(CachePolicy.ENABLED)
                         .diskCacheKey(thumb)
-                        .crossfade(550)
+                        .crossfade(120)
                         .build(),
                 placeholder = rememberHolderPainter(),
                 error = rememberHolderPainter(),
@@ -1564,7 +1569,7 @@ fun ItemTrackChart(
                         .data(thumb)
                         .diskCachePolicy(CachePolicy.ENABLED)
                         .diskCacheKey(thumb)
-                        .crossfade(550)
+                        .crossfade(120)
                         .build(),
                 placeholder = rememberHolderPainter(),
                 error = rememberHolderPainter(),
@@ -1625,7 +1630,7 @@ fun ItemTrackChart(
 fun MoodAndGenresContentItem(
     data: Any?,
     navController: NavController,
-    homeViewModel: HomeViewModel = koinViewModel(),
+    sharedViewModel: SharedViewModel = koinInject(),
 ) {
     Column(
         modifier = Modifier.wrapContentHeight(align = Alignment.CenterVertically, unbounded = true),
@@ -1685,7 +1690,7 @@ fun MoodAndGenresContentItem(
                                 feedbackTokens = null,
                                 resultType = null,
                             )
-                        homeViewModel.setQueueData(
+                        sharedViewModel.setQueueData(
                             QueueData.Data(
                                 listTracks = arrayListOf(track),
                                 firstPlayedTrack = track,
@@ -1695,7 +1700,7 @@ fun MoodAndGenresContentItem(
                                 continuation = null,
                             ),
                         )
-                        homeViewModel.loadMediaItem(track, type = Config.SONG_CLICK)
+                        sharedViewModel.loadMediaItem(track, type = Config.SONG_CLICK)
                     } else {
                         navController.navigate(
                             PlaylistDestination(

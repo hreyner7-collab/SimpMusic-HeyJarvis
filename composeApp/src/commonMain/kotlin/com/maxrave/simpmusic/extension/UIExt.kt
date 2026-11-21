@@ -98,6 +98,9 @@ import kotlin.math.sin
 fun Modifier.shimmer(): Modifier =
     composed {
         val appColors = LocalAppColors.current
+        if (!com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableShimmer) {
+            return@composed background(appColors.shimmerBackground)
+        }
         var size by remember {
             mutableStateOf(IntSize.Zero)
         }
@@ -715,22 +718,43 @@ fun rememberPaletteColor(
  * A plain function, not remembered: `HazeBlurStyle { }` records its writes into a list and compares
  * by them, so an unchanged tint recomposes into an equal Style and leaves the node alone.
  */
+@Composable
 fun barBlurStyle(
     tint: Color,
     tintAlpha: Float,
-): HazeBlurStyle =
-    HazeBlurStyle {
-        blurRadius(24.dp)
-        backgroundColor(tint)
-        colorEffects(listOf(HazeColorEffect.tint(tint.copy(alpha = tintAlpha))))
-        fallbackColorEffect(HazeColorEffect.tint(tint.copy(alpha = 1f)))
+): HazeBlurStyle {
+    val enableBlur = com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableBlur
+    return if (enableBlur) {
+        HazeBlurStyle {
+            blurRadius(24.dp)
+            backgroundColor(tint)
+            colorEffects(listOf(HazeColorEffect.tint(tint.copy(alpha = tintAlpha))))
+            fallbackColorEffect(HazeColorEffect.tint(tint.copy(alpha = 1f)))
+        }
+    } else {
+        HazeBlurStyle {
+            blurRadius(0.dp)
+            backgroundColor(tint)
+            colorEffects(listOf(HazeColorEffect.tint(tint.copy(alpha = tintAlpha.coerceAtLeast(0.92f)))))
+            fallbackColorEffect(HazeColorEffect.tint(tint.copy(alpha = 1f)))
+        }
     }
+}
 
 /** [HazeMaterials.ultraThin] for the plain top bars, with the same opaque fallback as [barBlurStyle]. */
 @Composable
 fun ultraThinBarStyle(): HazeBlurStyle {
     val surface = MaterialTheme.colorScheme.surface
-    return HazeMaterials.ultraThin(surface).then { fallbackColorEffect(HazeColorEffect.tint(surface)) }
+    return if (com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableBlur) {
+        HazeMaterials.ultraThin(surface).then { fallbackColorEffect(HazeColorEffect.tint(surface)) }
+    } else {
+        HazeBlurStyle {
+            blurRadius(0.dp)
+            backgroundColor(surface)
+            colorEffects(listOf(HazeColorEffect.tint(surface.copy(alpha = 0.94f))))
+            fallbackColorEffect(HazeColorEffect.tint(surface))
+        }
+    }
 }
 
 /**
@@ -751,6 +775,19 @@ fun ultraThinBarStyle(): HazeBlurStyle {
  * [startFraction]/[endFraction] confine the ramp to part of the box (the rest is held at [from] /
  * [to] by [TileMode.Clamp]); [startY]/[endY] do the same in pixels when the caller knows them.
  */
+private data class ScrimBrushKey(
+    val from: Color,
+    val to: Color,
+    val startFraction: Float,
+    val endFraction: Float,
+    val startY: Float,
+    val endY: Float,
+    val steps: Int,
+)
+
+private val scrimBrushCacheLock = Any()
+private val scrimBrushCache = LinkedHashMap<ScrimBrushKey, Brush>(64)
+
 fun smoothScrimBrush(
     from: Color,
     to: Color,
@@ -759,17 +796,30 @@ fun smoothScrimBrush(
     startY: Float = 0f,
     endY: Float = Float.POSITIVE_INFINITY,
     steps: Int = 24,
-): Brush =
-    Brush.verticalGradient(
-        colorStops =
-            Array(steps + 1) { i ->
-                val t = i / steps.toFloat()
-                val position = startFraction + (endFraction - startFraction) * t
-                position to androidx.compose.ui.graphics.lerp(from, to, t * t * (3f - 2f * t))
-            },
-        startY = startY,
-        endY = endY,
-    )
+): Brush {
+    val key = ScrimBrushKey(from, to, startFraction, endFraction, startY, endY, steps)
+    synchronized(scrimBrushCacheLock) {
+        scrimBrushCache[key]?.let { return it }
+    }
+    val brush =
+        Brush.verticalGradient(
+            colorStops =
+                Array(steps + 1) { i ->
+                    val t = i / steps.toFloat()
+                    val position = startFraction + (endFraction - startFraction) * t
+                    position to androidx.compose.ui.graphics.lerp(from, to, t * t * (3f - 2f * t))
+                },
+            startY = startY,
+            endY = endY,
+        )
+    synchronized(scrimBrushCacheLock) {
+        if (scrimBrushCache.size >= 64) {
+            scrimBrushCache.keys.firstOrNull()?.let { scrimBrushCache.remove(it) }
+        }
+        scrimBrushCache[key] = brush
+    }
+    return brush
+}
 
 /**
  * The common case of [smoothScrimBrush]: a bottom scrim that melts artwork into the page

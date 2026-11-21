@@ -13,9 +13,9 @@ import com.maxrave.domain.manager.DataStoreManager.Values.TRUE
 import com.maxrave.domain.repository.HomeRepository
 import com.maxrave.domain.utils.Resource
 import com.maxrave.logger.Logger
+import com.maxrave.simpmusic.utils.FastPageCache
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,7 +27,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import simpmusic.composeapp.generated.resources.Res
 import simpmusic.composeapp.generated.resources.music_video
 import simpmusic.composeapp.generated.resources.new_release
@@ -90,87 +89,63 @@ class HomeViewModel(
     private val _homeBackground: MutableStateFlow<String?> = MutableStateFlow(null)
     val homeBackground: StateFlow<String?> = _homeBackground
 
+    private data class HomeTrigger(
+        val location: String,
+        val language: String,
+        val cookie: String,
+        val params: String?,
+    )
+
     init {
-        if (runBlocking { dataStoreManager.cookie.first() }.isEmpty() &&
-            runBlocking {
-                dataStoreManager.shouldShowLogInRequiredAlert.first() == TRUE
-            }
-        ) {
-            _showLogInAlert.update { true }
-        }
         homeJob = Job()
         viewModelScope.launch {
+            if (dataStoreManager.cookie.first().isEmpty() &&
+                dataStoreManager.shouldShowLogInRequiredAlert.first() == TRUE
+            ) {
+                _showLogInAlert.update { true }
+            }
             regionCodeChart.value = dataStoreManager.chartKey.first()
-            exploreChart(regionCodeChart.value ?: "ZZ")
-            language = dataStoreManager.getString(SELECTED_LANGUAGE).first()
-                ?: SUPPORTED_LANGUAGE.codes.first()
-            //  refresh when region change
-            val job1 =
-                launch {
-                    dataStoreManager.location.distinctUntilChanged().collect {
-                        regionCode = it
-                        getHomeItemList(params.value)
-                    }
+            launch {
+                homeItemList.collectLatest { list ->
+                    _mainHomeThumbnail.value =
+                        list
+                            .firstOrNull()
+                            ?.contents
+                            ?.firstOrNull()
+                            ?.thumbnails
+                            ?.lastOrNull()
+                            ?.url
                 }
-            //  refresh when language change
-            val job2 =
-                launch {
-                    dataStoreManager.language.distinctUntilChanged().collect {
-                        language = it
-                        getHomeItemList(params.value)
-                    }
+            }
+            // Single coalesced trigger replaces 5 separate collectors + 1s cookie delay, preventing
+            // duplicate initial Home network requests on startup.
+            combine(
+                dataStoreManager.location.distinctUntilChanged(),
+                dataStoreManager.language.distinctUntilChanged(),
+                dataStoreManager.cookie.distinctUntilChanged(),
+                params,
+            ) { loc, lang, cookie, p ->
+                HomeTrigger(
+                    location = loc,
+                    language = lang.ifBlank { SUPPORTED_LANGUAGE.codes.first() },
+                    cookie = cookie,
+                    params = p,
+                )
+            }.distinctUntilChanged().collectLatest { trigger ->
+                regionCode = trigger.location
+                language = trigger.language
+                if (trigger.cookie.isNotEmpty()) {
+                    _accountInfo.emit(
+                        Pair(
+                            dataStoreManager.getString("AccountName").first(),
+                            dataStoreManager.getString("AccountThumbUrl").first(),
+                        ),
+                    )
+                } else {
+                    _accountInfo.emit(null)
                 }
-            val job3 =
-                launch {
-                    dataStoreManager.cookie.distinctUntilChanged().collect {
-                        getHomeItemList(params.value)
-                        _accountInfo.emit(
-                            Pair(
-                                dataStoreManager.getString("AccountName").first(),
-                                dataStoreManager.getString("AccountThumbUrl").first(),
-                            ),
-                        )
-                    }
-                }
-            val job4 =
-                launch {
-                    params.collectLatest {
-                        getHomeItemList(it)
-                    }
-                }
-            val job5 =
-                launch {
-                    dataStoreManager
-                        .cookie
-                        .distinctUntilChanged()
-                        .collectLatest {
-                            if (it.isNotEmpty()) {
-                                Logger.w(tag, "Cookie changed, refreshing home")
-                                loading.value = true
-                                delay(1000) // To wait for the cookie to be saved properly
-                                getHomeItemList(params.value)
-                            }
-                        }
-                }
-            val job6 =
-                launch {
-                    homeItemList.collectLatest { list ->
-                        _mainHomeThumbnail.value =
-                            list
-                                .firstOrNull()
-                                ?.contents
-                                ?.firstOrNull()
-                                ?.thumbnails
-                                ?.lastOrNull()
-                                ?.url
-                    }
-                }
-            job1.join()
-            job2.join()
-            job3.join()
-            job4.join()
-            job5.join()
-            job6.join()
+                getHomeItemList(trigger.params)
+            }
         }
     }
 
@@ -183,18 +158,82 @@ class HomeViewModel(
         }
     }
 
-    fun getHomeItemList(params: String? = null) {
-        loading.value = true
-        _homeListState.value = ListState.LOADING
-        language =
-            runBlocking {
-                dataStoreManager.getString(SELECTED_LANGUAGE).first()
-                    ?: SUPPORTED_LANGUAGE.codes.first()
-            }
-        regionCode = runBlocking { dataStoreManager.location.first() }
+    fun getHomeItemList(
+        params: String? = null,
+        forceRefresh: Boolean = false,
+    ) {
         homeJob?.cancel()
         homeJob =
             viewModelScope.launch {
+                val resolvedLang =
+                    language.ifBlank {
+                        dataStoreManager.getString(SELECTED_LANGUAGE).first()
+                            ?: SUPPORTED_LANGUAGE.codes.first()
+                    }
+                val resolvedRegion = regionCode.ifBlank { dataStoreManager.location.first() }
+                language = resolvedLang
+                regionCode = resolvedRegion
+                val cookieValue = dataStoreManager.cookie.first()
+                val cacheKey = "${params.orEmpty()}|$resolvedRegion|$resolvedLang|${cookieValue.hashCode()}"
+                if (!forceRefresh) {
+                    FastPageCache.getHome(cacheKey)?.let { cached ->
+                        _continuation.value = cached.continuation
+                        _homeItemList.value = cached.homeItems
+                        _homeBackground.value = cached.homeBackground
+                        _homeListState.value =
+                            if (cached.continuation.isNullOrEmpty()) {
+                                ListState.PAGINATION_EXHAUST
+                            } else {
+                                ListState.IDLE
+                            }
+                        _chart.value = cached.chart
+                        _newRelease.value = cached.newRelease
+                        _exploreMoodItem.value = cached.mood
+                        loading.value = false
+                        return@launch
+                    }
+                }
+                loading.value = true
+                _homeListState.value = ListState.LOADING
+                // If user only switched a mood chip on Home and secondary shelves are already loaded,
+                // only fetch getHomeData(params) instead of re-fetching Moods, Charts, and NewRelease.
+                if (!params.isNullOrEmpty() && !forceRefresh && _exploreMoodItem.value != null) {
+                    homeRepository
+                        .getHomeData(
+                            params,
+                            getString(Res.string.view_count),
+                            getString(Res.string.song),
+                        ).collect { home ->
+                            when (home) {
+                                is Resource.Success -> {
+                                    _continuation.value = home.data?.first
+                                    _homeItemList.value = home.data?.second ?: listOf()
+                                    _homeBackground.value = home.data?.third
+                                    FastPageCache.putHome(
+                                        cacheKey,
+                                        FastPageCache.HomeSnapshot(
+                                            homeItems = _homeItemList.value,
+                                            continuation = _continuation.value,
+                                            homeBackground = _homeBackground.value,
+                                            mood = _exploreMoodItem.value,
+                                            chart = _chart.value,
+                                            newRelease = _newRelease.value,
+                                        ),
+                                    )
+                                }
+
+                                is Resource.Error -> {
+                                    _continuation.value = null
+                                    _homeItemList.value = listOf()
+                                    home.message?.let { showSnackBarErrorState.emit(it) }
+                                }
+                            }
+                            _homeListState.value =
+                                if (continuation.value.isNullOrEmpty()) ListState.PAGINATION_EXHAUST else ListState.IDLE
+                            loading.value = false
+                        }
+                    return@launch
+                }
                 combine(
                     homeRepository.getHomeData(
                         params,
@@ -211,7 +250,6 @@ class HomeViewModel(
                     HomeDataCombine(home, exploreMood, exploreChart, newRelease)
                 }.collect { result ->
                     val home = result.home
-                    Logger.d("home size", "${home.data?.second?.size}")
                     val exploreMoodItem = result.mood
                     val chart = result.chart
                     val newRelease = result.newRelease
@@ -260,16 +298,26 @@ class HomeViewModel(
                         }
                     }
                     regionCodeChart.value = dataStoreManager.chartKey.first()
-                    Logger.d("HomeViewModel", "getHomeItemList: $result")
-                    dataStoreManager.cookie.first().let {
-                        if (it != "") {
-                            _accountInfo.emit(
-                                Pair(
-                                    dataStoreManager.getString("AccountName").first(),
-                                    dataStoreManager.getString("AccountThumbUrl").first(),
-                                ),
-                            )
-                        }
+                    if (home is Resource.Success) {
+                        FastPageCache.putHome(
+                            cacheKey,
+                            FastPageCache.HomeSnapshot(
+                                homeItems = _homeItemList.value,
+                                continuation = _continuation.value,
+                                homeBackground = _homeBackground.value,
+                                mood = _exploreMoodItem.value,
+                                chart = _chart.value,
+                                newRelease = _newRelease.value,
+                            ),
+                        )
+                    }
+                    if (cookieValue.isNotEmpty()) {
+                        _accountInfo.emit(
+                            Pair(
+                                dataStoreManager.getString("AccountName").first(),
+                                dataStoreManager.getString("AccountThumbUrl").first(),
+                            ),
+                        )
                     }
                     when {
                         home is Resource.Error -> home.message

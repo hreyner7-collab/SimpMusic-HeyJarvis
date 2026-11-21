@@ -47,12 +47,19 @@ fun rememberHolderPainter(square: Boolean = false): Painter {
     return remember(art, square) { HolderPainter(art, square) }
 }
 
+private val holderBackgroundCache = HashMap<ImageBitmap, Color>()
+
 private class HolderPainter(
     private val art: ImageBitmap,
     square: Boolean,
 ) : Painter() {
-    /** The art's own background, read off its corner so the fill around it always matches. */
-    private val background = Color(IntArray(1).also { art.readPixels(it, width = 1, height = 1) }[0])
+    /** The art's own background, read off its corner once per bitmap so the fill around it always matches. */
+    private val background =
+        synchronized(holderBackgroundCache) {
+            holderBackgroundCache.getOrPut(art) {
+                Color(IntArray(1).also { art.readPixels(it, width = 1, height = 1) }[0])
+            }
+        }
 
     override val intrinsicSize: Size =
         if (square) Size(art.width.toFloat(), art.height.toFloat()) else Size.Unspecified

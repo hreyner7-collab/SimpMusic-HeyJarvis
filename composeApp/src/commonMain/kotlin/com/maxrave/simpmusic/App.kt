@@ -169,7 +169,26 @@ fun App(
     val intent by viewModel.intent.collectAsStateWithLifecycle()
     val showNotificationPermissionDialog by viewModel.showNotificationPermissionDialog.collectAsStateWithLifecycle()
 
-    val isLiquidGlassEnabled by viewModel.getEnableLiquidGlass().collectAsStateWithLifecycle(DataStoreManager.TRUE)
+    val performanceModeRaw by viewModel.getPerformanceMode().collectAsStateWithLifecycle(com.maxrave.simpmusic.utils.PerformanceMode.AUTO.storageValue)
+    val performanceSettings =
+        remember(performanceModeRaw) {
+            com.maxrave.simpmusic.utils.resolvePerformanceSettings(
+                mode = com.maxrave.simpmusic.utils.PerformanceMode.fromStorage(performanceModeRaw),
+                hw = com.maxrave.simpmusic.utils.PerformanceRuntime.hardwareProfile,
+            )
+        }
+    LaunchedEffect(performanceSettings) {
+        com.maxrave.simpmusic.utils.PerformanceRuntime.current = performanceSettings
+        com.maxrave.simpmusic.utils.applyPlatformPerformanceSettings(performanceSettings)
+    }
+
+    val storedLiquidGlassEnabled by viewModel.getEnableLiquidGlass().collectAsStateWithLifecycle(DataStoreManager.TRUE)
+    val isLiquidGlassEnabled =
+        if (storedLiquidGlassEnabled == TRUE && performanceSettings.enableBlur) {
+            TRUE
+        } else {
+            DataStoreManager.FALSE
+        }
     // Analytics only makes sense with local tracking on, so its tab follows that setting.
     val isLocalTrackingEnabled by viewModel.getLocalTrackingEnabled().collectAsStateWithLifecycle(DataStoreManager.FALSE)
     val showAnalyticsTab = isLocalTrackingEnabled == TRUE
@@ -598,13 +617,16 @@ fun App(
     val isTablet = windowSize.isWidthAtLeastBreakpoint(WIDTH_DP_MEDIUM_LOWER_BOUND)
     val isTabletLandscape = isTablet && currentOrientation() == Orientation.LANDSCAPE
 
-    AppTheme(
-        themeMode = themeMode,
-        themeColorSource = themeColorSource,
-        customThemeColor = parseThemeColorHex(customThemeColorHex),
-        // The setting governs Desktop too, the same as Android: off, every glass surface draws flat.
-        liquidGlassEnabled = isLiquidGlassEnabled == TRUE,
+    CompositionLocalProvider(
+        com.maxrave.simpmusic.utils.LocalPerformanceSettings provides performanceSettings,
     ) {
+        AppTheme(
+            themeMode = themeMode,
+            themeColorSource = themeColorSource,
+            customThemeColor = parseThemeColorHex(customThemeColorHex),
+            // The setting governs Desktop too, the same as Android: off, every glass surface draws flat.
+            liquidGlassEnabled = isLiquidGlassEnabled == TRUE,
+        ) {
         if (!isOfficialBuild) {
             UnofficialBuildScreen()
             return@AppTheme
@@ -844,7 +866,7 @@ fun App(
                                                 } else {
                                                     Modifier
                                                 },
-                                            ).hazeSource(hazeState),
+                                            ),
                                     ) {
                                         CompositionLocalProvider(
                                             LocalAppDialogOpen provides appDialogOpen,
@@ -1255,5 +1277,6 @@ fun App(
                 }
             },
         )
+        }
     }
 }

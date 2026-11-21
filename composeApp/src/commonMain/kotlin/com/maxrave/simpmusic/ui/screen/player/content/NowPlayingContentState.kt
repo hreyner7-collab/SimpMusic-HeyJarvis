@@ -152,6 +152,7 @@ class NowPlayingContentState(
      * at startup is still being rebuilt: the same id the comments sheet uses.
      */
     val videoId: String? = null,
+    val abLoopState: com.maxrave.simpmusic.utils.AbLoopState = com.maxrave.simpmusic.utils.AbLoopState(),
 )
 
 /**
@@ -190,4 +191,6 @@ class NowPlayingContentActions(
     val onRemoveQueueItem: (index: Int) -> Unit,
     /** Opens the full song sheet for one queue entry; `index` is absolute, as above. */
     val onQueueItemMore: (index: Int, track: Track) -> Unit,
+    val onToggleAbLoop: () -> Unit = {},
+    val onClearAbLoop: () -> Unit = {},
 )

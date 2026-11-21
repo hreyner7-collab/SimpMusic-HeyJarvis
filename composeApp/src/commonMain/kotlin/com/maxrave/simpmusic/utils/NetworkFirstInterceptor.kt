@@ -32,6 +32,7 @@ import java.util.UUID
 class NetworkFirstInterceptor(
     private val ttlMillis: Long = 24L * 60 * 60 * 1000,
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
+    private val staleWhileRevalidate: Boolean = false,
     private val imageLoader: () -> ImageLoader,
 ) : Interceptor {
     init {
@@ -49,9 +50,14 @@ class NetworkFirstInterceptor(
     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
         val request = chain.request
         val url = request.data.toString()
-        if ((!url.startsWith("https://", ignoreCase = true) && !url.startsWith("http://", ignoreCase = true)) ||
-            !request.networkCachePolicy.readEnabled
-        ) {
+        if (!url.startsWith("https://", ignoreCase = true) && !url.startsWith("http://", ignoreCase = true)) {
+            if (url.startsWith("file:/", ignoreCase = true) && !url.startsWith("file:///", ignoreCase = true)) {
+                val normalized = "file:///" + url.substringAfter("file:/").trimStart('/')
+                return chain.withRequest(request.newBuilder().data(normalized).build()).proceed()
+            }
+            return chain.proceed()
+        }
+        if (!request.networkCachePolicy.readEnabled) {
             return chain.proceed()
         }
 
@@ -102,7 +108,7 @@ class NetworkFirstInterceptor(
                 // Warming RAM from disk must carry the original age, not start a new TTL.
                 updateMemoryEntry(loader.memoryCache, cachedResult, cachedAtMillis = cachedAtMillis)
             }
-            if (isFresh(cachedAtMillis)) return cachedResult.copy(request = request)
+            if (staleWhileRevalidate || isFresh(cachedAtMillis)) return cachedResult.copy(request = request)
         }
 
         // Keep a successfully decoded stale image alive while refreshing. A failed refresh can

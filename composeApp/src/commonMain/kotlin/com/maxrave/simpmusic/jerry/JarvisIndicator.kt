@@ -73,15 +73,25 @@ fun JarvisIndicator(modifier: Modifier = Modifier) {
         return
     }
 
-    val transition = rememberInfiniteTransition(label = "jarvis")
-    val phase by transition.animateFloat(
-        initialValue = 0f, targetValue = (2 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "wave",
-    )
-    val amp by transition.animateFloat(
-        initialValue = 0.4f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(700, easing = LinearEasing)), label = "amp",
-    )
+    val reduceAnimations = com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.reduceAnimations
+    val phase: Float
+    val amp: Float
+    if (reduceAnimations) {
+        phase = 0f
+        amp = 0.7f
+    } else {
+        val transition = rememberInfiniteTransition(label = "jarvis")
+        val animatedPhase by transition.animateFloat(
+            initialValue = 0f, targetValue = (2 * PI).toFloat(),
+            animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "wave",
+        )
+        val animatedAmp by transition.animateFloat(
+            initialValue = 0.4f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(700, easing = LinearEasing)), label = "amp",
+        )
+        phase = animatedPhase
+        amp = animatedAmp
+    }
 
     val (label, color) = when (state.phase) {
         JarvisPhase.Listening -> "Listening for “Hey Jarvis”" to Color(0xFF8E8E93)

@@ -139,8 +139,7 @@ fun BrowseScreen(
         }
     var topHeaderColor by remember { mutableStateOf(backgroundColor) }
     val animatedColor by animateColorAsState(topHeaderColor, tween(500))
-    val httpClient = remember { HttpClient(CIO) }
-    val networkLoader = rememberNetworkLoader(httpClient)
+    val networkLoader = rememberNetworkLoader(com.maxrave.simpmusic.utils.DominantColorCache.httpClient)
     val dominantColorState =
         rememberDominantColorState(
             defaultColor = backgroundColor,

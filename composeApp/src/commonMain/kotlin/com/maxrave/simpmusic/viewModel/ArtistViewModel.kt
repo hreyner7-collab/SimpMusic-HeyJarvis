@@ -23,12 +23,12 @@ import com.maxrave.domain.repository.LyricsCanvasRepository
 import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.utils.Resource
 import com.maxrave.simpmusic.extension.toArtistScreenData
+import com.maxrave.simpmusic.utils.FastPageCache
 import com.maxrave.simpmusic.viewModel.ArtistScreenState.Error
 import com.maxrave.simpmusic.viewModel.ArtistScreenState.Loading
 import com.maxrave.simpmusic.viewModel.ArtistScreenState.Success
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -68,26 +68,38 @@ class ArtistViewModel(
     private val _artistScreenState: MutableStateFlow<ArtistScreenState> = MutableStateFlow(Loading)
     val artistScreenState: StateFlow<ArtistScreenState> = _artistScreenState
 
+    private var browseArtistJob: Job? = null
+
     fun browseArtist(channelId: String) {
-        _artistScreenState.value = Loading
-        _artistLogo.value = null
-        _artistMotion.value = null
-        _followed.value = false
-        _likedSongCount.value = 0
+        val cachedArtist = FastPageCache.getArtist(channelId)
+        _artistScreenState.value =
+            if (cachedArtist != null) {
+                Success(cachedArtist.toArtistScreenData())
+            } else {
+                Loading
+            }
+        if (cachedArtist == null) {
+            _artistLogo.value = null
+            _artistMotion.value = null
+            _followed.value = false
+            _likedSongCount.value = 0
+        }
         likedSongsJob?.cancel()
         likedSongsJob =
             viewModelScope.launch {
                 songRepository.getLikedSongsByArtist(channelId).collect { _likedSongCount.value = it.size }
             }
-        viewModelScope.launch {
+        browseArtistJob?.cancel()
+        browseArtistJob = viewModelScope.launch {
             artistRepository.getArtistData(channelId).collect { browse ->
                 val data = browse.data
                 when (browse) {
                     is Resource.Success if (data != null) -> {
-                        data.channelId?.let { channelId ->
+                        FastPageCache.putArtist(channelId, data)
+                        data.channelId?.let { chId ->
                             insertArtist(
                                 ArtistEntity(
-                                    channelId,
+                                    chId,
                                     data.name,
                                     data.thumbnails
                                         ?.lastOrNull()
@@ -100,10 +112,14 @@ class ArtistViewModel(
                     }
 
                     is Resource.Error ->
-                        _artistScreenState.value = Error(browse.message ?: "Error")
+                        if (cachedArtist == null) {
+                            _artistScreenState.value = Error(browse.message ?: "Error")
+                        }
 
                     else -> {
-                        _artistScreenState.value = Error("Error")
+                        if (cachedArtist == null) {
+                            _artistScreenState.value = Error("Error")
+                        }
                     }
                 }
             }
@@ -140,7 +156,6 @@ class ArtistViewModel(
         viewModelScope.launch {
             artistRepository.insertArtist(artist)
             artistRepository.updateArtistInLibrary(now(), artist.channelId)
-            delay(100)
             artistRepository.getArtistById(artist.channelId).collect { artistEntity ->
                 if (artistEntity != null) {
                     artist.thumbnails?.let {

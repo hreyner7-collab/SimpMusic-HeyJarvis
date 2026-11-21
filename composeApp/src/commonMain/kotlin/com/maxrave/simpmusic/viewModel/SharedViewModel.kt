@@ -296,6 +296,19 @@ class SharedViewModel(
         _lastPlayerViewTab.value = tabName
     }
 
+    private val _abLoopState = MutableStateFlow(com.maxrave.simpmusic.utils.AbLoopState())
+    val abLoopState: StateFlow<com.maxrave.simpmusic.utils.AbLoopState> = _abLoopState
+    private var lastAbLoopSeekAtMs: Long = 0L
+
+    fun toggleAbLoopPoint() {
+        val tl = _timeline.value
+        _abLoopState.value = _abLoopState.value.toggleAt(tl.current, tl.total)
+    }
+
+    fun clearAbLoop() {
+        _abLoopState.value = _abLoopState.value.clear()
+    }
+
     val openAppTime: StateFlow<Int> = dataStoreManager.openAppTime.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0)
     private val _shareSavedLyrics: MutableStateFlow<Boolean> = MutableStateFlow(true)
     val shareSavedLyrics: StateFlow<Boolean> get() = _shareSavedLyrics
@@ -376,10 +389,29 @@ class SharedViewModel(
 //                        }
 //                    }
 //                }
+            val abLoopJob =
+                launch {
+                    timeline.collect { tl ->
+                        val loop = _abLoopState.value
+                        if (loop.shouldLoopBack(tl.current) &&
+                            tl.total > 0L &&
+                            controllerState.value.isPlaying
+                        ) {
+                            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                            if (now - lastAbLoopSeekAtMs >= 400L) {
+                                lastAbLoopSeekAtMs = now
+                                loop.seekPercentForPointA(tl.total)?.let { pct ->
+                                    onUIEvent(UIEvent.UpdateProgress(pct))
+                                }
+                            }
+                        }
+                    }
+                }
             timeLineJob.join()
             checkGetVideoJob.join()
             lyricsProviderJob.join()
             shareSavedLyricsJob.join()
+            abLoopJob.join()
 //            controllerStateJob.join()
         }
 
@@ -401,6 +433,7 @@ class SharedViewModel(
                 }.collectLatest { state ->
                     canvasJob?.cancel()
                     _nowPlayingState.value = state
+                    _abLoopState.value = com.maxrave.simpmusic.utils.AbLoopState()
 
                     // Seed the timeline from METADATA as soon as the track is known, instead of
                     // waiting for the player. SimpleMediaState.Ready carries a duration and only
@@ -2098,6 +2131,8 @@ class SharedViewModel(
     }
 
     fun getEnableLiquidGlass() = dataStoreManager.enableLiquidGlass
+
+    fun getPerformanceMode() = dataStoreManager.getString("performance_mode")
 
     fun getLocalTrackingEnabled() = dataStoreManager.localTrackingEnabled
 

@@ -140,6 +140,7 @@ import com.maxrave.simpmusic.ui.component.ActionButton
 import com.maxrave.simpmusic.ui.component.AmbientThemeGlow
 import com.maxrave.simpmusic.ui.component.CenterLoadingBox
 import com.maxrave.simpmusic.ui.component.EndOfPage
+import com.maxrave.simpmusic.ui.component.ImportPlaylistLinkDialog
 import com.maxrave.simpmusic.ui.component.LoadingDialog
 import com.maxrave.simpmusic.ui.component.RippleIconButton
 import com.maxrave.simpmusic.ui.component.SettingGroup
@@ -153,6 +154,7 @@ import com.maxrave.simpmusic.ui.icon.PlaylistAdd
 import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.navigation.destination.home.AppLogDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.CreditDestination
+import com.maxrave.simpmusic.ui.navigation.destination.list.LocalPlaylistDestination
 import com.maxrave.simpmusic.ui.navigation.destination.login.DiscordLoginDestination
 import com.maxrave.simpmusic.ui.navigation.destination.login.LastfmLoginDestination
 import com.maxrave.simpmusic.ui.navigation.destination.login.LoginDestination
@@ -160,7 +162,17 @@ import com.maxrave.simpmusic.ui.navigation.destination.login.SpotifyLoginDestina
 import com.maxrave.simpmusic.ui.theme.md_theme_dark_primary
 import com.maxrave.simpmusic.ui.theme.parseThemeColorHex
 import com.maxrave.simpmusic.ui.theme.typo
+import com.maxrave.simpmusic.utils.PerformanceMode
+import com.maxrave.simpmusic.utils.PerformanceRuntime
 import com.maxrave.simpmusic.utils.VersionManager
+import com.maxrave.simpmusic.utils.isJarvisLowRamEnabled
+import com.maxrave.simpmusic.utils.isWindowsHost
+import com.maxrave.simpmusic.utils.readDesktopAudioDriverOverride
+import com.maxrave.simpmusic.utils.readDesktopRendererOverride
+import com.maxrave.simpmusic.utils.resolvePerformanceSettings
+import com.maxrave.simpmusic.utils.setJarvisLowRamEnabled
+import com.maxrave.simpmusic.utils.writeDesktopAudioDriverOverride
+import com.maxrave.simpmusic.utils.writeDesktopRendererOverride
 import com.maxrave.simpmusic.viewModel.ImportViewModel
 import com.maxrave.simpmusic.viewModel.SettingAlertState
 import com.maxrave.simpmusic.viewModel.SettingBasicAlertState
@@ -604,6 +616,9 @@ fun SettingScreen(
     val autoBackupLastTime by viewModel.autoBackupLastTime.collectAsStateWithLifecycle()
     val updateChannel by viewModel.updateChannel.collectAsStateWithLifecycle()
     val enableLiquidGlass by viewModel.enableLiquidGlass.collectAsStateWithLifecycle()
+    val performanceModeRaw by viewModel.performanceMode.collectAsStateWithLifecycle()
+    val linkImportProgress by viewModel.linkImportProgress.collectAsStateWithLifecycle()
+    var showImportLinkDialog by rememberSaveable { mutableStateOf(false) }
     val themeMode by sharedViewModel.getThemeMode().collectAsStateWithLifecycle(DataStoreManager.THEME_MODE_DARK)
     val themeColorSource by sharedViewModel.getThemeColorSource().collectAsStateWithLifecycle(DataStoreManager.THEME_COLOR_DEFAULT)
     val customThemeColorHex by sharedViewModel.getCustomThemeColor().collectAsStateWithLifecycle(DataStoreManager.DEFAULT_THEME_COLOR_HEX)
@@ -1554,6 +1569,128 @@ fun SettingScreen(
                         title = "Hey Jarvis",
                         subtitle = "Voice control: next, volume, play, stop",
                         onClick = { showJerrySheet = true },
+                    )
+                }
+            }
+        }
+        item(key = "performance") {
+            val hw = PerformanceRuntime.hardwareProfile
+            val selectedMode = PerformanceMode.fromStorage(performanceModeRaw)
+            val resolvedPerf = remember(selectedMode) { resolvePerformanceSettings(selectedMode, hw) }
+            val modeLabel: (PerformanceMode) -> String = { mode ->
+                when (mode) {
+                    PerformanceMode.AUTO -> "Auto (Recommended)"
+                    PerformanceMode.ULTRA_LIGHT -> "Ultra-Light (Old PCs / Max Speed)"
+                    PerformanceMode.BALANCED -> "Balanced"
+                    PerformanceMode.FULL_VISUALS -> "Full Visuals"
+                }
+            }
+            var rendererOverride by remember { mutableStateOf(readDesktopRendererOverride()) }
+            var audioDriverOverride by remember { mutableStateOf(readDesktopAudioDriverOverride()) }
+            var jarvisLowRam by remember { mutableStateOf(isJarvisLowRamEnabled()) }
+
+            SettingGroup(title = "Performance & Old PC Mode") {
+                SettingItem(
+                    title = "Performance Mode",
+                    subtitle =
+                        "${modeLabel(selectedMode)} · Effective: ${resolvedPerf.effectiveMode.name.lowercase().replace('_', ' ')} " +
+                            "(${hw.cpuCores} cores · ${hw.totalRamMb} MB RAM)",
+                    smallSubtitle = true,
+                    onClick = {
+                        viewModel.setAlertData(
+                            SettingAlertState(
+                                title = "Performance Mode",
+                                selectOne =
+                                    SettingAlertState.SelectData(
+                                        listSelect =
+                                            PerformanceMode.entries.map { mode ->
+                                                (mode == selectedMode) to modeLabel(mode)
+                                            },
+                                    ),
+                                confirm =
+                                    runBlocking { getString(Res.string.change) } to { state ->
+                                        val chosen =
+                                            PerformanceMode.entries.firstOrNull {
+                                                modeLabel(it) == state.selectOne?.getSelected()
+                                            } ?: PerformanceMode.AUTO
+                                        viewModel.setPerformanceMode(chosen)
+                                    },
+                                dismiss = runBlocking { getString(Res.string.cancel) },
+                            ),
+                        )
+                    },
+                )
+                if (getPlatform() != Platform.Android) {
+                    val rendererLabel = rendererOverride.ifBlank { "Auto" }
+                    SettingItem(
+                        title = "Graphics Renderer",
+                        subtitle = "$rendererLabel · Restart app to apply",
+                        smallSubtitle = true,
+                        onClick = {
+                            val options = listOf("Auto", "DIRECT3D", "OPENGL", "SOFTWARE")
+                            viewModel.setAlertData(
+                                SettingAlertState(
+                                    title = "Graphics Renderer (Desktop)",
+                                    selectOne =
+                                        SettingAlertState.SelectData(
+                                            listSelect = options.map { (it == rendererLabel) to it },
+                                        ),
+                                    confirm =
+                                        runBlocking { getString(Res.string.change) } to { state ->
+                                            val chosen = state.selectOne?.getSelected() ?: "Auto"
+                                            val stored = if (chosen == "Auto") "" else chosen
+                                            writeDesktopRendererOverride(stored)
+                                            rendererOverride = readDesktopRendererOverride()
+                                        },
+                                    dismiss = runBlocking { getString(Res.string.cancel) },
+                                ),
+                            )
+                        },
+                    )
+                    if (isWindowsHost()) {
+                        val driverDisplay =
+                            when (audioDriverOverride) {
+                                "wasapi" -> "WASAPI"
+                                "winmm" -> "WinMM"
+                                "sdl" -> "SDL"
+                                else -> "Auto"
+                            }
+                        SettingItem(
+                            title = "Windows Audio Driver",
+                            subtitle = "$driverDisplay · Switch to WinMM/SDL if crackling · Restart app to apply",
+                            smallSubtitle = true,
+                            onClick = {
+                                val options = listOf("Auto", "WASAPI", "WinMM", "SDL")
+                                viewModel.setAlertData(
+                                    SettingAlertState(
+                                        title = "Windows Audio Driver",
+                                        selectOne =
+                                            SettingAlertState.SelectData(
+                                                listSelect = options.map { (it == driverDisplay) to it },
+                                            ),
+                                        confirm =
+                                            runBlocking { getString(Res.string.change) } to { state ->
+                                                val chosen = state.selectOne?.getSelected() ?: "Auto"
+                                                val stored = if (chosen == "Auto") "" else chosen.lowercase()
+                                                writeDesktopAudioDriverOverride(stored)
+                                                audioDriverOverride = readDesktopAudioDriverOverride()
+                                            },
+                                        dismiss = runBlocking { getString(Res.string.cancel) },
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                    SettingItem(
+                        title = "Hey Jarvis Low-RAM Mode",
+                        subtitle = "Skip Parakeet (~250 MB RAM) and use lightweight Vosk only (restart Jarvis to apply)",
+                        smallSubtitle = true,
+                        switch = (
+                            jarvisLowRam to { enabled ->
+                                setJarvisLowRamEnabled(enabled)
+                                jarvisLowRam = isJarvisLowRamEnabled()
+                            }
+                        ),
                     )
                 }
             }
@@ -2827,6 +2964,14 @@ fun SettingScreen(
                         }
                     },
                 )
+                SettingItem(
+                    title = "Import Playlist from Link",
+                    subtitle = "Paste any public Spotify playlist/album/track or YouTube playlist URL",
+                    smallSubtitle = true,
+                    onClick = {
+                        showImportLinkDialog = true
+                    },
+                )
             }
         }
         item(key = "about_us") {
@@ -2909,37 +3054,9 @@ fun SettingScreen(
                 )
                 SettingItem(
                     title = stringResource(Res.string.author),
-                    subtitle = stringResource(Res.string.maxrave_dev),
+                    subtitle = "hreyner7-collab",
                     onClick = {
-                        uriHandler.openUri("https://github.com/maxrave-dev")
-                    },
-                )
-                SettingItem(
-                    title = stringResource(Res.string.follow_me_on_x),
-                    subtitle = "@maxrave_dev",
-                    onClick = {
-                        uriHandler.openUri("https://x.com/maxrave_dev")
-                    },
-                )
-                SettingItem(
-                    title = stringResource(Res.string.developer_blog),
-                    subtitle = stringResource(Res.string.developer_blog_tagline),
-                    onClick = {
-                        uriHandler.openUri("https://www.simpmusic.org/blogs")
-                    },
-                )
-                if (getPlatform() == Platform.Android) {
-                    SettingItem(
-                        title = stringResource(Res.string.blog_notification_title),
-                        subtitle = stringResource(Res.string.blog_notification_description),
-                        switch = (blogNotificationEnabled to { viewModel.setBlogNotificationEnabled(it) }),
-                    )
-                }
-                SettingItem(
-                    title = stringResource(Res.string.buy_me_a_coffee),
-                    subtitle = stringResource(Res.string.donation),
-                    onClick = {
-                        uriHandler.openUri("https://github.com/sponsors/maxrave-dev")
+                        uriHandler.openUri("https://github.com/hreyner7-collab/SimpMusic-HeyJarvis")
                     },
                 )
                 SettingItem(
@@ -2975,6 +3092,19 @@ fun SettingScreen(
         ImportProgressDialog(
             progress = progress,
             onDismiss = importViewModel::dismiss,
+        )
+    }
+    if (showImportLinkDialog) {
+        ImportPlaylistLinkDialog(
+            progress = linkImportProgress,
+            onImport = viewModel::importPlaylistFromLink,
+            onDismiss = {
+                showImportLinkDialog = false
+                viewModel.clearLinkImportProgress()
+            },
+            onOpenPlaylist = { id ->
+                navController.navigate(LocalPlaylistDestination(id))
+            },
         )
     }
     val showLoadingDialog by viewModel.showLoadingDialog.collectAsStateWithLifecycle()
@@ -3212,7 +3342,7 @@ fun SettingScreen(
                                             ImageRequest
                                                 .Builder(LocalPlatformContext.current)
                                                 .data(it.thumbnailUrl)
-                                                .crossfade(550)
+                                                .crossfade(120)
                                                 .build(),
                                         placeholder = rememberVectorPainter(SimpIcons.PeopleAlt),
                                         error = rememberVectorPainter(SimpIcons.PeopleAlt),

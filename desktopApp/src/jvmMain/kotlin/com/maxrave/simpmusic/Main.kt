@@ -61,7 +61,7 @@ private object WindowsProcessOptimizer {
     private const val TARGET_CPU_AFFINITY_MASK = 3L // CPU 0 + CPU 1
     private const val MIN_WORKING_SET_BYTES = 32L * 1024 * 1024
     private const val MAX_WORKING_SET_BYTES = 240L * 1024 * 1024
-    private const val TRIM_THRESHOLD_BYTES = 245L * 1024 * 1024
+    private const val TRIM_THRESHOLD_BYTES = Long.MAX_VALUE // never trim: trimming evicted hot model pages
     private const val PARENT_MIN_WS_BYTES = 1L * 1024 * 1024
     private const val PARENT_MAX_WS_BYTES = 16L * 1024 * 1024
 
@@ -177,6 +177,9 @@ private object WindowsProcessOptimizer {
     }
 
     fun trimWorkingSet(reason: String) {
+        // Disabled for speed: EmptyWorkingSet pushed Vosk/Parakeet/JVM pages to standby and made the
+        // next voice command or page pay page-fault latency.
+        if (true) return
         if (!isWindows) return
         val k32 = kernel32 ?: return
         val now = System.currentTimeMillis()
@@ -199,25 +202,8 @@ private object WindowsProcessOptimizer {
         minWsBytes: Long,
         maxWsBytes: Long,
     ) {
-        runCatching {
-            k32.SetProcessAffinityMask(hProc, TARGET_CPU_AFFINITY_MASK)
-        }
-        runCatching {
-            val appliedHard =
-                k32.SetProcessWorkingSetSizeEx(hProc, minWsBytes, maxWsBytes, QUOTA_LIMITS_HARDWS_MAX_ENABLE) ||
-                    k32.SetProcessWorkingSetSizeEx(
-                        hProc,
-                        minWsBytes,
-                        maxWsBytes,
-                        QUOTA_LIMITS_HARDWS_MAX_ENABLE or QUOTA_LIMITS_HARDWS_MIN_DISABLE,
-                    )
-            if (!appliedHard) {
-                val appliedSoft = k32.SetProcessWorkingSetSizeEx(hProc, minWsBytes, maxWsBytes, 0)
-                if (!appliedSoft) {
-                    k32.SetProcessWorkingSetSize(hProc, minWsBytes, maxWsBytes)
-                }
-            }
-        }
+        // Speed: no CPU-affinity pinning and no hard working-set cap. Both throttled JIT, GC, Skia,
+        // Coil decoding and the voice models, and the cap forced constant page-faults.
     }
 
     private fun applyToParentLauncherIfSimpMusic(k32: WinKernel32) {
@@ -271,7 +257,20 @@ private object WindowsProcessOptimizer {
         }.getOrDefault(-1L)
 }
 
+private fun applyPreferredRenderer() {
+    if (System.getProperty("skiko.renderApi") != null) return
+    val conf = java.io.File(java.io.File(System.getProperty("user.home"), ".simpmusic"), "renderer.conf")
+    val api =
+        runCatching {
+            if (conf.isFile) conf.readText().trim().uppercase() else ""
+        }.getOrDefault("")
+    if (api in setOf("DIRECT3D", "OPENGL", "SOFTWARE", "METAL")) {
+        System.setProperty("skiko.renderApi", api)
+    }
+}
+
 fun main(args: Array<String>) {
+    applyPreferredRenderer()
     WindowsProcessOptimizer.install()
     forceLinuxWmClass()
     runDesktopApp(args)

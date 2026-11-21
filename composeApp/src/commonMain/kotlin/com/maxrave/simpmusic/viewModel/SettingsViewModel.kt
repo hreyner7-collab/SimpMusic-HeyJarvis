@@ -28,10 +28,14 @@ import com.maxrave.domain.data.model.librarysync.LibrarySyncState
 import com.maxrave.domain.repository.CommonRepository
 import com.maxrave.domain.repository.LyricsRomanizerRepository
 import com.maxrave.domain.repository.SongRepository
+import com.maxrave.domain.repository.SpotifyImportProgress
+import com.maxrave.domain.repository.SpotifyLibraryRepository
 import com.maxrave.domain.utils.LocalResource
 import com.maxrave.logger.LogLevel
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.expect.isOnUnmeteredNetwork
+import com.maxrave.simpmusic.utils.PERFORMANCE_MODE_KEY
+import com.maxrave.simpmusic.utils.PerformanceMode
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -39,13 +43,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.lastOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.singleOrNull
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -86,6 +93,7 @@ class SettingsViewModel(
     private val lyricsRomanizerRepository: LyricsRomanizerRepository,
     private val discordRepository: DiscordRepository,
     private val librarySyncRepository: LibrarySyncRepository,
+    private val spotifyLibraryRepository: SpotifyLibraryRepository,
 ) : BaseViewModel() {
     private val databasePath: String? = commonRepository.getDatabasePath()
     private val downloadUtils: DownloadHandler by inject()
@@ -2165,6 +2173,37 @@ class SettingsViewModel(
             dataStoreManager.setHelpBuildLyricsDatabase(help)
             getHelpBuildLyricsDatabase()
         }
+    }
+
+    val performanceMode: StateFlow<String> =
+        dataStoreManager
+            .getString(PERFORMANCE_MODE_KEY)
+            .map { raw -> PerformanceMode.fromStorage(raw).storageValue }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PerformanceMode.AUTO.storageValue)
+
+    fun setPerformanceMode(mode: PerformanceMode) {
+        viewModelScope.launch {
+            dataStoreManager.putString(PERFORMANCE_MODE_KEY, mode.storageValue)
+        }
+    }
+
+    private val _linkImportProgress: MutableStateFlow<SpotifyImportProgress?> = MutableStateFlow(null)
+    val linkImportProgress: StateFlow<SpotifyImportProgress?> = _linkImportProgress
+
+    private var linkImportJob: Job? = null
+
+    fun importPlaylistFromLink(url: String) {
+        if (linkImportJob?.isActive == true) return
+        linkImportJob =
+            viewModelScope.launch {
+                spotifyLibraryRepository.importFromLink(url).collect { progress ->
+                    _linkImportProgress.value = progress
+                }
+            }
+    }
+
+    fun clearLinkImportProgress() {
+        _linkImportProgress.value = null
     }
 }
 

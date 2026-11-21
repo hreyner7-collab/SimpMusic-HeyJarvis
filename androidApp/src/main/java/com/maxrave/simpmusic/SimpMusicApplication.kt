@@ -135,11 +135,18 @@ class SimpMusicApplication :
             ImageLoader
                 .Builder(context)
                 .components {
-                    add(NetworkFirstInterceptor { imageLoader })
+                    add(NetworkFirstInterceptor(staleWhileRevalidate = true) { imageLoader })
                     add(
                         OkHttpNetworkFetcherFactory(
                             callFactory = {
-                                OkHttpClient()
+                                OkHttpClient
+                                    .Builder()
+                                    .dispatcher(
+                                        okhttp3.Dispatcher().apply {
+                                            maxRequests = 64
+                                            maxRequestsPerHost = 24
+                                        },
+                                    ).build()
                             },
                         ),
                     )

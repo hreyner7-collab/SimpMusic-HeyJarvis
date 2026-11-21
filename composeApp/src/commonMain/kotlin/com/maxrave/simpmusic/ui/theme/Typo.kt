@@ -4,6 +4,7 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -20,10 +21,10 @@ import simpmusic.composeapp.generated.resources.Res
 import simpmusic.composeapp.generated.resources.poppins_medium
 
 @Composable
-fun fontFamily(): FontFamily =
-    FontFamily(
-        Font(Res.font.poppins_medium, FontWeight.Normal, FontStyle.Normal),
-    )
+fun fontFamily(): FontFamily {
+    val font = Font(Res.font.poppins_medium, FontWeight.Normal, FontStyle.Normal)
+    return remember(font) { FontFamily(font) }
+}
 
 /**
  * When true, [typo] keeps the original always-light text colors (pure white titles, #A8A8A8 body)
@@ -51,10 +52,9 @@ fun typo(
     // would also move Latin text to the left edge, so Right keeps it on the layout's start edge,
     // where a TextView keeps it with gravity START.
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val textDirection = if (rtl) TextDirection.Content else TextDirection.Unspecified
-    val textAlign = if (rtl) TextAlign.Right else TextAlign.Unspecified
-
-    val typo =
+    return remember(fontFamily, titleColor, bodyColor, rtl) {
+        val textDirection = if (rtl) TextDirection.Content else TextDirection.Unspecified
+        val textAlign = if (rtl) TextAlign.Right else TextAlign.Unspecified
         Typography(
             /***
              * This typo().is use for the title of the Playlist, Artist, Song, Album, etc. in Home, Mood, Genre, Playlist, etc.
@@ -164,7 +164,6 @@ fun typo(
                     textDirection = textDirection,
                     textAlign = textAlign,
                 ),
-            // ...
         )
-    return typo
+    }
 }

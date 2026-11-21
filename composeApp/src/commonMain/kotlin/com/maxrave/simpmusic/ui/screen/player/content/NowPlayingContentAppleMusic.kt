@@ -961,7 +961,7 @@ private fun AppleMusicArtworkPage(
                     .data(artworkUrl)
                     .diskCachePolicy(CachePolicy.ENABLED)
                     .diskCacheKey(artworkUrl + "BIGGER")
-                    .crossfade(550)
+                    .crossfade(120)
                     .build()
             val coverAlpha = if (pageShowsFullscreen) 0f else 1f - clipAlpha
             Box(
@@ -1174,7 +1174,7 @@ private fun AppleMusicArtworkPage(
                                         .data(state.screenData.canvasData?.url)
                                         .diskCachePolicy(CachePolicy.ENABLED)
                                         .diskCacheKey(state.screenData.canvasData?.url)
-                                        .crossfade(550)
+                                        .crossfade(120)
                                         .build(),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,

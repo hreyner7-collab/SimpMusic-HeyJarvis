@@ -106,7 +106,8 @@ internal fun AppleMusicMeshBackdrop(
     var incoming by remember { mutableStateOf<AppleMusicMesh?>(null) }
     val fade = remember { Animatable(0f) }
 
-    LaunchedEffect(mesh) {
+    val reduceAnimations = com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.reduceAnimations
+    LaunchedEffect(mesh, reduceAnimations) {
         val next = mesh ?: return@LaunchedEffect
         // A change mid-fade: what was fading in has been on screen a while, so it is what the new
         // one fades FROM. Restarting from the mesh before it would never let a quick skip settle.
@@ -114,8 +115,9 @@ internal fun AppleMusicMeshBackdrop(
         incoming = null
         val current = shown
         if (next === current) return@LaunchedEffect
-        if (current == null) {
+        if (current == null || reduceAnimations) {
             shown = next
+            fade.snapTo(1f)
             return@LaunchedEffect
         }
         incoming = next
@@ -129,12 +131,9 @@ internal fun AppleMusicMeshBackdrop(
         modifier =
             modifier
                 .fillMaxSize()
-                // Outside the blur, so it is an opaque floor the blur cannot thin out — the page is a
-                // sheet over the rest of the app and every pixel of it has to be opaque.
-                .background(MeshFallback)
-                // The default edge treatment clamps; Unbounded would fade alpha in from every edge and
-                // let the page underneath show through down the sides.
-                .blur(MESH_BLUR),
+                // Opaque floor so the mesh sheet is never transparent against the app behind it.
+                // Smoothing is baked into `texels` on CPU so old GPUs skip full-screen blur passes.
+                .background(MeshFallback),
     ) {
         val seamY = seam.toPx().coerceIn(0f, size.height)
         val topHoldY = topHold.toPx().coerceIn(0f, seamY)
@@ -231,10 +230,24 @@ private fun meshOf(
     val topPixels = topRow.sumOf { count[it].toLong() }.coerceAtLeast(1L)
     val topLuminance =
         (topRow.sumOf { 0.2126 * red[it] + 0.7152 * green[it] + 0.0722 * blue[it] } / topPixels / 255.0).toFloat().coerceIn(0f, 1f)
-    val texels = grid.rotatedBelowSeam(cols, rows, seed).resampled(cols, rows, MESH_TEX)
+    val texels =
+        boxBlurArgb(
+            pixels = grid.rotatedBelowSeam(cols, rows, seed).resampled(cols, rows, MESH_TEX),
+            width = MESH_TEX,
+            height = MESH_TEX,
+            radius = MESH_CPU_BLUR_RADIUS,
+            passes = MESH_CPU_BLUR_PASSES,
+        )
     // The top band before any shifting: held above the artwork's top edge, it has to meet the picture
     // colour for colour, and every row but row 0 is carried sideways below.
-    val topTexels = grid.copyOfRange((rows - 1) * cols, rows * cols).resampled(cols, 1, MESH_TEX).copyOfRange(0, MESH_TEX)
+    val topTexels =
+        boxBlurArgb(
+            pixels = grid.copyOfRange((rows - 1) * cols, rows * cols).resampled(cols, 1, MESH_TEX).copyOfRange(0, MESH_TEX),
+            width = MESH_TEX,
+            height = 1,
+            radius = MESH_CPU_BLUR_RADIUS,
+            passes = MESH_CPU_BLUR_PASSES,
+        )
 
     val image = ImageBitmap(MESH_TEX, MESH_TEX)
     val canvas = Canvas(image)
@@ -368,10 +381,75 @@ private const val MESH_FLOOR = 0.045f
 
 /** How long the page takes to change colour on a skip: long enough to read as a change, not a cut. */
 private const val MESH_FADE_MS = 900
+private const val MESH_CPU_BLUR_RADIUS = 3
+private const val MESH_CPU_BLUR_PASSES = 2
 
-// The owner asked for the page to be visibly smooth, and at 44dp no cell edge survives even on a
-// cover with hard colour blocks.
-private val MESH_BLUR = 44.dp
+/**
+ * Separable CPU box blur on a tiny ARGB texture so old integrated GPUs never pay a full-screen
+ * multi-pass RenderEffect / Skia blur on every frame.
+ */
+internal fun boxBlurArgb(
+    pixels: IntArray,
+    width: Int,
+    height: Int,
+    radius: Int,
+    passes: Int = 2,
+): IntArray {
+    if (pixels.isEmpty() || width <= 0 || height <= 0 || radius <= 0 || passes <= 0) {
+        return pixels.copyOf()
+    }
+    val expectedSize = width * height
+    if (pixels.size < expectedSize) return pixels.copyOf()
+    var src = pixels.copyOf(expectedSize)
+    var tmp = IntArray(expectedSize)
+    var dst = IntArray(expectedSize)
+    val kernel = 2 * radius + 1
+
+    repeat(passes) {
+        for (y in 0 until height) {
+            val rowOffset = y * width
+            for (x in 0 until width) {
+                var sumR = 0
+                var sumG = 0
+                var sumB = 0
+                for (dx in -radius..radius) {
+                    val sx = (x + dx).coerceIn(0, width - 1)
+                    val px = src[rowOffset + sx]
+                    sumR += (px ushr 16) and 0xFF
+                    sumG += (px ushr 8) and 0xFF
+                    sumB += px and 0xFF
+                }
+                tmp[rowOffset + x] =
+                    (0xFF shl 24) or
+                    ((sumR / kernel) shl 16) or
+                    ((sumG / kernel) shl 8) or
+                    (sumB / kernel)
+            }
+        }
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                var sumR = 0
+                var sumG = 0
+                var sumB = 0
+                for (dy in -radius..radius) {
+                    val sy = (y + dy).coerceIn(0, height - 1)
+                    val px = tmp[sy * width + x]
+                    sumR += (px ushr 16) and 0xFF
+                    sumG += (px ushr 8) and 0xFF
+                    sumB += px and 0xFF
+                }
+                dst[y * width + x] =
+                    (0xFF shl 24) or
+                    ((sumR / kernel) shl 16) or
+                    ((sumG / kernel) shl 8) or
+                    (sumB / kernel)
+            }
+        }
+        src = dst
+        dst = IntArray(expectedSize)
+    }
+    return src
+}
 
 /** Drawn only until an artwork has been read. */
 private val MeshFallback = Color(0xFF121212)

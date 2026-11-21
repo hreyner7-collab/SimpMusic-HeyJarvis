@@ -220,8 +220,7 @@ fun PlaylistScreen(
     }
 
     LaunchedEffect(uiState) {
-        Logger.d(tag, "uiState hash: ${uiState.hashCode()}")
-        Logger.d(tag, "uiState data: ${uiState.data}")
+        // Avoid logging entire PlaylistUIState / track objects to disk on every state change.
     }
 
     LaunchedEffect(showSearchBar) {
@@ -358,11 +357,9 @@ fun PlaylistScreen(
     Crossfade(
         targetState = uiState,
     ) { state ->
-        Logger.w(tag, "State hash: ${state.hashCode()}")
         when (state) {
             is PlaylistUIState.Success -> {
                 val data = state.data
-                Logger.d(tag, "data: $data")
                 if (data == null) return@Crossfade
                 val hazeState =
                     rememberHazeState()
@@ -413,7 +410,7 @@ fun PlaylistScreen(
                                                                 .memoryCachePolicy(CachePolicy.ENABLED)
                                                                 .diskCacheKey(data.thumbnail)
                                                                 .memoryCacheKey(data.thumbnail)
-                                                                .crossfade(550)
+                                                                .crossfade(120)
                                                                 .build(),
                                                         placeholder = rememberHolderPainter(),
                                                         error = rememberHolderPainter(),
@@ -591,7 +588,7 @@ fun PlaylistScreen(
                                                                     .memoryCachePolicy(CachePolicy.ENABLED)
                                                                     .diskCacheKey(data.thumbnail)
                                                                     .memoryCacheKey(data.thumbnail)
-                                                                    .crossfade(550)
+                                                                    .crossfade(120)
                                                                     .build(),
                                                             placeholder = rememberHolderPainter(),
                                                             error = rememberHolderPainter(),

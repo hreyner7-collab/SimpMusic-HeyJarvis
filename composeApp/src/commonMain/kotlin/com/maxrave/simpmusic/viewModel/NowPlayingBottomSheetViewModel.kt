@@ -137,13 +137,18 @@ class NowPlayingBottomSheetViewModel(
         }
     }
 
+    private var resetLocalPlaylistJob: Job? = null
+    private var resetYouTubePlaylistJob: Job? = null
+
     fun resetPlaylists() {
-        viewModelScope.launch {
+        resetLocalPlaylistJob?.cancel()
+        resetLocalPlaylistJob = viewModelScope.launch {
             localPlaylistRepository.getAllLocalPlaylists().collectLatest { list ->
                 _uiState.update { it.copy(listLocalPlaylist = list) }
             }
         }
-        viewModelScope.launch {
+        resetYouTubePlaylistJob?.cancel()
+        resetYouTubePlaylistJob = viewModelScope.launch {
             playlistRepository.getLibraryPlaylist().collect { data ->
                 _uiState.update { state ->
                     state.copy(

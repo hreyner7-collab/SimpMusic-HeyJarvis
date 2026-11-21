@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
 import coil3.ImageLoader
+import coil3.memory.MemoryCache
+import com.maxrave.simpmusic.utils.PerformanceRuntime
 import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.LocalPlatformContext
 import coil3.compose.preferEndFirstIntrinsicSize
@@ -269,8 +271,10 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
         }
     }
 
-    // Register simpmusic:// protocol handler on Windows (HKCU, no admin needed)
-    WindowsProtocolRegistrar.register()
+    // Register simpmusic:// protocol handler on Windows off the main startup thread
+    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        runCatching { WindowsProtocolRegistrar.register() }
+    }
 
     val desktopNotificationManager = getKoin().get<DesktopNotificationManager>()
     desktopNotificationManager.initialize()
@@ -480,29 +484,42 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                 }
 
                 val context = LocalPlatformContext.current
+                val perfSettings = PerformanceRuntime.current
                 setSingletonImageLoaderFactory {
                     lateinit var imageLoader: ImageLoader
                     imageLoader =
                         ImageLoader
                             .Builder(context)
                             .components {
-                                add(NetworkFirstInterceptor { imageLoader })
+                                add(NetworkFirstInterceptor(staleWhileRevalidate = true) { imageLoader })
                                 add(
                                     OkHttpNetworkFetcherFactory(
                                         callFactory = {
-                                            OkHttpClient()
+                                            OkHttpClient
+                                                .Builder()
+                                                .dispatcher(
+                                                    okhttp3.Dispatcher().apply {
+                                                        maxRequests = perfSettings.imageMaxConcurrentRequests
+                                                        maxRequestsPerHost = (perfSettings.imageMaxConcurrentRequests / 2).coerceAtLeast(4)
+                                                    },
+                                                ).build()
                                         },
                                     ),
                                 )
+                            }.memoryCache {
+                                MemoryCache
+                                    .Builder()
+                                    .maxSizePercent(context, perfSettings.coilMemoryCachePercent)
+                                    .build()
                             }.diskCachePolicy(CachePolicy.ENABLED)
                             .networkCachePolicy(CachePolicy.ENABLED)
                             .diskCache(
                                 DiskCache
                                     .Builder()
                                     .directory(FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "image_cache")
-                                    .maxSizeBytes(512L * 1024 * 1024)
+                                    .maxSizeBytes(256L * 1024 * 1024)
                                     .build(),
-                            ).crossfade(true)
+                            ).crossfade(!perfSettings.reduceAnimations)
                             // CrossfadePainter otherwise sizes itself as max(placeholder, image) once and keeps it,
                             // so a square holder over a wide banner leaves the banner zoomed after the fade.
                             .preferEndFirstIntrinsicSize(true)

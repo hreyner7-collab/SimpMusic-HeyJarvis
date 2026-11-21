@@ -26,6 +26,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -72,10 +74,12 @@ import com.maxrave.simpmusic.ui.component.Chip
 import com.maxrave.simpmusic.ui.component.CreateLocalPlaylistSheet
 import com.maxrave.simpmusic.ui.component.EndOfPage
 import com.maxrave.simpmusic.ui.component.GridLibraryPlaylist
+import com.maxrave.simpmusic.ui.component.ImportPlaylistLinkDialog
 import com.maxrave.simpmusic.ui.component.LibraryItem
 import com.maxrave.simpmusic.ui.component.LibraryItemState
 import com.maxrave.simpmusic.ui.component.LibraryItemType
 import com.maxrave.simpmusic.ui.component.LibraryTilingBox
+import com.maxrave.simpmusic.ui.component.SpotifyLibraryTab
 import com.maxrave.simpmusic.ui.component.taste.ShareTasteSheet
 import com.maxrave.simpmusic.ui.component.taste.TasteCard
 import com.maxrave.simpmusic.ui.component.ListenTogetherIconButton
@@ -85,9 +89,12 @@ import com.maxrave.simpmusic.ui.component.selection.SongSelectionTopAppBar
 import com.maxrave.simpmusic.ui.component.selection.rememberSongSelectionState
 import com.maxrave.simpmusic.ui.icon.Groups
 import com.maxrave.simpmusic.ui.icon.PeopleAlt
+import com.maxrave.simpmusic.ui.icon.PlaylistAdd
 import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.navigation.destination.home.ListenTogetherDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.SettingsDestination
+import com.maxrave.simpmusic.ui.navigation.destination.list.LocalPlaylistDestination
+import com.maxrave.simpmusic.ui.navigation.destination.login.SpotifyLoginDestination
 import com.maxrave.simpmusic.ui.theme.LocalLiquidGlassEnabled
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.viewModel.LibraryViewModel
@@ -146,6 +153,10 @@ fun LibraryScreen(
     val downloadedPlaylist by viewModel.downloadedPlaylist.collectAsStateWithLifecycle()
     val favoritePodcasts by viewModel.favoritePodcasts.collectAsStateWithLifecycle()
     val chartPlaylists by viewModel.chartPlaylists.collectAsStateWithLifecycle()
+    val spotifyConnected by viewModel.spotifyConnected.collectAsStateWithLifecycle()
+    val spotifyLibrary by viewModel.spotifyLibrary.collectAsStateWithLifecycle()
+    val spotifyImportProgress by viewModel.spotifyImportProgress.collectAsStateWithLifecycle()
+    var showImportLinkDialog by rememberSaveable { mutableStateOf(false) }
     val recentlyAdded by viewModel.recentlyAdded.collectAsStateWithLifecycle()
     val libraryOverview by viewModel.libraryOverview.collectAsStateWithLifecycle()
     val cachedPreview by viewModel.cachedPreview.collectAsStateWithLifecycle()
@@ -232,6 +243,12 @@ fun LibraryScreen(
 
             LibraryChipType.WRAPPED -> {
                 viewModel.getMonthlyRecaps()
+            }
+
+            LibraryChipType.SPOTIFY_PLAYLIST -> {
+                if (spotifyConnected) {
+                    viewModel.loadSpotifyLibrary()
+                }
             }
         }
     }
@@ -430,6 +447,23 @@ fun LibraryScreen(
                     viewModel.getMonthlyRecaps()
                 }
             }
+
+            LibraryChipType.SPOTIFY_PLAYLIST -> {
+                SpotifyLibraryTab(
+                    connected = spotifyConnected,
+                    libraryState = spotifyLibrary,
+                    importProgress = spotifyImportProgress,
+                    contentPadding = innerPadding.copy(top = topAppBarHeight),
+                    onConnectSpotify = { navController.navigate(SpotifyLoginDestination) },
+                    onOpenLinkImport = { showImportLinkDialog = true },
+                    onRefresh = viewModel::loadSpotifyLibrary,
+                    onSyncAll = viewModel::syncAllSpotifyLibrary,
+                    onSyncItem = viewModel::importSpotifyItem,
+                    onOpenLocalPlaylist = { id -> navController.navigate(LocalPlaylistDestination(id)) },
+                    onDismissProgress = viewModel::clearSpotifyImportProgress,
+                    onScrolling = onScrolling,
+                )
+            }
         }
     }
     sharingTaste?.let { profile ->
@@ -472,7 +506,7 @@ fun LibraryScreen(
                             ImageRequest
                                 .Builder(LocalPlatformContext.current)
                                 .data(accountThumbnail)
-                                .crossfade(550)
+                                .crossfade(120)
                                 .build(),
                         placeholder = rememberVectorPainter(SimpIcons.PeopleAlt),
                         error = rememberVectorPainter(SimpIcons.PeopleAlt),
@@ -487,6 +521,12 @@ fun LibraryScreen(
             // The Library bar had no actions slot at all — added for the Listen Together entry,
             // which the design canvas puts on Home AND Library.
             actions = {
+                IconButton(onClick = { showImportLinkDialog = true }) {
+                    Icon(
+                        imageVector = SimpIcons.PlaylistAdd,
+                        contentDescription = "Import playlist from link",
+                    )
+                }
                 ListenTogetherIconButton { navController.navigate(ListenTogetherDestination) }
             },
         )
@@ -547,6 +587,7 @@ fun LibraryScreen(
                             LibraryChipType.FAVORITE_PODCAST -> stringResource(Res.string.favorite_podcasts)
                             LibraryChipType.CHART -> stringResource(Res.string.simpmusic_charts)
                             LibraryChipType.WRAPPED -> stringResource(Res.string.wrapped)
+                            LibraryChipType.SPOTIFY_PLAYLIST -> "Spotify"
                         },
                     backdrop = chipBackdrop,
                 ) {
@@ -591,6 +632,19 @@ fun LibraryScreen(
                     selectionState.exit()
                 },
                 onYTPlaylistClick = {},
+            )
+        }
+        if (showImportLinkDialog) {
+            ImportPlaylistLinkDialog(
+                progress = spotifyImportProgress,
+                onImport = viewModel::importFromLink,
+                onDismiss = {
+                    showImportLinkDialog = false
+                    viewModel.clearSpotifyImportProgress()
+                },
+                onOpenPlaylist = { id ->
+                    navController.navigate(LocalPlaylistDestination(id))
+                },
             )
         }
     }

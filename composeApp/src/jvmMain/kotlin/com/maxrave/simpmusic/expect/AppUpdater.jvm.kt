@@ -48,26 +48,61 @@ actual object AppUpdater {
                 }
                 val assets = root["assets"]?.jsonArray ?: emptyList()
 
-                val zipAsset = assets
+                val exeAsset = assets
                     .map { it.jsonObject }
                     .firstOrNull { asset ->
                         val name = asset["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                        name.endsWith(".zip", ignoreCase = true) && name.contains("Windows", ignoreCase = true)
+                        name.endsWith(".exe", ignoreCase = true)
                     }
+
+                val targetAsset = exeAsset
+                    ?: assets
+                        .map { it.jsonObject }
+                        .firstOrNull { asset ->
+                            val name = asset["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                            name.endsWith(".zip", ignoreCase = true) && name.contains("Windows", ignoreCase = true)
+                        }
                     ?: assets
                         .map { it.jsonObject }
                         .firstOrNull { asset ->
                             asset["name"]?.jsonPrimitive?.contentOrNull.orEmpty().endsWith(".zip", ignoreCase = true)
                         }
-                    ?: throw IllegalStateException("No Windows update package found in release $latestTag")
+                    ?: throw IllegalStateException("No Windows .exe installer found in release $latestTag")
 
-                val downloadUrl = zipAsset["browser_download_url"]?.jsonPrimitive?.contentOrNull
+                val assetName = targetAsset["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                val isExeInstaller = assetName.endsWith(".exe", ignoreCase = true)
+                val downloadUrl = targetAsset["browser_download_url"]?.jsonPrimitive?.contentOrNull
                     ?: throw IllegalStateException("Missing download URL in release $latestTag")
 
                 val localAppData = System.getenv("LOCALAPPDATA")
                     ?: File(System.getProperty("user.home"), "AppData\\Local").absolutePath
                 val workDir = File(localAppData, "SimpMusic-Jarvis-Update")
                 workDir.mkdirs()
+
+                if (isExeInstaller) {
+                    val installerExe = File(workDir, "SimpMusic-HeyJarvis-Setup.exe")
+                    downloadFile(downloadUrl, installerExe) { pct ->
+                        _state.value = AppUpdateState.Downloading(
+                            progressPercent = pct,
+                            statusText = "Downloading $latestTag installer ($pct%)...",
+                        )
+                    }
+                    _state.value = AppUpdateState.Installing("Running installer & restarting...")
+                    val installDir = resolveInstallDir(localAppData)
+                    ProcessBuilder(
+                        "powershell.exe",
+                        "-NoProfile",
+                        "-WindowStyle",
+                        "Hidden",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-Command",
+                        "Start-Sleep -Milliseconds 400; Start-Process -FilePath '${installerExe.absolutePath.replace("'", "''")}' -ArgumentList '--silent', '--dir=\"${installDir.absolutePath}\"'",
+                    ).start()
+                    Thread.sleep(300)
+                    Runtime.getRuntime().halt(0)
+                    return@launch
+                }
 
                 val zipFile = File(workDir, "update.zip")
                 val stagingDir = File(workDir, "staging")
@@ -97,10 +132,13 @@ actual object AppUpdater {
                 val pid = ProcessHandle.current().pid()
 
                 val scriptFile = File(workDir, "apply_update.ps1")
+                val logFile = File(workDir, "updater.log")
                 val d = '$'
                 scriptFile.writeText(
                     """
                     ${d}ErrorActionPreference = 'SilentlyContinue'
+                    ${d}log = '${logFile.absolutePath.replace("'", "''")}'
+                    "Starting update at $(Get-Date -Format o)" | Out-File -FilePath ${d}log -Encoding utf8
                     Start-Sleep -Milliseconds 600
                     ${d}deadline = (Get-Date).AddSeconds(20)
                     while ((Get-Process -Name SimpMusic -ErrorAction SilentlyContinue) -and (Get-Date) -lt ${d}deadline) {
@@ -113,10 +151,19 @@ actual object AppUpdater {
                     ${d}exe = '${exePath.replace("'", "''")}'
                     if (!(Test-Path ${d}dst)) { New-Item -ItemType Directory -Path ${d}dst -Force | Out-Null }
                     & robocopy ${d}src ${d}dst /MIR /R:8 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
-                    Remove-Item -Path '${zipFile.absolutePath.replace("'", "''")}' -Force -ErrorAction SilentlyContinue
-                    Remove-Item -Path '${stagingDir.absolutePath.replace("'", "''")}' -Recurse -Force -ErrorAction SilentlyContinue
+                    ${d}rc = ${d}LASTEXITCODE
+                    "robocopy exit=${d}rc" | Out-File -FilePath ${d}log -Append -Encoding utf8
+                    if (${d}rc -lt 8) {
+                        Remove-Item -Path '${zipFile.absolutePath.replace("'", "''")}' -Force -ErrorAction SilentlyContinue
+                        Remove-Item -Path '${stagingDir.absolutePath.replace("'", "''")}' -Recurse -Force -ErrorAction SilentlyContinue
+                    }
                     if (Test-Path ${d}exe) {
-                        Start-Process -FilePath ${d}exe -WorkingDirectory ${d}dst
+                        try {
+                            Start-Process -FilePath explorer.exe -ArgumentList ('"' + ${d}exe + '"')
+                        } catch {
+                            Start-Process -FilePath ${d}exe -WorkingDirectory ${d}dst
+                        }
+                        "Relaunched ${d}exe at $(Get-Date -Format o)" | Out-File -FilePath ${d}log -Append -Encoding utf8
                     }
                     """.trimIndent(),
                     Charsets.UTF_8,
@@ -151,6 +198,11 @@ actual object AppUpdater {
         val appPath = System.getProperty("jpackage.app-path")
         if (!appPath.isNullOrBlank()) {
             val parent = File(appPath).parentFile
+            if (parent != null && parent.isDirectory) return parent
+        }
+        val cmd = runCatching { ProcessHandle.current().info().command().orElse(null) }.getOrNull()
+        if (!cmd.isNullOrBlank() && cmd.endsWith("SimpMusic.exe", ignoreCase = true)) {
+            val parent = File(cmd).parentFile
             if (parent != null && parent.isDirectory) return parent
         }
         return File(localAppData, "Programs\\SimpMusic-Jarvis")

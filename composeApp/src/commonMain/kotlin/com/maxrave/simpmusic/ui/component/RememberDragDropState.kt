@@ -66,17 +66,18 @@ fun LazyItemScope.DraggableItem(
     modifier: Modifier,
     content: @Composable ColumnScope.(isDragging: Boolean) -> Unit,
 ) {
-    val current: Float by animateFloatAsState(dragDropState.draggingItemOffset)
-    val previous: Float by animateFloatAsState(dragDropState.previousItemOffset.value)
     val dragging = index == dragDropState.currentIndexOfDraggedItem
+    val isPreviouslyDragged = index == dragDropState.previousIndexOfDraggedItem
     val draggingModifier =
         if (dragging) {
+            val current: Float by animateFloatAsState(dragDropState.draggingItemOffset)
             Modifier
                 .zIndex(1f)
                 .graphicsLayer {
                     translationY = current
                 }
-        } else if (index == dragDropState.previousIndexOfDraggedItem) {
+        } else if (isPreviouslyDragged) {
+            val previous: Float by animateFloatAsState(dragDropState.previousItemOffset.value)
             Modifier
                 .zIndex(1f)
                 .graphicsLayer {

@@ -128,7 +128,7 @@ fun HomeDiscoverSection(
                                 .data(song.thumbnails.lastOrNull()?.url)
                                 .diskCachePolicy(CachePolicy.ENABLED)
                                 .diskCacheKey(song.thumbnails.lastOrNull()?.url)
-                                .crossfade(550)
+                                .crossfade(120)
                                 .build(),
                         contentDescription = null,
                         placeholder = rememberHolderPainter(),

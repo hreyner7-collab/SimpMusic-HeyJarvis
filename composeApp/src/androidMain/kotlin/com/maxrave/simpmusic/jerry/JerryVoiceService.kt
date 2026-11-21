@@ -290,7 +290,7 @@ class JerryVoiceService : Service(), KoinComponent {
                         val endOfSpeech =
                             lastSpeechAtMs > 0L &&
                                 (nowElapsed - lastSpeechAtMs >= END_OF_SPEECH_SILENCE_MS) &&
-                                (nowElapsed - lastPartialChangedAtMs >= 450L)
+                                (nowElapsed - lastPartialChangedAtMs >= 240L)
                         val instantHandled = handlePartialOnMain(partial, nowElapsed, allowInstantCommit = endOfSpeech)
                         if (instantHandled) {
                             grm.reset()
@@ -667,7 +667,7 @@ class JerryVoiceService : Service(), KoinComponent {
         private const val HIGH_PASS_HZ = 80.0
         private const val RESULT_RESET_DELAY_MS = 2500L
         private const val TTS_PAUSE_TIMEOUT_MS = 8000L
-        private const val END_OF_SPEECH_SILENCE_MS = 850L
+        private const val END_OF_SPEECH_SILENCE_MS = 380L
 
         private fun computePcmPeak(pcm: ByteArray, lengthBytes: Int): Int {
             var peak = 0

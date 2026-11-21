@@ -148,7 +148,6 @@ class LocalPlaylistViewModel(
                                             .listTrackFlow(uiState.value.id)
                                             .distinctUntilChanged()
                                             .collectLatest { list ->
-                                                delay(500)
                                                 val currentList = uiState.value.trackCount
                                                 val newList = list.size
                                                 log("newList: $list")
@@ -156,7 +155,6 @@ class LocalPlaylistViewModel(
                                                 if (newList > currentList) {
                                                     updatePlaylistState(uiState.value.id, refresh = true)
                                                 }
-                                                delay(500)
                                                 val fullTracks = localPlaylistRepository.getFullPlaylistTracks(id = uiState.value.id)
                                                 val notDownloadedList =
                                                     fullTracks.filter { it.downloadState != STATE_DOWNLOADED }.map { it.videoId }
