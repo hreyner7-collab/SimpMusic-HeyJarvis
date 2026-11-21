@@ -66,6 +66,11 @@ object DesktopJarvis {
     private val unkRegex = Regex("\\[unk]", RegexOption.IGNORE_CASE)
     private val multiSpaceRegex = Regex("\\s+")
     private val stage2PunctRegex = Regex("[,.;:!?\"()\\[\\]]+")
+    private val strictPartialWakeRegex =
+        Regex(
+            "^(?:hey|hay|hi|hello|yo)[\\s,]+(?:jarvis|javis|jarvus|jervis|harvis)\\b",
+            RegexOption.IGNORE_CASE,
+        )
     private val wakePeekRegex =
         Regex(
             "(?:^|\\G[\\s,]+)(?:" +
@@ -494,10 +499,12 @@ object DesktopJarvis {
                                 resetAfterCommand(until)
                                 if (line.available() > CHUNK_BYTES * 4) line.flush()
                             } else {
-                                if (session.observePartial(cleanStage1, now)) {
+                                if (strictPartialWakeRegex.containsMatchIn(cleanStage1) && session.observePartial(cleanStage1, now)) {
                                     utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
                                     duckMusic()
                                     JarvisStatus.set(JarvisPhase.Awake)
+                                } else if (!session.awaitingCommand) {
+                                    utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
                                 }
                                 stage2Armed = true
                                 stage2ArmedAtMs = now
@@ -505,10 +512,12 @@ object DesktopJarvis {
                             }
                         }
                         else -> {
-                            if (session.observePartial(cleanStage1, now)) {
+                            if (strictPartialWakeRegex.containsMatchIn(cleanStage1) && session.observePartial(cleanStage1, now)) {
                                 utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
                                 duckMusic()
                                 JarvisStatus.set(JarvisPhase.Awake)
+                            } else if (!session.awaitingCommand) {
+                                utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
                             }
                             stage2Armed = true
                             stage2ArmedAtMs = now
@@ -526,7 +535,13 @@ object DesktopJarvis {
                     }
                     val partialHasUnk = partial.contains("[unk]", ignoreCase = true)
                     val cleanPartial = stripUnkAndCollapse(partial)
-                    if (session.observePartial(cleanPartial, now)) {
+                    val partialStableMs = now - lastPartialChangedAtMs
+                    if (
+                        !session.awaitingCommand &&
+                        partialStableMs >= 120L &&
+                        strictPartialWakeRegex.containsMatchIn(cleanPartial) &&
+                        session.observePartial(cleanPartial, now)
+                    ) {
                         utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
                         duckMusic()
                         JarvisStatus.set(JarvisPhase.Awake)

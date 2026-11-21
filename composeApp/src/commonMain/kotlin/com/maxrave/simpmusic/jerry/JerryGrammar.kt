@@ -23,10 +23,6 @@ object JerryGrammar {
         "hey jarvis", "hay jarvis", "how jarvis", "home jarvis", "hi jarvis", "hello jarvis",
         "ok jarvis", "okay jarvis", "yo jarvis", "jarvis", "jervis",
         "hey javis", "hey jarvus", "hey jervis", "hey harvis", "hey service",
-        "hey job is", "hey jobs", "hey travis", "hey chavez",
-        "im jarvis", "i'm jarvis",
-        "j jarvis", "jay jarvis", "he jarvis", "eh jarvis", "they jarvis",
-        "o jarvis", "k jarvis", "kay jarvis",
     )
 
     val commandPhrases: List<String> = listOf(
