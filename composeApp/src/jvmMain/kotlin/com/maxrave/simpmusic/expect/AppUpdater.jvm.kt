@@ -1,5 +1,6 @@
 package com.maxrave.simpmusic.expect
 
+import com.maxrave.simpmusic.utils.VersionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +42,10 @@ actual object AppUpdater {
                 val releaseJson = fetchText(UPDATE_REPO_LATEST_API)
                 val root = Json.parseToJsonElement(releaseJson).jsonObject
                 val latestTag = root["tag_name"]?.jsonPrimitive?.contentOrNull ?: tagName ?: "latest"
+                if (latestTag != "latest" && !VersionManager.isBehind(latestTag)) {
+                    _state.value = AppUpdateState.UpToDate(latestTag)
+                    return@launch
+                }
                 val assets = root["assets"]?.jsonArray ?: emptyList()
 
                 val zipAsset = assets

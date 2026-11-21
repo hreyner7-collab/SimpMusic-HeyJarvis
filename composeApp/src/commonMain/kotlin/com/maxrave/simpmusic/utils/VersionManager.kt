@@ -40,8 +40,9 @@ internal fun isNewerRelease(
     current: String,
     tag: String,
 ): Boolean {
-    val release = tag.trim().removePrefix("v")
-    return release != current && compareVersions(current, release) <= 0
+    val release = tag.trim().removePrefix("v").removeSuffix("-heyjarvis")
+    val cur = current.trim().removePrefix("v").removeSuffix("-heyjarvis")
+    return release != cur && compareVersions(cur, release) <= 0
 }
 
 /** Dotted versions compared number by number, so "2.10.0" is newer than "2.9.0". A suffix such as "-hf" is ignored. */

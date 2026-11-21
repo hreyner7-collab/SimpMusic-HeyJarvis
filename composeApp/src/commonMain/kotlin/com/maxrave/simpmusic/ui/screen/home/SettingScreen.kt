@@ -744,7 +744,9 @@ fun SettingScreen(
                     },
                     windowInsets = WindowInsets(0),
                     modifier =
-                        Modifier.layout { measurable, constraints ->
+                        Modifier
+                            .graphicsLayer { alpha = if (isSearchingSettings) 0f else 1f }
+                            .layout { measurable, constraints ->
                             val bleed = listSidePadding.roundToPx()
                             val width = constraints.maxWidth + 2 * bleed
                             val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
@@ -2883,6 +2885,7 @@ fun SettingScreen(
                         AppUpdateState.Checking -> "Checking for latest release..."
                         is AppUpdateState.Downloading -> st.statusText
                         is AppUpdateState.Installing -> st.statusText
+                        is AppUpdateState.UpToDate -> "Already up to date (${st.version})"
                         is AppUpdateState.Error -> "Update failed: ${st.message} (tap to retry)"
                     }
                 val updateBusy =

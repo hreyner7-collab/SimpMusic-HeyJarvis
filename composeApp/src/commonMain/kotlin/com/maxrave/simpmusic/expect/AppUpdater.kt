@@ -7,6 +7,7 @@ sealed interface AppUpdateState {
     data object Checking : AppUpdateState
     data class Downloading(val progressPercent: Int, val statusText: String) : AppUpdateState
     data class Installing(val statusText: String) : AppUpdateState
+    data class UpToDate(val version: String) : AppUpdateState
     data class Error(val message: String) : AppUpdateState
 }
 

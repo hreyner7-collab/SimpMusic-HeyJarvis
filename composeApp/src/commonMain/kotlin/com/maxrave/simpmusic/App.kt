@@ -1129,6 +1129,13 @@ fun App(
                                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
                                         Text(st.statusText, style = typo().bodySmall)
                                     }
+                                    is AppUpdateState.UpToDate -> {
+                                        Text(
+                                            text = "You are already on the latest version (${st.version}).",
+                                            style = typo().bodySmall,
+                                            modifier = Modifier.padding(vertical = 6.dp),
+                                        )
+                                    }
                                     is AppUpdateState.Error -> {
                                         Text(
                                             text = "Update error: ${st.message}",
