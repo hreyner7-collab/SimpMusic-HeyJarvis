@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -274,17 +275,29 @@ fun SpotifyLibraryTab(
             libraryState is LocalResource.Error && items.isEmpty() -> {
                 item(key = "spotify_error") {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp, horizontal = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Text(
                             text = libraryState.message ?: "Failed to load Spotify library",
                             style = typo().bodyMedium,
                             color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
                         )
-                        OutlinedButton(onClick = onRefresh) {
-                            Text("Retry")
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedButton(onClick = onRefresh) {
+                                Text("Retry")
+                            }
+                            Button(onClick = onConnectSpotify) {
+                                Text("Reconnect Spotify")
+                            }
+                            OutlinedButton(onClick = onOpenLinkImport) {
+                                Text("Import Link")
+                            }
                         }
                     }
                 }

@@ -40,6 +40,8 @@ class LogInViewModel(
                 }.let {
                     if (it["sp_dc"].isNullOrEmpty()) Logger.w("Auth", "Spotify: sign-in finished without an sp_dc cookie")
                     dataStoreManager.setSpdc(it["sp_dc"] ?: "")
+                    dataStoreManager.setSpotifyPersonalToken("")
+                    dataStoreManager.setSpotifyPersonalTokenExpires(0L)
                     _spotifyStatus.value = true
                 }
         }

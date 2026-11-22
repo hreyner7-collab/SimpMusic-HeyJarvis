@@ -21,6 +21,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -37,38 +40,90 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Locale
 import java.util.zip.ZipInputStream
-import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.DataLine
 import javax.sound.sampled.Mixer
 import javax.sound.sampled.TargetDataLine
 import kotlin.math.abs
-import kotlin.math.tanh
 
 /** Desktop "Hey Jarvis": always-on dual-stage offline wake word + command recognition. */
 object DesktopJarvis {
     private const val SAMPLE_RATE = 16_000
     private const val CHUNK_BYTES = 1280 // 40ms chunks at 16kHz 16-bit mono
     private const val CHUNK_SAMPLES = CHUNK_BYTES / 2
-    private const val RING_SECONDS = 6
+    private const val RING_SECONDS = 12
     private const val RING_CAPACITY = SAMPLE_RATE * RING_SECONDS
     private const val DUCK_VOLUME = 0.15f
-    private const val SILENCE_TAIL_CHUNKS = 8 // ~320ms quiet tail before finalizing utterance
-    private const val END_OF_SPEECH_SILENCE_MS = 380L // responsive end-of-speech gate for instant partials
+    private const val SILENCE_TAIL_CHUNKS = 15 // ~600ms quiet tail before finalizing Stage 2 utterance
+    private const val END_OF_SPEECH_SILENCE_MS = 520L // responsive end-of-speech gate for instant partials
     private const val MAX_STAGE2_ARMED_MS = 10_000L // allow up to 10s of continuous speech before forced decode
+    private const val IDLE_SILENCE_GATE_CHUNKS = 40 // ~1.6s quiet before parking Stage 1 with pre-roll
+    private const val PRE_ROLL_COUNT = 12 // ~480ms audio pre-roll so "Hey" is never clipped
     private const val INJECT_SILENCE_CHUNKS = 65 // ~2.6s trailing silence for deterministic injection
+    private const val DEAD_MIC_ZERO_MS = 20_000L
+    private const val DEAD_MIC_REOPEN_COOLDOWN_MS = 60_000L
+
+    private data class CaptureDeviceEntry(
+        val name: String,
+        val mixer: Mixer.Info,
+    )
+
+    private data class OpenedMic(
+        val line: TargetDataLine,
+        val name: String,
+        val format: MicCaptureFormat,
+    )
 
     val running = MutableStateFlow(false)
     @Volatile private var stopFlag = false
     @Volatile var onMemoryTrimRequested: ((String) -> Unit)? = null
     private var thread: Thread? = null
 
+    private val initialConfig = JarvisConfigStore.load()
+    @Volatile private var preferredMicName: String = initialConfig.preferredMicName
+    @Volatile private var currentSensitivity: JarvisSensitivity = initialConfig.sensitivity
+    @Volatile private var wakeChimeEnabled: Boolean = initialConfig.wakeChimeEnabled
+
+    @Volatile private var pendingMicReload = false
+    @Volatile private var pendingParakeetReload = false
+    @Volatile private var pendingManualWake = false
+
+    private val _diagnostics = MutableStateFlow(
+        JarvisDiagnostics(
+            preferredMicName = initialConfig.preferredMicName,
+            sensitivity = initialConfig.sensitivity,
+            wakeChimeEnabled = initialConfig.wakeChimeEnabled,
+            parakeetStatus = ParakeetModelManager.status.value,
+        ),
+    )
+    val diagnostics: StateFlow<JarvisDiagnostics> = _diagnostics.asStateFlow()
+
+    private val statusSyncScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    init {
+        statusSyncScope.launch {
+            ParakeetModelManager.status.collect { modelStatus ->
+                _diagnostics.update { it.copy(parakeetStatus = modelStatus) }
+            }
+        }
+    }
+
     private val unkRegex = Regex("\\[unk]", RegexOption.IGNORE_CASE)
     private val multiSpaceRegex = Regex("\\s+")
     private val stage2PunctRegex = Regex("[,.;:!?\"()\\[\\]]+")
     private val strictPartialWakeRegex =
         Regex(
-            "^(?:hey|hay|hi|hello|yo)[\\s,]+(?:jarvis|javis|jarvus|jervis|harvis)\\b",
+            "^(?:hey|hay|hi|hello|yo|okay|ok)[\\s,]+(?:jarvis|javis|jarvus|jervis|harvis)\\b",
+            RegexOption.IGNORE_CASE,
+        )
+    private val embeddedWakePrefixRegex =
+        Regex(
+            "\\b(?:hey|hay|hi|hello|yo|okay|ok)[\\s,]+(?:jarvis|javis|jarvus|jervis|harvis)\\b",
+            RegexOption.IGNORE_CASE,
+        )
+    private val quotedWakeGuardRegex =
+        Regex(
+            "\\b(?:said|says|say|told|tell|asked|ask|called|call|heard|hear|mean|means|wrote|write)\\b",
             RegexOption.IGNORE_CASE,
         )
     private val wakePeekRegex =
@@ -87,10 +142,11 @@ object DesktopJarvis {
         stopFlag = false
         remember(true)
         running.value = true
+        refreshDevices()
         thread =
             Thread({ supervise() }, "hey-jarvis").apply {
                 isDaemon = true
-                priority = Thread.MIN_PRIORITY
+                priority = Thread.NORM_PRIORITY
                 start()
             }
     }
@@ -101,12 +157,91 @@ object DesktopJarvis {
         thread?.interrupt()
         thread = null
         running.value = false
+        _diagnostics.update {
+            it.copy(
+                activeMicName = "Stopped",
+                engineLabel = "Off",
+                micLevel = 0f,
+                speechActive = false,
+            )
+        }
     }
 
     /** Brings the microphone back up on launch when the user left it on last time. */
     fun restoreIfEnabled() {
         // Always-on by default: only stay off when the user explicitly turned it off.
         if (!File(flagFile().parentFile, "jarvis.disabled").exists()) start()
+    }
+
+    fun refreshDevices() {
+        val devices = enumerateCaptureDevices().map { it.name }
+        _diagnostics.update { it.copy(availableMics = devices) }
+    }
+
+    fun setPreferredMic(micName: String) {
+        val cleaned = micName.trim()
+        preferredMicName = cleaned
+        saveCurrentConfig()
+        _diagnostics.update { it.copy(preferredMicName = cleaned) }
+        pendingMicReload = true
+    }
+
+    fun setSensitivity(sensitivity: JarvisSensitivity) {
+        currentSensitivity = sensitivity
+        saveCurrentConfig()
+        _diagnostics.update { it.copy(sensitivity = sensitivity) }
+    }
+
+    fun setWakeChimeEnabled(enabled: Boolean) {
+        wakeChimeEnabled = enabled
+        saveCurrentConfig()
+        _diagnostics.update { it.copy(wakeChimeEnabled = enabled) }
+    }
+
+    fun downloadHighAccuracyModel() {
+        ParakeetModelManager.ensureDownloadedAsync(
+            onLog = ::logLine,
+            onReady = { pendingParakeetReload = true },
+        )
+    }
+
+    fun triggerManualWake() {
+        pendingManualWake = true
+        if (!running.value) {
+            start()
+        }
+    }
+
+    fun onLowRamChanged(lowRam: Boolean) {
+        ParakeetModelManager.refreshStatus()
+        pendingParakeetReload = true
+        if (!lowRam && !ParakeetModelManager.isModelReady() && running.value) {
+            downloadHighAccuracyModel()
+        }
+    }
+
+    private fun saveCurrentConfig() {
+        JarvisConfigStore.save(
+            JarvisPersistedSettings(
+                preferredMicName = preferredMicName,
+                sensitivity = currentSensitivity,
+                wakeChimeEnabled = wakeChimeEnabled,
+            ),
+        )
+    }
+
+    internal fun stripLeadingStage1Noise(cleanText: String): String {
+        val trimmed = cleanText.trim()
+        if (trimmed.isEmpty()) return trimmed
+        if (strictPartialWakeRegex.containsMatchIn(trimmed)) return trimmed
+        val match = embeddedWakePrefixRegex.find(trimmed) ?: return trimmed
+        val prefix = trimmed.substring(0, match.range.first).trim()
+        if (prefix.isEmpty()) return trimmed
+        val prefixWords = prefix.split(multiSpaceRegex).filter { it.isNotEmpty() }
+        if (prefixWords.size <= 2 && !quotedWakeGuardRegex.containsMatchIn(prefix)) {
+            return trimmed.substring(match.range.first).trim()
+        }
+        return trimmed
     }
 
     /** Keeps the wake-word loop alive: retries after mic/model errors (device unplugged, driver reset, ...). */
@@ -239,42 +374,76 @@ object DesktopJarvis {
                 Recognizer(voskModel, SAMPLE_RATE.toFloat())
             }
 
+            ParakeetModelManager.refreshStatus()
             parakeet = loadParakeetRecognizer()
             if (parakeet == null) {
                 logLine("parakeet unavailable; initializing secondary vosk fallback recognizer")
                 fallbackRecognizer = Recognizer(voskModel, SAMPLE_RATE.toFloat())
+                if (!com.maxrave.simpmusic.utils.isJarvisLowRamEnabled() && !ParakeetModelManager.isModelReady()) {
+                    downloadHighAccuracyModel()
+                }
             }
 
-            val format = AudioFormat(SAMPLE_RATE.toFloat(), 16, 1, true, false)
-            line = openBestMic(format)
+            fun engineDescription(): String =
+                when {
+                    parakeet != null -> "Vosk + Parakeet-110M"
+                    com.maxrave.simpmusic.utils.isJarvisLowRamEnabled() -> "Vosk (Low-RAM)"
+                    else -> "Vosk (Fallback)"
+                }
+
+            var openedMic = openBestMic(preferredMicName)
+            line = openedMic.line
+            var captureFormat = openedMic.format
+            var resampler = PcmResampler(captureFormat.sampleRate, captureFormat.channels, SAMPLE_RATE)
+
+            _diagnostics.update {
+                it.copy(
+                    activeMicName = "${openedMic.name} (${captureFormat.displayLabel()})",
+                    engineLabel = engineDescription(),
+                    parakeetStatus = ParakeetModelManager.status.value,
+                )
+            }
+
             onMemoryTrimRequested?.invoke("models-ready")
             JarvisStatus.set(JarvisPhase.Listening)
-            logLine("listening (model ready)")
+            logLine("listening (model ready, engine=${engineDescription()})")
 
-            val processor = PcmAudioProcessor()
+            val processor = AdaptivePcmProcessor(AdaptiveSpeechVad.paramsFor(currentSensitivity).maxAgcGain)
+            val vad = AdaptiveSpeechVad(currentSensitivity)
             val ringBuffer = FloatRingBuffer(RING_CAPACITY)
-            val chunkFloats = FloatArray(CHUNK_SAMPLES)
+            val chunkFloats = FloatArray(CHUNK_SAMPLES * 2)
 
             var ringConsumedSample = 0L
             var idleSafeStartSample = 0L
             var utteranceStartSample = 0L
             var idleSilentChunks = 0
-            var noiseFloor = 200f
-            val preRollCount = 8
-            val preRollBuffers = Array(preRollCount) { ByteArray(CHUNK_BYTES) }
-            val preRollLengths = IntArray(preRollCount)
+            val preRollBuffers = Array(PRE_ROLL_COUNT) { ByteArray(CHUNK_BYTES) }
+            val preRollLengths = IntArray(PRE_ROLL_COUNT)
             var preRollWriteIdx = 0
             var preRollFilled = 0
 
             var stage2Armed = false
             var stage2ArmedAtMs = 0L
             var stage2SilentChunks = 0
+            var stage2UtterancePeak = 0
             var lastSpeechAtMs = 0L
             var lastPartialChangedAtMs = 0L
             var resultUntil = 0L
             var lastPartial = ""
             var peak = 0
             var peakSince = System.currentTimeMillis()
+            var smoothedMeter = 0f
+            var lastMeterEmitMs = 0L
+            var lastNonZeroPcmAtMs = System.currentTimeMillis()
+            var lastDeadMicReopenAtMs = 0L
+
+            fun enterAwakeState(preview: String = "") {
+                duckMusic()
+                if (wakeChimeEnabled) {
+                    JarvisWakeChime.playWake()
+                }
+                JarvisStatus.set(JarvisPhase.Awake, preview)
+            }
 
             fun executeCommand(command: JerryCommand): Long {
                 logLine("command: $command")
@@ -301,6 +470,7 @@ object DesktopJarvis {
                 lastPartial = ""
                 stage2Armed = false
                 stage2SilentChunks = 0
+                stage2UtterancePeak = 0
                 idleSilentChunks = 0
                 preRollFilled = 0
                 preRollWriteIdx = 0
@@ -313,6 +483,7 @@ object DesktopJarvis {
             fun runStage2Decode(now: Long) {
                 stage2Armed = false
                 stage2SilentChunks = 0
+                stage2UtterancePeak = 0
                 val startSample = maxOf(ringConsumedSample, utteranceStartSample)
                 val audio = ringBuffer.extractSince(startSample)
                 ringConsumedSample = ringBuffer.totalWritten
@@ -360,15 +531,28 @@ object DesktopJarvis {
 
                 val normalized = normalizeStage2Text(rawDecoded)
                 logLine("stage2 ($engineUsed, ${audio.size} samples): \"$normalized\"")
+                if (normalized.isNotBlank()) {
+                    _diagnostics.update { it.copy(lastHeard = normalized) }
+                }
                 if (normalized.isBlank()) {
                     if (activeParakeet != null) onMemoryTrimRequested?.invoke("stage2-empty")
+                    if (!session.awaitingCommand) {
+                        restoreDuck()
+                        if (JarvisStatus.state.value.phase == JarvisPhase.Awake) {
+                            JarvisStatus.set(JarvisPhase.Listening)
+                        }
+                        stage1Recognizer.reset()
+                        lastPartial = ""
+                    }
                     return
                 }
                 val command = session.acceptFinal(normalized, now)
                 if (command != null) {
                     val until = executeCommand(command)
                     resetAfterCommand(until)
-                    if (line.available() > CHUNK_BYTES * 4) line.flush()
+                    line?.let { activeLine ->
+                        if (activeLine.available() > captureFormat.chunkBytesFor40Ms() * 4) activeLine.flush()
+                    }
                 } else {
                     if (activeParakeet != null) onMemoryTrimRequested?.invoke("stage2-nocmd")
                     if (!session.awaitingCommand) {
@@ -382,55 +566,70 @@ object DesktopJarvis {
                 }
             }
 
-            /** Single shared PCM processing pipeline for both live mic and deterministic audio injection. */
+            /** Single shared PCM processing pipeline for both live mic (resampled to 16 kHz mono) and deterministic injection. */
             fun processPcmChunk(pcmBytes: ByteArray, byteCount: Int, now: Long) {
                 if (byteCount < 2) return
-                val sampleCount = byteCount / 2
-                val chunkPeak = processor.process(pcmBytes, byteCount, chunkFloats)
+                val sens = currentSensitivity
+                if (vad.sensitivity != sens) {
+                    vad.sensitivity = sens
+                }
+                processor.maxGain = vad.currentParams().maxAgcGain
+
+                val sampleCount = minOf(byteCount / 2, chunkFloats.size)
+                val rawPeakEstimate = peakOf(pcmBytes, sampleCount * 2)
+                if (rawPeakEstimate > 0) {
+                    lastNonZeroPcmAtMs = now
+                }
+                val likelySignal = rawPeakEstimate >= vad.currentParams().minPeak && rawPeakEstimate >= vad.noisePeak * 1.6f
+                val stats = processor.process(pcmBytes, sampleCount * 2, chunkFloats, likelySignal)
                 ringBuffer.write(chunkFloats, sampleCount)
 
-                peak = maxOf(peak, chunkPeak)
+                peak = maxOf(peak, stats.rawPeak)
                 if (now - peakSince > 10_000) {
-                    logLine("mic level peak=$peak (of 32767) over last 10s")
+                    logLine(
+                        "mic level peak=$peak (of 32767) floor=${vad.noisePeak.toInt()} gain=${"%.1f".format(Locale.ROOT, stats.appliedGain)}x",
+                    )
                     peak = 0
                     peakSince = now
                 }
 
-                val speechThreshold = maxOf(900f, noiseFloor * 3.0f)
-                val isSpeech = chunkPeak.toFloat() >= speechThreshold
+                val allowNoiseUpdate = !session.awaitingCommand && !stage2Armed
+                val isSpeech = vad.evaluate(stats.rawPeak, stats.rawRms, allowNoiseUpdate)
                 if (isSpeech) {
                     lastSpeechAtMs = now
                 }
-                if (!session.awaitingCommand && !stage2Armed) {
-                    noiseFloor = if (chunkPeak < noiseFloor) {
-                        noiseFloor * 0.90f + chunkPeak * 0.10f
-                    } else if (!isSpeech) {
-                        minOf(2500f, noiseFloor * 0.99f + chunkPeak * 0.01f)
-                    } else {
-                        noiseFloor
-                    }
+
+                // Smooth meter value for the Settings UI
+                val targetMeter = ((stats.rawPeak.toFloat() * stats.appliedGain) / 14_000f).coerceIn(0f, 1f)
+                smoothedMeter = if (targetMeter > smoothedMeter) targetMeter else smoothedMeter * 0.78f + targetMeter * 0.22f
+                if (now - lastMeterEmitMs >= 90L) {
+                    lastMeterEmitMs = now
+                    _diagnostics.update { it.copy(micLevel = smoothedMeter, speechActive = isSpeech) }
+                }
+
+                if (allowNoiseUpdate) {
                     if (!isSpeech) {
                         idleSilentChunks++
-                        if (idleSilentChunks >= 10) {
-                            idleSafeStartSample = maxOf(ringConsumedSample, ringBuffer.totalWritten - 4_000L)
+                        if (idleSilentChunks >= 12) {
+                            idleSafeStartSample = maxOf(ringConsumedSample, ringBuffer.totalWritten - 5_000L)
                         }
-                        if (idleSilentChunks == 25) {
+                        if (idleSilentChunks == IDLE_SILENCE_GATE_CHUNKS) {
                             stage1Recognizer.reset()
                             lastPartial = ""
                         }
-                        if (idleSilentChunks >= 25) {
-                            val copyLen = minOf(byteCount, CHUNK_BYTES)
+                        if (idleSilentChunks >= IDLE_SILENCE_GATE_CHUNKS) {
+                            val copyLen = minOf(sampleCount * 2, CHUNK_BYTES)
                             System.arraycopy(pcmBytes, 0, preRollBuffers[preRollWriteIdx], 0, copyLen)
                             preRollLengths[preRollWriteIdx] = copyLen
-                            preRollWriteIdx = (preRollWriteIdx + 1) % preRollCount
-                            if (preRollFilled < preRollCount) preRollFilled++
+                            preRollWriteIdx = (preRollWriteIdx + 1) % PRE_ROLL_COUNT
+                            if (preRollFilled < PRE_ROLL_COUNT) preRollFilled++
                             return
                         }
                     } else {
-                        if (idleSilentChunks >= 25 && preRollFilled > 0) {
-                            val startIdx = (preRollWriteIdx - preRollFilled + preRollCount) % preRollCount
+                        if (idleSilentChunks >= IDLE_SILENCE_GATE_CHUNKS && preRollFilled > 0) {
+                            val startIdx = (preRollWriteIdx - preRollFilled + PRE_ROLL_COUNT) % PRE_ROLL_COUNT
                             for (i in 0 until preRollFilled) {
-                                val idx = (startIdx + i) % preRollCount
+                                val idx = (startIdx + i) % PRE_ROLL_COUNT
                                 stage1Recognizer.acceptWaveForm(preRollBuffers[idx], preRollLengths[idx])
                             }
                             preRollFilled = 0
@@ -440,14 +639,39 @@ object DesktopJarvis {
                     }
                 }
 
-                val accepted = stage1Recognizer.acceptWaveForm(pcmBytes, byteCount)
+                val accepted = stage1Recognizer.acceptWaveForm(pcmBytes, sampleCount * 2)
                 if (stage2Armed) {
+                    stage2UtterancePeak = maxOf(stage2UtterancePeak, stats.rawPeak)
                     if (accepted) {
                         val trailing = text(stage1Recognizer.result)
-                        if (trailing.isNotBlank()) logLine("stage1 trailing: $trailing")
+                        if (trailing.isNotBlank()) {
+                            logLine("stage1 trailing: $trailing")
+                            lastPartialChangedAtMs = now
+                        }
+                    } else {
+                        val partial = partial(stage1Recognizer.partialResult)
+                        if (partial != lastPartial) {
+                            lastPartial = partial
+                            lastPartialChangedAtMs = now
+                            val cleanPreview = stripUnkAndCollapse(partial)
+                            if (cleanPreview.isNotBlank() && JarvisStatus.state.value.phase == JarvisPhase.Awake) {
+                                val afterWake = extractCommandCandidate(cleanPreview, session.awaitingCommand)
+                                val displayText = afterWake?.takeIf { it.isNotBlank() } ?: cleanPreview
+                                JarvisStatus.set(JarvisPhase.Awake, displayText)
+                            }
+                        }
                     }
-                    if (!isSpeech) stage2SilentChunks++ else stage2SilentChunks = 0
-                    if (stage2SilentChunks >= SILENCE_TAIL_CHUNKS || now - stage2ArmedAtMs >= MAX_STAGE2_ARMED_MS) {
+                    val dropQuiet = !isSpeech ||
+                        (stage2UtterancePeak > 900 && stats.rawPeak < (stage2UtterancePeak * 0.22f).toInt())
+                    if (dropQuiet) stage2SilentChunks++ else stage2SilentChunks = 0
+                    val partialStaleTimeout =
+                        now - stage2ArmedAtMs >= 1_500L &&
+                            lastPartialChangedAtMs > 0L &&
+                            now - lastPartialChangedAtMs >= 2_200L
+                    if (stage2SilentChunks >= SILENCE_TAIL_CHUNKS ||
+                        now - stage2ArmedAtMs >= MAX_STAGE2_ARMED_MS ||
+                        partialStaleTimeout
+                    ) {
                         runStage2Decode(now)
                     }
                     return
@@ -457,13 +681,16 @@ object DesktopJarvis {
                     val rawStage1 = text(stage1Recognizer.result)
                     if (rawStage1.isNotBlank()) logLine("stage1 final: $rawStage1")
                     val hasUnk = rawStage1.contains("[unk]", ignoreCase = true)
-                    val cleanStage1 = stripUnkAndCollapse(rawStage1)
+                    val cleanStage1 = stripLeadingStage1Noise(stripUnkAndCollapse(rawStage1))
+                    if (cleanStage1.isNotBlank() && !session.awaitingCommand) {
+                        _diagnostics.update { it.copy(lastHeard = cleanStage1) }
+                    }
                     val candidate = extractCommandCandidate(cleanStage1, session.awaitingCommand)
 
                     when {
                         candidate == null -> {
                             if (!session.awaitingCommand) {
-                                idleSafeStartSample = maxOf(ringConsumedSample, ringBuffer.totalWritten - 4_000L)
+                                idleSafeStartSample = maxOf(ringConsumedSample, ringBuffer.totalWritten - 5_000L)
                             }
                         }
                         candidate.isEmpty() -> {
@@ -475,8 +702,7 @@ object DesktopJarvis {
                                     } else {
                                         ringBuffer.totalWritten
                                     }
-                                duckMusic()
-                                JarvisStatus.set(JarvisPhase.Awake)
+                                enterAwakeState()
                             } else if (!hasUnk) {
                                 utteranceStartSample = ringBuffer.totalWritten
                             }
@@ -484,6 +710,8 @@ object DesktopJarvis {
                                 stage2Armed = true
                                 stage2ArmedAtMs = now
                                 stage2SilentChunks = 0
+                                stage2UtterancePeak = stats.rawPeak
+                                lastPartialChangedAtMs = now
                             }
                         }
                         !hasUnk -> {
@@ -496,37 +724,41 @@ object DesktopJarvis {
                                 speechFinished
                             ) {
                                 if (session.observePartial(cleanStage1, now)) {
-                                    duckMusic()
-                                    JarvisStatus.set(JarvisPhase.Awake)
+                                    enterAwakeState(candidate)
                                 }
+                                _diagnostics.update { it.copy(lastHeard = cleanStage1) }
                                 val cmd = session.acceptFinal(cleanStage1, now) ?: parsed
                                 val until = executeCommand(cmd)
                                 resetAfterCommand(until)
-                                if (line.available() > CHUNK_BYTES * 4) line.flush()
+                                line?.let { activeLine ->
+                                    if (activeLine.available() > captureFormat.chunkBytesFor40Ms() * 4) activeLine.flush()
+                                }
                             } else {
                                 if (strictPartialWakeRegex.containsMatchIn(cleanStage1) && session.observePartial(cleanStage1, now)) {
                                     utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
-                                    duckMusic()
-                                    JarvisStatus.set(JarvisPhase.Awake)
+                                    enterAwakeState(candidate)
                                 } else if (!session.awaitingCommand) {
                                     utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
                                 }
                                 stage2Armed = true
                                 stage2ArmedAtMs = now
                                 stage2SilentChunks = 0
+                                stage2UtterancePeak = stats.rawPeak
+                                lastPartialChangedAtMs = now
                             }
                         }
                         else -> {
                             if (strictPartialWakeRegex.containsMatchIn(cleanStage1) && session.observePartial(cleanStage1, now)) {
                                 utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
-                                duckMusic()
-                                JarvisStatus.set(JarvisPhase.Awake)
+                                enterAwakeState(candidate)
                             } else if (!session.awaitingCommand) {
                                 utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
                             }
                             stage2Armed = true
                             stage2ArmedAtMs = now
                             stage2SilentChunks = 0
+                            stage2UtterancePeak = stats.rawPeak
+                            lastPartialChangedAtMs = now
                         }
                     }
                 } else {
@@ -539,31 +771,37 @@ object DesktopJarvis {
                         }
                     }
                     val partialHasUnk = partial.contains("[unk]", ignoreCase = true)
-                    val cleanPartial = stripUnkAndCollapse(partial)
+                    val cleanPartial = stripLeadingStage1Noise(stripUnkAndCollapse(partial))
                     val partialStableMs = now - lastPartialChangedAtMs
                     if (
                         !session.awaitingCommand &&
-                        partialStableMs >= 120L &&
+                        partialStableMs >= 100L &&
                         strictPartialWakeRegex.containsMatchIn(cleanPartial) &&
                         session.observePartial(cleanPartial, now)
                     ) {
                         utteranceStartSample = maxOf(ringConsumedSample, idleSafeStartSample)
-                        duckMusic()
-                        JarvisStatus.set(JarvisPhase.Awake)
+                        enterAwakeState()
                     }
-                    // Wait until end-of-speech (~850ms quiet after speaking + stable partial) so we never
-                    // guess or interrupt mid-sentence while the user is still talking.
+                    if (session.awaitingCommand && JarvisStatus.state.value.phase == JarvisPhase.Awake && cleanPartial.isNotBlank()) {
+                        val afterWake = extractCommandCandidate(cleanPartial, true)
+                        if (!afterWake.isNullOrBlank()) {
+                            JarvisStatus.set(JarvisPhase.Awake, afterWake)
+                        }
+                    }
                     val endOfSpeech =
                         lastSpeechAtMs > 0L &&
                             (now - lastSpeechAtMs >= END_OF_SPEECH_SILENCE_MS) &&
-                            (now - lastPartialChangedAtMs >= 240L)
+                            (now - lastPartialChangedAtMs >= 260L)
                     if (endOfSpeech && !partialHasUnk && !isAmbiguousBarePlayPartial(cleanPartial, session.awaitingCommand)) {
                         val instant = session.acceptInstantPartial(cleanPartial, now)
                         if (instant != null) {
                             logLine("instant: $instant")
+                            _diagnostics.update { it.copy(lastHeard = cleanPartial) }
                             val until = executeCommand(instant)
                             resetAfterCommand(until)
-                            if (line.available() > CHUNK_BYTES * 4) line.flush()
+                            line?.let { activeLine ->
+                                if (activeLine.available() > captureFormat.chunkBytesFor40Ms() * 4) activeLine.flush()
+                            }
                         }
                     }
                 }
@@ -591,8 +829,10 @@ object DesktopJarvis {
                 stage1Recognizer.reset()
                 lastPartial = ""
                 processor.reset()
+                vad.reset()
                 stage2Armed = false
                 stage2SilentChunks = 0
+                stage2UtterancePeak = 0
                 ringConsumedSample = ringBuffer.totalWritten
                 idleSafeStartSample = ringBuffer.totalWritten
                 utteranceStartSample = ringBuffer.totalWritten
@@ -614,18 +854,101 @@ object DesktopJarvis {
                     processPcmChunk(silenceBuf, CHUNK_BYTES, System.currentTimeMillis())
                     if (i >= SILENCE_TAIL_CHUNKS && !stage2Armed && !session.awaitingCommand) break
                 }
-                if (line.available() > 0) line.flush()
+                line?.let { if (it.available() > 0) it.flush() }
             }
 
-            val buf = ByteArray(CHUNK_BYTES)
+            var rawBuf = ByteArray(captureFormat.chunkBytesFor40Ms())
+            val resampledBuf = ByteArray(CHUNK_BYTES * 2)
             var injectCheckCounter = 0
             while (!stopFlag) {
+                val loopNow = System.currentTimeMillis()
+                if (pendingMicReload) {
+                    pendingMicReload = false
+                    runCatching {
+                        line?.stop()
+                        line?.close()
+                        openedMic = openBestMic(preferredMicName)
+                        line = openedMic.line
+                        captureFormat = openedMic.format
+                        resampler = PcmResampler(captureFormat.sampleRate, captureFormat.channels, SAMPLE_RATE)
+                        rawBuf = ByteArray(captureFormat.chunkBytesFor40Ms())
+                        processor.reset()
+                        vad.reset()
+                        stage1Recognizer.reset()
+                        lastPartial = ""
+                        lastNonZeroPcmAtMs = System.currentTimeMillis()
+                        _diagnostics.update {
+                            it.copy(
+                                activeMicName = "${openedMic.name} (${captureFormat.displayLabel()})",
+                            )
+                        }
+                        logLine("switched mic -> \"${openedMic.name}\" (${captureFormat.displayLabel()})")
+                    }.onFailure { err ->
+                        logLine("mic switch failed: ${err.message}")
+                    }
+                }
+
+                if (pendingParakeetReload) {
+                    pendingParakeetReload = false
+                    val wantLowRam = com.maxrave.simpmusic.utils.isJarvisLowRamEnabled()
+                    val activeToRelease = parakeet
+                    if (wantLowRam && activeToRelease != null) {
+                        runCatching { activeToRelease.release() }
+                        parakeet = null
+                        if (fallbackRecognizer == null) {
+                            fallbackRecognizer = Recognizer(voskModel, SAMPLE_RATE.toFloat())
+                        }
+                    } else if (!wantLowRam && parakeet == null) {
+                        parakeet = loadParakeetRecognizer()
+                        if (parakeet != null) {
+                            fallbackRecognizer?.close()
+                            fallbackRecognizer = null
+                        }
+                    }
+                    _diagnostics.update { it.copy(engineLabel = engineDescription()) }
+                    logLine("voice engine updated -> ${engineDescription()}")
+                }
+
+                if (pendingManualWake) {
+                    pendingManualWake = false
+                    session.reset()
+                    if (session.observePartial("hey jarvis", loopNow)) {
+                        stage1Recognizer.reset()
+                        lastPartial = ""
+                        utteranceStartSample = ringBuffer.totalWritten
+                        enterAwakeState("Speak your command…")
+                    }
+                }
+
                 if ((injectCheckCounter++ and 15) == 0) {
                     feedInjectedAudioIfPresent()
                 }
-                val n = line.read(buf, 0, buf.size)
+                val activeLine = line ?: break
+                val n = activeLine.read(rawBuf, 0, rawBuf.size)
                 if (n <= 0) continue
-                processPcmChunk(buf, n, System.currentTimeMillis())
+
+                val readNow = System.currentTimeMillis()
+                val resampledBytes = resampler.resample(rawBuf, n, resampledBuf)
+                var off = 0
+                while (off + 1 < resampledBytes) {
+                    val step = minOf(CHUNK_BYTES, resampledBytes - off) and -2
+                    if (step <= 0) break
+                    val chunkSlice = ByteArray(step)
+                    System.arraycopy(resampledBuf, off, chunkSlice, 0, step)
+                    processPcmChunk(chunkSlice, step, readNow)
+                    off += step
+                }
+
+                if (
+                    preferredMicName.isBlank() &&
+                    readNow - lastNonZeroPcmAtMs >= DEAD_MIC_ZERO_MS &&
+                    readNow - lastDeadMicReopenAtMs >= DEAD_MIC_REOPEN_COOLDOWN_MS
+                ) {
+                    lastDeadMicReopenAtMs = readNow
+                    lastNonZeroPcmAtMs = readNow
+                    logLine("mic \"${openedMic.name}\" produced only 0 amplitude for ${DEAD_MIC_ZERO_MS / 1000}s; re-probing microphones")
+                    pendingMicReload = true
+                }
             }
             val finalText = stripUnkAndCollapse(text(stage1Recognizer.finalResult))
             if (finalText.isNotBlank()) {
@@ -698,12 +1021,12 @@ object DesktopJarvis {
             logLine("jarvis low-ram mode enabled; skipping parakeet recognizer")
             return null
         }
-        val dir = File(System.getProperty("user.home"), ".simpmusic/jerry-model/parakeet-110m-int8")
+        val dir = ParakeetModelManager.modelDir
         val encoder = File(dir, "encoder.int8.onnx")
         val decoder = File(dir, "decoder.int8.onnx")
         val joiner = File(dir, "joiner.int8.onnx")
         val tokens = File(dir, "tokens.txt")
-        if (!encoder.isFile || !decoder.isFile || !joiner.isFile || !tokens.isFile) {
+        if (!ParakeetModelManager.isModelReady()) {
             logLine("parakeet model files missing in ${dir.absolutePath}")
             return null
         }
@@ -798,66 +1121,112 @@ object DesktopJarvis {
             "voicemeeter" in lower
     }
 
-    /**
-     * Pins Realtek / hardware microphones first while skipping silent virtual inputs (such as
-     * ASUS Utility AI Noise-cancelling Input) unless no physical capture device can be opened.
-     */
-    private fun openBestMic(format: AudioFormat): TargetDataLine {
-        val info = DataLine.Info(TargetDataLine::class.java, format)
-        val mixers = AudioSystem.getMixerInfo().filter {
-            runCatching { AudioSystem.getMixer(it).isLineSupported(info) }.getOrDefault(false)
+    private fun hardwarePreferenceScore(name: String): Int {
+        val lower = name.lowercase(Locale.ROOT)
+        return when {
+            "headset" in lower || "usb" in lower || "fifine" in lower || "blue" in lower || "rode" in lower || "shure" in lower || "hyperx" in lower -> 0
+            "microphone array" in lower -> 1
+            "realtek" in lower -> 2
+            "primary sound" in lower -> 3
+            else -> 2
         }
-        logLine("capture devices: " + mixers.joinToString { it.name })
+    }
 
-        val physical = mixers.filter { !isVirtualMic(it.name) }
-        val realtek = physical.filter { "realtek" in it.name.lowercase(Locale.ROOT) }
-            .sortedBy { if ("microphone array" in it.name.lowercase(Locale.ROOT)) 0 else 1 }
-        val otherHardware = physical.filter {
-            val lower = it.name.lowercase(Locale.ROOT)
-            "realtek" !in lower && "primary sound" !in lower && "default" !in lower
+    private fun enumerateCaptureDevices(): List<CaptureDeviceEntry> {
+        val allMixers = AudioSystem.getMixerInfo()
+        val entries = mutableListOf<CaptureDeviceEntry>()
+        for (mixerInfo in allMixers) {
+            val mixer = runCatching { AudioSystem.getMixer(mixerInfo) }.getOrNull() ?: continue
+            val supportsAny = MicCaptureFormat.SUPPORTED_FORMATS.any { fmt ->
+                val info = DataLine.Info(TargetDataLine::class.java, fmt.toAudioFormat())
+                runCatching { mixer.isLineSupported(info) }.getOrDefault(false)
+            }
+            if (supportsAny && entries.none { it.name == mixerInfo.name }) {
+                entries.add(CaptureDeviceEntry(mixerInfo.name, mixerInfo))
+            }
         }
-        val primaryOrDefault = listOf<Mixer.Info?>(null) + physical.filter {
-            val lower = it.name.lowercase(Locale.ROOT)
-            "primary sound" in lower || "default" in lower
-        }
-        val virtualFallback = mixers.filter { isVirtualMic(it.name) }
+        return entries
+    }
 
-        val primaryCandidates: List<Mixer.Info?> = realtek + otherHardware + primaryOrDefault
-        var firstOpened: TargetDataLine? = null
-        var firstOpenedName = ""
+    private fun tryOpenAnyFormat(mixerInfo: Mixer.Info?): Triple<TargetDataLine, String, MicCaptureFormat>? {
+        val name = mixerInfo?.name ?: "System Default"
+        for (fmt in MicCaptureFormat.SUPPORTED_FORMATS) {
+            val audioFormat = fmt.toAudioFormat()
+            val info = DataLine.Info(TargetDataLine::class.java, audioFormat)
+            val line = runCatching {
+                val rawLine = if (mixerInfo == null) {
+                    AudioSystem.getLine(info)
+                } else {
+                    val m = AudioSystem.getMixer(mixerInfo)
+                    if (!m.isLineSupported(info)) return@runCatching null
+                    m.getLine(info)
+                }
+                rawLine as? TargetDataLine
+            }.getOrNull() ?: continue
+
+            val opened = runCatching {
+                val bufferBytes = fmt.chunkBytesFor40Ms() * 6
+                if (!runCatching { line.open(audioFormat, bufferBytes); true }.getOrDefault(false)) {
+                    line.open(audioFormat)
+                }
+                line.start()
+                true
+            }.getOrDefault(false)
+            if (opened) {
+                return Triple(line, name, fmt)
+            }
+            runCatching { line.close() }
+        }
+        return null
+    }
+
+    private fun openBestMic(preferredName: String): OpenedMic {
+        val devices = enumerateCaptureDevices()
+        val deviceNames = devices.map { it.name }
+        _diagnostics.update { it.copy(availableMics = deviceNames) }
+        logLine("capture devices: " + deviceNames.joinToString())
+
+        val preferredCandidate = preferredName.takeIf { it.isNotBlank() }?.let { pref ->
+            devices.firstOrNull { it.name.equals(pref, ignoreCase = true) }?.mixer
+        }
+
+        val physical = devices.filter { !isVirtualMic(it.name) }
+        val primarySound = physical.filter {
+            val l = it.name.lowercase(Locale.ROOT)
+            "primary sound" in l || "default" in l
+        }
+        val otherHardware = physical
+            .filterNot { it in primarySound }
+            .sortedBy { hardwarePreferenceScore(it.name) }
+        val virtualFallback = devices.filter { isVirtualMic(it.name) }.map { it.mixer }
+
+        val autoCandidates: List<Mixer.Info?> =
+            listOf<Mixer.Info?>(null) +
+                primarySound.map { it.mixer } +
+                otherHardware.map { it.mixer }
+
+        var firstOpened: OpenedMic? = null
         var firstOpenedPeak = 0
 
-        fun probeCandidates(candidates: List<Mixer.Info?>, minActivePeak: Int): TargetDataLine? {
+        fun probeCandidates(candidates: List<Mixer.Info?>, minActivePeak: Int): OpenedMic? {
             for (candidate in candidates) {
-                val l = runCatching {
-                    (if (candidate == null) AudioSystem.getLine(info) else AudioSystem.getMixer(candidate).getLine(info)) as TargetDataLine
-                }.getOrNull() ?: continue
-                val opened = runCatching {
-                    if (!runCatching { l.open(format, CHUNK_BYTES * 4); true }.getOrDefault(false)) {
-                        l.open(format)
-                    }
-                    l.start()
-                    true
-                }.getOrDefault(false)
-                if (!opened) { runCatching { l.close() }; continue }
-                val name = candidate?.name ?: "system default"
-                val buf = ByteArray(CHUNK_BYTES)
+                val (l, name, fmt) = tryOpenAnyFormat(candidate) ?: continue
+                val buf = ByteArray(fmt.chunkBytesFor40Ms())
                 var peak = 0
-                val end = System.currentTimeMillis() + 360
+                val end = System.currentTimeMillis() + 450
                 while (System.currentTimeMillis() < end) {
                     val n = l.read(buf, 0, buf.size)
                     if (n > 0) peak = maxOf(peak, peakOf(buf, n))
                     if (peak >= minActivePeak) break
                 }
-                logLine("mic \"$name\" peak=$peak")
+                logLine("mic \"$name\" (${fmt.displayLabel()}) peak=$peak")
                 if (peak >= minActivePeak) {
-                    firstOpened?.close()
-                    logLine("selected mic: \"$name\" (peak=$peak)")
-                    return l
+                    firstOpened?.line?.close()
+                    logLine("selected mic: \"$name\" (${fmt.displayLabel()}, peak=$peak)")
+                    return OpenedMic(l, name, fmt)
                 }
                 if (firstOpened == null) {
-                    firstOpened = l
-                    firstOpenedName = name
+                    firstOpened = OpenedMic(l, name, fmt)
                     firstOpenedPeak = peak
                 } else {
                     l.close()
@@ -866,10 +1235,18 @@ object DesktopJarvis {
             return null
         }
 
-        probeCandidates(primaryCandidates, minActivePeak = 10)?.let { return it }
+        if (preferredCandidate != null) {
+            tryOpenAnyFormat(preferredCandidate)?.let { (l, name, fmt) ->
+                logLine("selected user mic: \"$name\" (${fmt.displayLabel()})")
+                return OpenedMic(l, name, fmt)
+            }
+            logLine("WARNING: preferred mic \"$preferredName\" could not be opened; falling back to auto")
+        }
+
+        probeCandidates(autoCandidates, minActivePeak = 3)?.let { return it }
         firstOpened?.let { opened ->
-            logLine("WARNING: primary capture devices are quiet; using \"$firstOpenedName\" (peak=$firstOpenedPeak)")
-            logLine("selected mic: \"$firstOpenedName\" (peak=$firstOpenedPeak)")
+            logLine("WARNING: primary capture devices are quiet; using \"${opened.name}\" (${opened.format.displayLabel()}, peak=$firstOpenedPeak)")
+            logLine("selected mic: \"${opened.name}\" (${opened.format.displayLabel()}, peak=$firstOpenedPeak)")
             return opened
         }
         probeCandidates(virtualFallback, minActivePeak = 20)?.let { return it }
@@ -920,64 +1297,6 @@ object DesktopJarvis {
             }
         }
         return dir
-    }
-
-    /** 80 Hz 1st-order RC high-pass filter + adaptive soft 2x gain boost for 16 kHz 16-bit mono PCM. */
-    private class PcmAudioProcessor {
-        private var prevX = 0f
-        private var prevY = 0f
-        private var adaptiveGain = 1.0f
-
-        // alpha = 1 / (1 + 2 * pi * 80 / 16000)
-        private val hpAlpha = 0.96953125f
-
-        fun reset() {
-            prevX = 0f
-            prevY = 0f
-            adaptiveGain = 1.0f
-        }
-
-        fun process(pcmBytes: ByteArray, byteCount: Int, floatOut: FloatArray): Int {
-            val sampleCount = minOf(byteCount / 2, floatOut.size)
-            var hpPeakNorm = 0f
-            for (i in 0 until sampleCount) {
-                val lo = pcmBytes[2 * i].toInt() and 0xff
-                val hi = pcmBytes[2 * i + 1].toInt()
-                val s = ((hi shl 8) or lo).toShort().toFloat() / 32768f
-                val y = hpAlpha * (prevY + s - prevX)
-                prevX = s
-                prevY = y
-                floatOut[i] = y
-                val absY = abs(y)
-                if (absY > hpPeakNorm) hpPeakNorm = absY
-            }
-            val rawPeak = (hpPeakNorm * 32767f).toInt().coerceIn(0, 32767)
-
-            val desiredGain = (0.75f / maxOf(hpPeakNorm, 0.01f)).coerceIn(1.0f, 2.0f)
-            adaptiveGain = if (desiredGain < adaptiveGain) {
-                desiredGain
-            } else {
-                adaptiveGain * 0.85f + desiredGain * 0.15f
-            }
-
-            val gain = adaptiveGain
-            for (i in 0 until sampleCount) {
-                val boosted = softLimit(floatOut[i] * gain)
-                floatOut[i] = boosted
-                val quantized = (boosted * 32767f).toInt().coerceIn(-32768, 32767)
-                pcmBytes[2 * i] = (quantized and 0xff).toByte()
-                pcmBytes[2 * i + 1] = ((quantized ushr 8) and 0xff).toByte()
-            }
-            return rawPeak
-        }
-
-        private fun softLimit(x: Float): Float {
-            val ax = abs(x)
-            if (ax <= 0.85f) return x
-            val excess = (ax - 0.85f) / 0.15f
-            val limited = 0.85f + 0.15f * tanh(excess.toDouble()).toFloat()
-            return if (x < 0f) -limited else limited
-        }
     }
 
     /** Rolling 16 kHz mono FloatArray ring buffer backing Stage 2 offline transcription. */

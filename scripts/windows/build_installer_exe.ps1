@@ -1,7 +1,7 @@
 param(
     [string]$AppDir = "C:\Users\henry\Downloads\SimpMusic\desktopApp\build\compose\binaries\main\app\SimpMusic",
     [string]$IconPath = "C:\Users\henry\Downloads\SimpMusic\composeApp\icon\circle_app_icon.ico",
-    [string]$Version = "2.6.11",
+    [string]$Version = "2.6.12",
     [string]$OutputExe = "C:\Users\henry\Downloads\SimpMusic-HeyJarvis-Setup.exe"
 )
 

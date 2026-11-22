@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -54,7 +55,8 @@ fun JarvisIndicator(modifier: Modifier = Modifier) {
                 .size(44.dp)
                 .clip(CircleShape)
                 .background(Color(0xE61C1C1E))
-                .border(1.5.dp, Brush.sweepGradient(colors), CircleShape),
+                .border(1.5.dp, Brush.sweepGradient(colors), CircleShape)
+                .clickable { JarvisController.triggerManualWake() },
             contentAlignment = Alignment.Center,
         ) {
             Canvas(modifier = Modifier.size(24.dp)) {
@@ -95,7 +97,7 @@ fun JarvisIndicator(modifier: Modifier = Modifier) {
 
     val (label, color) = when (state.phase) {
         JarvisPhase.Listening -> "Listening for “Hey Jarvis”" to Color(0xFF8E8E93)
-        JarvisPhase.Awake -> "Listening…" to Color(0xFF30D158)
+        JarvisPhase.Awake -> state.message.ifBlank { "Listening…" } to Color(0xFF30D158)
         JarvisPhase.Thinking -> "Thinking…" to Color(0xFF64D2FF)
         JarvisPhase.Result -> state.message to Color(0xFF30D158)
         JarvisPhase.Error -> state.message to Color(0xFFFF453A)

@@ -247,7 +247,7 @@ fun LibraryScreen(
 
             LibraryChipType.SPOTIFY_PLAYLIST -> {
                 if (spotifyConnected) {
-                    viewModel.loadSpotifyLibrary()
+                    viewModel.loadSpotifyLibrary(forceRefresh = false)
                 }
             }
         }
@@ -456,7 +456,7 @@ fun LibraryScreen(
                     contentPadding = innerPadding.copy(top = topAppBarHeight),
                     onConnectSpotify = { navController.navigate(SpotifyLoginDestination) },
                     onOpenLinkImport = { showImportLinkDialog = true },
-                    onRefresh = viewModel::loadSpotifyLibrary,
+                    onRefresh = { viewModel.loadSpotifyLibrary(forceRefresh = true) },
                     onSyncAll = viewModel::syncAllSpotifyLibrary,
                     onSyncItem = viewModel::importSpotifyItem,
                     onOpenLocalPlaylist = { id -> navController.navigate(LocalPlaylistDestination(id)) },

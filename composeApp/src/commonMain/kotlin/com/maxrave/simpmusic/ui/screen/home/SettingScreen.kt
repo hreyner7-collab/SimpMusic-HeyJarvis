@@ -4,6 +4,8 @@ import com.maxrave.simpmusic.expect.AppUpdateState
 import com.maxrave.simpmusic.expect.AppUpdater
 import com.maxrave.simpmusic.expect.ui.JerrySettingsSheet
 import com.maxrave.simpmusic.jerry.JarvisController
+import com.maxrave.simpmusic.jerry.JarvisSensitivity
+import com.maxrave.simpmusic.jerry.ParakeetModelStatus
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -1683,28 +1685,166 @@ fun SettingScreen(
                     }
                     SettingItem(
                         title = "Hey Jarvis Low-RAM Mode",
-                        subtitle = "Skip Parakeet (~250 MB RAM) and use lightweight Vosk only (restart Jarvis to apply)",
+                        subtitle = "Skip Parakeet (~250 MB RAM) and use lightweight Vosk only",
                         smallSubtitle = true,
                         switch = (
                             jarvisLowRam to { enabled ->
                                 setJarvisLowRamEnabled(enabled)
                                 jarvisLowRam = isJarvisLowRamEnabled()
+                                JarvisController.onLowRamChanged(enabled)
                             }
                         ),
                     )
                 }
             }
         }
-        item(key = "playback") {
-            SettingGroup(title = stringResource(Res.string.playback)) {
-                AnimatedVisibility(visible = getPlatform() != Platform.Android) {
-                    val jarvisRunning by JarvisController.running.collectAsStateWithLifecycle()
+        if (getPlatform() != Platform.Android) {
+            item(key = "hey_jarvis") {
+                val jarvisRunning by JarvisController.running.collectAsStateWithLifecycle()
+                val jarvisDiag by JarvisController.diagnostics.collectAsStateWithLifecycle()
+                LaunchedEffect(Unit) {
+                    JarvisController.refreshDevices()
+                }
+                SettingGroup(title = "Hey Jarvis Voice Assistant") {
                     SettingItem(
                         title = "Hey Jarvis",
-                        subtitle = "Offline voice control while the app runs",
+                        subtitle =
+                            if (jarvisRunning) {
+                                "${jarvisDiag.activeMicName} · ${jarvisDiag.engineLabel}"
+                            } else {
+                                "Offline voice control while the app runs"
+                            },
+                        smallSubtitle = true,
                         switch = (jarvisRunning to { on: Boolean -> if (on) JarvisController.start() else JarvisController.stop() }),
+                        otherView =
+                            if (jarvisRunning) {
+                                {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Text(
+                                                text = if (jarvisDiag.speechActive) "Voice detected" else "Mic level",
+                                                style = typo().bodySmall,
+                                                color =
+                                                    if (jarvisDiag.speechActive) {
+                                                        MaterialTheme.colorScheme.primary
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    },
+                                            )
+                                            if (jarvisDiag.lastHeard.isNotBlank()) {
+                                                Text(
+                                                    text = "Last: \"${jarvisDiag.lastHeard}\"",
+                                                    style = typo().bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                        LinearProgressIndicator(
+                                            progress = { jarvisDiag.micLevel.coerceIn(0f, 1f) },
+                                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            TextButton(onClick = { JarvisController.triggerManualWake() }) {
+                                                Text("Test / Speak Now")
+                                            }
+                                            TextButton(onClick = { JarvisController.refreshDevices() }) {
+                                                Text("Refresh Mics")
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                null
+                            },
+                    )
+                    val currentMicLabel = jarvisDiag.preferredMicName.ifBlank { "Auto (System Default)" }
+                    SettingItem(
+                        title = "Microphone",
+                        subtitle = "$currentMicLabel · Active: ${jarvisDiag.activeMicName}",
+                        smallSubtitle = true,
+                        onClick = {
+                            JarvisController.refreshDevices()
+                            val latestMics = JarvisController.diagnostics.value.availableMics
+                            val options = listOf("Auto (System Default)") + latestMics
+                            viewModel.setAlertData(
+                                SettingAlertState(
+                                    title = "Hey Jarvis Microphone",
+                                    selectOne =
+                                        SettingAlertState.SelectData(
+                                            listSelect = options.map { (it == currentMicLabel) to it },
+                                        ),
+                                    confirm =
+                                        runBlocking { getString(Res.string.change) } to { state ->
+                                            val chosen = state.selectOne?.getSelected() ?: "Auto (System Default)"
+                                            JarvisController.setPreferredMic(if (chosen == "Auto (System Default)") "" else chosen)
+                                        },
+                                    dismiss = runBlocking { getString(Res.string.cancel) },
+                                ),
+                            )
+                        },
+                    )
+                    SettingItem(
+                        title = "Mic Sensitivity",
+                        subtitle = jarvisDiag.sensitivity.label,
+                        smallSubtitle = true,
+                        onClick = {
+                            val options = JarvisSensitivity.entries.map { it.label }
+                            viewModel.setAlertData(
+                                SettingAlertState(
+                                    title = "Hey Jarvis Mic Sensitivity",
+                                    selectOne =
+                                        SettingAlertState.SelectData(
+                                            listSelect = options.map { (it == jarvisDiag.sensitivity.label) to it },
+                                        ),
+                                    confirm =
+                                        runBlocking { getString(Res.string.change) } to { state ->
+                                            val chosen = state.selectOne?.getSelected()
+                                            val picked =
+                                                JarvisSensitivity.entries.firstOrNull { it.label == chosen }
+                                                    ?: JarvisSensitivity.NORMAL
+                                            JarvisController.setSensitivity(picked)
+                                        },
+                                    dismiss = runBlocking { getString(Res.string.cancel) },
+                                ),
+                            )
+                        },
+                    )
+                    SettingItem(
+                        title = "Wake Confirmation Chime",
+                        subtitle = "Play a subtle tone when Jarvis hears you",
+                        smallSubtitle = true,
+                        switch = (jarvisDiag.wakeChimeEnabled to { enabled -> JarvisController.setWakeChimeEnabled(enabled) }),
+                    )
+                    val modelSubtitle =
+                        when (val ms = jarvisDiag.parakeetStatus) {
+                            ParakeetModelStatus.Ready -> "Installed & active (~136 MB on disk)"
+                            ParakeetModelStatus.Missing -> "Not downloaded yet — tap to download (~136 MB)"
+                            ParakeetModelStatus.SkippedLowRam -> "Disabled because Low-RAM Mode is on"
+                            is ParakeetModelStatus.Downloading -> "Downloading… ${ms.percent}% (${ms.detail})"
+                            is ParakeetModelStatus.Error -> "Download failed: ${ms.reason} — tap to retry"
+                        }
+                    SettingItem(
+                        title = "High-Accuracy Voice Engine (Parakeet-110M)",
+                        subtitle = modelSubtitle,
+                        smallSubtitle = true,
+                        onClick =
+                            if (jarvisDiag.parakeetStatus is ParakeetModelStatus.Missing ||
+                                jarvisDiag.parakeetStatus is ParakeetModelStatus.Error
+                            ) {
+                                { JarvisController.downloadHighAccuracyModel() }
+                            } else {
+                                null
+                            },
                     )
                 }
+            }
+        }
+        item(key = "playback") {
+            SettingGroup(title = stringResource(Res.string.playback)) {
                 // Under Playback rather than Audio because that whole group sits inside an
                 // Android-only branch — "Open system equalizer" is an Android feature — and this
                 // one is on both platforms: mpv's `af` chain on Desktop, an AudioProcessor in the

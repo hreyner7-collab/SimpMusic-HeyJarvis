@@ -6,6 +6,23 @@ import kotlinx.coroutines.flow.StateFlow
 // Android enables Jarvis through the permission sheet (JerrySettingsSheet), not this toggle.
 actual object JarvisController {
     actual val running: StateFlow<Boolean> = MutableStateFlow(false)
+    actual val diagnostics: StateFlow<JarvisDiagnostics> = MutableStateFlow(JarvisDiagnostics())
+
     actual fun start() {}
+
     actual fun stop() {}
+
+    actual fun refreshDevices() {}
+
+    actual fun setPreferredMic(micName: String) {}
+
+    actual fun setSensitivity(sensitivity: JarvisSensitivity) {}
+
+    actual fun setWakeChimeEnabled(enabled: Boolean) {}
+
+    actual fun downloadHighAccuracyModel() {}
+
+    actual fun triggerManualWake() {}
+
+    actual fun onLowRamChanged(lowRam: Boolean) {}
 }

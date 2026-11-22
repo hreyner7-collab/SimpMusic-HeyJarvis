@@ -442,14 +442,35 @@ class LibraryViewModel(
     val spotifyImportProgress: StateFlow<SpotifyImportProgress?> = _spotifyImportProgress.asStateFlow()
 
     private var spotifyImportJob: Job? = null
+    private var spotifyLoadJob: Job? = null
 
-    fun loadSpotifyLibrary() {
-        viewModelScope.launch {
-            _spotifyLibrary.value = LocalResource.Loading()
-            when (val res = spotifyLibraryRepository.getUserSpotifyLibrary()) {
-                is Resource.Success -> _spotifyLibrary.value = LocalResource.Success(res.data ?: emptyList())
-                is Resource.Error -> _spotifyLibrary.value = LocalResource.Error(res.message ?: "Failed to load Spotify library")
+    fun loadSpotifyLibrary(forceRefresh: Boolean = false) {
+        if (!forceRefresh && spotifyLoadJob?.isActive == true) return
+        val currentItems = _spotifyLibrary.value.data.orEmpty()
+        if (!forceRefresh && _spotifyLibrary.value is LocalResource.Success && currentItems.isNotEmpty()) {
+            viewModelScope.launch {
+                val updated = spotifyLibraryRepository.refreshLocalSyncStatus(currentItems)
+                _spotifyLibrary.value = LocalResource.Success(updated)
             }
+            return
+        }
+        if (forceRefresh) spotifyLoadJob?.cancel()
+        spotifyLoadJob =
+            viewModelScope.launch {
+                if (currentItems.isEmpty()) {
+                    _spotifyLibrary.value = LocalResource.Loading()
+                }
+                when (val res = spotifyLibraryRepository.getUserSpotifyLibrary(forceRefresh = forceRefresh)) {
+                    is Resource.Success -> _spotifyLibrary.value = LocalResource.Success(res.data ?: emptyList())
+                    is Resource.Error -> _spotifyLibrary.value = LocalResource.Error(res.message ?: "Failed to load Spotify library")
+                }
+            }
+    }
+
+    private suspend fun refreshSpotifySyncBadges() {
+        val current = _spotifyLibrary.value.data.orEmpty()
+        if (current.isNotEmpty()) {
+            _spotifyLibrary.value = LocalResource.Success(spotifyLibraryRepository.refreshLocalSyncStatus(current))
         }
     }
 
@@ -461,7 +482,7 @@ class LibraryViewModel(
                     _spotifyImportProgress.value = progress
                     if (progress.isFinished && progress.targetLocalPlaylistId != null) {
                         getLocalPlaylist()
-                        loadSpotifyLibrary()
+                        refreshSpotifySyncBadges()
                     }
                 }
             }
@@ -475,7 +496,7 @@ class LibraryViewModel(
                     _spotifyImportProgress.value = progress
                     if (progress.isFinished && progress.targetLocalPlaylistId != null) {
                         getLocalPlaylist()
-                        loadSpotifyLibrary()
+                        refreshSpotifySyncBadges()
                     }
                 }
             }
@@ -490,7 +511,7 @@ class LibraryViewModel(
                     if (progress.isFinished && progress.targetLocalPlaylistId != null) {
                         getLocalPlaylist()
                         if (spotifyConnected.value) {
-                            loadSpotifyLibrary()
+                            refreshSpotifySyncBadges()
                         }
                     }
                 }
