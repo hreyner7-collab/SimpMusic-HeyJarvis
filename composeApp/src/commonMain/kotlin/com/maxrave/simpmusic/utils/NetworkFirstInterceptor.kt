@@ -22,7 +22,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.util.UUID
+import kotlin.random.Random
 
 /**
  * HTTP(S) images use cache for 24 hours, then try the network with stale-cache fallback.
@@ -116,7 +116,7 @@ class NetworkFirstInterceptor(
 
         // Keep a successfully decoded stale image alive while refreshing. A failed refresh can
         // return it even if another request evicts its disk entry in the meantime.
-        val temporaryKey = "coil-network-first:${UUID.randomUUID()}"
+        val temporaryKey = "coil-network-first:${platformCurrentTimeMillis()}-${Random.nextLong()}"
         val networkRequest = request.newBuilder()
             .memoryCachePolicy(if (request.memoryCachePolicy.writeEnabled) CachePolicy.WRITE_ONLY else CachePolicy.DISABLED)
             .diskCachePolicy(if (request.diskCachePolicy.writeEnabled) CachePolicy.WRITE_ONLY else CachePolicy.DISABLED)

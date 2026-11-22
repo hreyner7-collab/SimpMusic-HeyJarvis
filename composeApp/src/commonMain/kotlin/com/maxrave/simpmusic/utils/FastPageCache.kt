@@ -55,7 +55,7 @@ object FastPageCache {
         ttlMs: Long,
     ): T? =
         platformSynchronized(cacheLock) {
-            val entry = map[key] ?: return null
+            val entry = map[key] ?: return@platformSynchronized null
             if (nowMs() - entry.timestampMs <= ttlMs) {
                 // Bump LRU recency
                 map.remove(key)

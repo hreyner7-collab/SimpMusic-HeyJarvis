@@ -489,9 +489,7 @@ import simpmusic.composeapp.generated.resources.youtube_account
 import simpmusic.composeapp.generated.resources.youtube_subtitle_language
 import simpmusic.composeapp.generated.resources.youtube_subtitle_language_message
 import simpmusic.composeapp.generated.resources.youtube_transcript
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.maxrave.simpmusic.expect.platformFormatEpochMillis
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -663,10 +661,7 @@ fun SettingScreen(
                 return@derivedStateOf runBlocking {
                     getString(
                         Res.string.last_checked_at,
-                        DateTimeFormatter
-                            .ofPattern("yyyy-MM-dd HH:mm:ss")
-                            .withZone(ZoneId.systemDefault())
-                            .format(Instant.ofEpochMilli(lastCheckLong)),
+                        platformFormatEpochMillis(lastCheckLong),
                     )
                 }
             }
@@ -3068,10 +3063,7 @@ fun SettingScreen(
                                     if (autoBackupLastTime == 0L) {
                                         stringResource(Res.string.never)
                                     } else {
-                                        DateTimeFormatter
-                                            .ofPattern("yyyy-MM-dd HH:mm:ss")
-                                            .withZone(ZoneId.systemDefault())
-                                            .format(Instant.ofEpochMilli(autoBackupLastTime))
+                                        platformFormatEpochMillis(autoBackupLastTime)
                                     },
                             )
                         }

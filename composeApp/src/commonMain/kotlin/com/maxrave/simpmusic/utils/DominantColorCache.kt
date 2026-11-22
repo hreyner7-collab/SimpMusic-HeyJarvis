@@ -26,8 +26,8 @@ object DominantColorCache {
     }
 
     private val mutex = Mutex()
-    private val byteCache = LinkedHashMap<String, ByteArray>(32, 0.75f, true)
-    private val colorCache = LinkedHashMap<String, Color>(32, 0.75f, true)
+    private val byteCache = LinkedHashMap<String, ByteArray>()
+    private val colorCache = LinkedHashMap<String, Color>()
 
     suspend fun getBytes(url: String): ByteArray? {
         if (url.isBlank()) return null

@@ -23,3 +23,14 @@ actual fun platformIsRtl(text: String): Boolean =
         val code = ch.code
         (code in 0x0590..0x08FF) || (code in 0xFB1D..0xFDFF) || (code in 0xFE70..0xFEFF)
     }
+
+actual fun platformFormatEpochMillis(epochMillis: Long): String = epochMillis.toString()
+
+actual fun platformFileLength(path: String): Long = 0L
+
+actual fun platformReadText(path: String): String = ""
+
+actual fun platformReadBytesRange(
+    path: String,
+    from: Long,
+): ByteArray = ByteArray(0)
