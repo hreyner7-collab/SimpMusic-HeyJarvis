@@ -23,3 +23,8 @@ expect fun platformReadBytesRange(
     path: String,
     from: Long,
 ): ByteArray
+
+expect fun platformWriteBytes(
+    path: String,
+    bytes: ByteArray?,
+)

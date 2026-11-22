@@ -34,3 +34,8 @@ actual fun platformReadBytesRange(
     path: String,
     from: Long,
 ): ByteArray = ByteArray(0)
+
+actual fun platformWriteBytes(
+    path: String,
+    bytes: ByteArray?,
+) {}

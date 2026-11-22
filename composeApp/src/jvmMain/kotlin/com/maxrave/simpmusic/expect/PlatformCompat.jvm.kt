@@ -45,3 +45,10 @@ actual fun platformReadBytesRange(
         bytes
     }
 }
+
+actual fun platformWriteBytes(
+    path: String,
+    bytes: ByteArray?,
+) {
+    if (bytes != null) File(path).writeBytes(bytes)
+}

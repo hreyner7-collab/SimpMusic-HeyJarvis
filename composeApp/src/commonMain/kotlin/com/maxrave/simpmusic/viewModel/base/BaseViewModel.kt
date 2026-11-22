@@ -88,9 +88,8 @@ abstract class BaseViewModel :
     private val stringCache = HashMap<StringResource, String>()
 
     protected fun getString(resId: StringResource): String {
-        platformSynchronized(stringCache) {
-            stringCache[resId]?.let { return it }
-        }
+        val cached = platformSynchronized(stringCache) { stringCache[resId] }
+        if (cached != null) return cached
         val resolved =
             runBlocking {
                 org.jetbrains.compose.resources
