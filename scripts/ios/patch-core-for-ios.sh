@@ -168,6 +168,30 @@ if mc.exists():
         mc.write_text(t, encoding="utf-8")
         print("Patched MessageCodec.kt")
 
+# 8. MusicDatabase.kt: add @ConstructedBy(MusicDatabaseConstructor::class) for Room KMP iOS
+mdb = root / "data/src/commonMain/kotlin/com/maxrave/data/db/MusicDatabase.kt"
+if mdb.exists():
+    t = mdb.read_text(encoding="utf-8")
+    if "@ConstructedBy" not in t:
+        t = t.replace(
+            "import androidx.room.Database",
+            "import androidx.room.ConstructedBy\nimport androidx.room.Database\nimport androidx.room.RoomDatabaseConstructor",
+            1,
+        )
+        t = t.replace(
+            "@TypeConverters(Converters::class)\nabstract class MusicDatabase : RoomDatabase()",
+            "@TypeConverters(Converters::class)\n@ConstructedBy(MusicDatabaseConstructor::class)\nabstract class MusicDatabase : RoomDatabase()",
+            1,
+        )
+        t += (
+            "\n@Suppress(\"NO_ACTUAL_FOR_EXPECT\")\n"
+            "expect object MusicDatabaseConstructor : RoomDatabaseConstructor<MusicDatabase> {\n"
+            "    override fun initialize(): MusicDatabase\n"
+            "}\n"
+        )
+        mdb.write_text(t, encoding="utf-8")
+        print("Patched MusicDatabase.kt with @ConstructedBy")
+
 print(f"Total Dispatchers.IO files patched: {patched}")
 PY
 
