@@ -8,11 +8,15 @@ on:
     paths:
       - "composeApp/**"
       - "core/**"
+      - "iosApp/KmpHost/**"
       - ".github/workflows/ios-kmp-framework.yml"
+
+permissions:
+  contents: write
 
 jobs:
   build-kmp-ios:
-    name: Compile Real composeApp to iOS Framework (iosSimulatorArm64)
+    name: Build 1-to-1 KMP ComposeApp iPhone IPA & Verify with terminal-phone
     runs-on: macos-26
     steps:
       - name: Checkout repository (with core submodule)
@@ -34,12 +38,86 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Patch core/ commonMain Dispatchers.IO for Kotlin/Native iOS
+      - name: Patch core/ commonMain for Kotlin/Native iOS
         run: |
           chmod +x scripts/ios/patch-core-for-ios.sh
           bash scripts/ios/patch-core-for-ios.sh
 
-      - name: Compile ComposeApp iOS Simulator Framework
+      - name: Compile Real ComposeApp Frameworks (Simulator + Device)
         run: |
           chmod +x gradlew
-          ./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --no-daemon --no-configuration-cache --stacktrace --continue
+          ./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 :composeApp:linkDebugFrameworkIosArm64 --no-daemon --no-configuration-cache
+
+      - name: Package Real KMP Simulator .app and Physical iPhone .ipa
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ios-kmp/results build/kmp-sim/SimpMusic.app build/kmp-dev/Payload/SimpMusic.app
+
+          SIM_FW="composeApp/build/bin/iosSimulatorArm64/debugFramework"
+          DEV_FW="composeApp/build/bin/iosArm64/debugFramework"
+          SIM_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+
+          # Build Simulator .app linking real ComposeApp.framework
+          xcrun --sdk iphonesimulator swiftc -parse-as-library \
+            -sdk "$SIM_SDK" \
+            -target "arm64-apple-ios17.0-simulator" \
+            -F "$SIM_FW" \
+            -framework ComposeApp \
+            -Xlinker -rpath -Xlinker @executable_path/Frameworks \
+            iosApp/KmpHost/SimpMusicKmpApp.swift \
+            -o build/kmp-sim/SimpMusic.app/SimpMusic
+          cp iosApp/Info.plist build/kmp-sim/SimpMusic.app/Info.plist
+          cp -R composeApp/build/compose/ios/composeApp/compose-resources build/kmp-sim/SimpMusic.app/ 2>/dev/null || true
+          codesign --force --sign - build/kmp-sim/SimpMusic.app
+          (cd build/kmp-sim && zip -qry ../../dist/ios-kmp/SimpMusic-HeyJarvis-v2.6.13-iOS-Simulator.app.zip SimpMusic.app)
+
+          # Build Physical iPhone .ipa linking real ComposeApp.framework
+          xcrun --sdk iphoneos swiftc -parse-as-library \
+            -sdk "$IOS_SDK" \
+            -target "arm64-apple-ios16.0" \
+            -F "$DEV_FW" \
+            -framework ComposeApp \
+            -Xlinker -rpath -Xlinker @executable_path/Frameworks \
+            iosApp/KmpHost/SimpMusicKmpApp.swift \
+            -o build/kmp-dev/Payload/SimpMusic.app/SimpMusic
+          cp iosApp/Info-Device.plist build/kmp-dev/Payload/SimpMusic.app/Info.plist
+          cp -R composeApp/build/compose/ios/composeApp/compose-resources build/kmp-dev/Payload/SimpMusic.app/ 2>/dev/null || true
+          codesign --force --sign - --entitlements iosApp/Entitlements.plist build/kmp-dev/Payload/SimpMusic.app
+          (cd build/kmp-dev && zip -qry ../../dist/ios-kmp/SimpMusic-HeyJarvis-v2.6.13-iOS.ipa Payload)
+          ls -lh dist/ios-kmp/
+
+      - name: Verify Real KMP ComposeApp on iPhone Simulator with govijr/terminal-phone
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/govijr/terminal-phone/main/install.sh | bash -s -- --prefix "$HOME/.local" --no-path
+          export PATH="$HOME/.local/bin:$PATH"
+          terminal-phone setup || true
+          terminal-phone up simpmusic --no-view
+          open -a Simulator || true
+          sleep 2
+          terminal-phone sim simpmusic statusbar clean || true
+          terminal-phone install simpmusic "$PWD/build/kmp-sim/SimpMusic.app"
+          terminal-phone launch simpmusic com.maxrave.simpmusic
+          sleep 6
+          terminal-phone action simpmusic screenshot --output dist/ios-kmp/results/kmp-01-home.png || true
+          terminal-phone action simpmusic screenshot --framed --output dist/ios-kmp/results/kmp-01-home-framed.png || true
+          terminal-phone stop simpmusic || true
+
+      - name: Upload Real KMP iOS IPA & Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpMusic-Real-KMP-iOS-v2.6.13
+          path: dist/ios-kmp/**
+
+      - name: Attach Real KMP iOS IPA to Latest GitHub Release
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="$(gh release view --json tagName -q .tagName 2>/dev/null || echo 'v2.6.12-heyjarvis')"
+          gh release upload "$TAG" \
+            dist/ios-kmp/SimpMusic-HeyJarvis-v2.6.13-iOS.ipa \
+            dist/ios-kmp/SimpMusic-HeyJarvis-v2.6.13-iOS-Simulator.app.zip \
+            --clobber || true
