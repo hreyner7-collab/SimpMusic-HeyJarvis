@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Install SimpMusic — Hey Jarvis</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --card: #151923;
+      --accent: #1ed760;
+      --accent-hover: #1fdf64;
+      --text: #f4f6fb;
+      --muted: #98a2b3;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(circle at top, #182235 0%, var(--bg) 60%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 28px;
+      padding: 36px 28px;
+      text-align: center;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+    }
+    .logo {
+      width: 88px;
+      height: 88px;
+      border-radius: 22px;
+      margin: 0 auto 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #1ed760, #0ea5e9);
+      font-size: 42px;
+      box-shadow: 0 12px 30px rgba(30,215,96,0.3);
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 15px;
+      margin-bottom: 28px;
+    }
+    .install-btn {
+      display: block;
+      width: 100%;
+      padding: 18px 24px;
+      border-radius: 999px;
+      border: none;
+      background: var(--accent);
+      color: #06130a;
+      font-size: 18px;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease;
+      box-shadow: 0 10px 28px rgba(30,215,96,0.32);
+    }
+    .install-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    .install-btn:active { transform: scale(0.98); }
+    .device-badge {
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .steps {
+      margin-top: 22px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.04);
+      font-size: 13px;
+      line-height: 1.5;
+      color: #cbd5e1;
+      text-align: left;
+      display: none;
+    }
+    .steps.show { display: block; }
+    .other {
+      margin-top: 22px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .other a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo">🎵</div>
+    <h1>SimpMusic</h1>
+    <p class="subtitle">Hey Jarvis Edition · Free Music Streaming</p>
+
+    <a id="installBtn" class="install-btn" href="https://github.com/hreyner7-collab/SimpMusic-HeyJarvis/releases/latest">
+      Install SimpMusic
+    </a>
+    <div id="deviceBadge" class="device-badge">Detecting your device…</div>
+
+    <div id="iosSteps" class="steps">
+      <strong>iPhone Quick Steps:</strong><br/>
+      1. Tap <strong>Install for iPhone</strong> above, then tap <strong>Allow</strong>.<br/>
+      2. Open <strong>Settings → Profile Downloaded → Install</strong>.
+    </div>
+
+    <div class="other">
+      <a href="https://github.com/hreyner7-collab/SimpMusic-HeyJarvis/releases/latest">All downloads &amp; IPA</a>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      const base = "https://github.com/hreyner7-collab/SimpMusic-HeyJarvis/releases/latest/download/";
+      const ua = navigator.userAgent || "";
+      const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const isAndroid = /Android/i.test(ua);
+      const isWindows = /Windows/i.test(ua);
+
+      const btn = document.getElementById("installBtn");
+      const badge = document.getElementById("deviceBadge");
+      const iosSteps = document.getElementById("iosSteps");
+
+      if (isIOS) {
+        btn.textContent = "Install for iPhone";
+        btn.href = base + "SimpMusic-HeyJarvis-OneClick.mobileconfig";
+        badge.textContent = "Detected iPhone / iPad · One-Click Profile (No AltStore)";
+        iosSteps.classList.add("show");
+      } else if (isAndroid) {
+        btn.textContent = "Install for Android";
+        btn.href = base + "SimpMusic-HeyJarvis-v2.6.12-Android.apk";
+        badge.textContent = "Detected Android · Direct APK Download";
+      } else if (isWindows) {
+        btn.textContent = "Install for Windows";
+        btn.href = base + "SimpMusic-HeyJarvis-Setup.exe";
+        badge.textContent = "Detected Windows PC · One-Click Setup.exe";
+      } else {
+        btn.textContent = "Download SimpMusic";
+        btn.href = "https://github.com/hreyner7-collab/SimpMusic-HeyJarvis/releases/latest";
+        badge.textContent = "Choose your platform on GitHub Releases";
+      }
+    })();
+  </script>
+</body>
+</html>
