@@ -11,12 +11,12 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
-import java.text.Bidi
+import com.maxrave.simpmusic.expect.platformIsRtl
 
 @Composable
 internal fun rememberLyricLayoutDirection(text: String): LayoutDirection =
     remember(text) {
-        if (Bidi(text, Bidi.DIRECTION_DEFAULT_LEFT_TO_RIGHT).baseIsLeftToRight()) LayoutDirection.Ltr else LayoutDirection.Rtl
+        if (!platformIsRtl(text)) LayoutDirection.Ltr else LayoutDirection.Rtl
     }
 
 /**

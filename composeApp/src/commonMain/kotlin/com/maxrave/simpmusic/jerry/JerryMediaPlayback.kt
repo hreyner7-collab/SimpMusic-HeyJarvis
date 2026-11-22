@@ -1282,14 +1282,13 @@ class JerryMediaPlayback(
         }
     }
 
-    private fun popPreviousFromHistory(currentId: String?): Track? {
+    private fun popPreviousFromHistory(currentId: String?): Track? =
         platformSynchronized(historyLock) {
             while (playedHistory.isNotEmpty() && playedHistory.last().videoId == currentId) {
                 playedHistory.removeLast()
             }
-            return if (playedHistory.isNotEmpty()) playedHistory.removeLast() else null
+            if (playedHistory.isNotEmpty()) playedHistory.removeLast() else null
         }
-    }
 
     private suspend fun findRecentFallbackTrack(currentId: String?): Track? {
         val recent = runCatching { songRepository.getAllSongs(15).firstOrNull() }.getOrNull().orEmpty()

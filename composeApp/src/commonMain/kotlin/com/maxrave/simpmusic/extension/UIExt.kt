@@ -800,9 +800,8 @@ fun smoothScrimBrush(
     steps: Int = 24,
 ): Brush {
     val key = ScrimBrushKey(from, to, startFraction, endFraction, startY, endY, steps)
-    platformSynchronized(scrimBrushCacheLock) {
-        scrimBrushCache[key]?.let { return it }
-    }
+    val cached = platformSynchronized(scrimBrushCacheLock) { scrimBrushCache[key] }
+    if (cached != null) return cached
     val brush =
         Brush.verticalGradient(
             colorStops =
