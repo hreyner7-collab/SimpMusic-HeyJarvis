@@ -175,10 +175,36 @@ which terminal-phone
 
 terminal-phone setup | tee "$RESULTS_DIR/terminal-phone-setup.log" || true
 terminal-phone up simpmusic --no-view | tee "$RESULTS_DIR/terminal-phone-up.log"
+
+# Launch Simulator.app in background so WindowServer/accessibility is warm on headless CI
+open -a Simulator || true
+sleep 2
+
+terminal-phone sim simpmusic statusbar clean | tee "$RESULTS_DIR/terminal-phone-statusbar.log" || true
 terminal-phone install simpmusic "$SIM_APP" | tee "$RESULTS_DIR/terminal-phone-install.log"
 terminal-phone launch simpmusic com.maxrave.simpmusic | tee "$RESULTS_DIR/terminal-phone-launch.log"
-sleep 3
-terminal-phone observe simpmusic > "$RESULTS_DIR/initial-observe.json"
+sleep 4
+
+# Capture a guaranteed framed & plain screenshot via terminal-phone action screenshot
+terminal-phone action simpmusic screenshot --output "$RESULTS_DIR/00-launched-screen.png" | tee "$RESULTS_DIR/screenshot-action.json" || true
+terminal-phone action simpmusic screenshot --framed --output "$RESULTS_DIR/00-launched-framed.png" | tee "$RESULTS_DIR/screenshot-framed.json" || true
+
+# Observe with retry and log inspection in case idb_companion needs a warmup cycle
+for attempt in 1 2 3; do
+  echo "Running terminal-phone observe attempt $attempt..."
+  if terminal-phone observe simpmusic | tee "$RESULTS_DIR/initial-observe.json"; then
+    echo "terminal-phone observe succeeded on attempt $attempt!"
+    break
+  fi
+  echo "observe attempt $attempt returned non-zero; dumping terminal-phone diagnostic logs..."
+  TP_PHONE_DIR="$HOME/Library/Application Support/terminal-phone/phones/simpmusic"
+  if [ -d "$TP_PHONE_DIR" ]; then
+    for lf in "$TP_PHONE_DIR"/*.log; do
+      [ -f "$lf" ] && echo "--- $lf ---" && tail -n 50 "$lf" || true
+    done
+  fi
+  sleep 3
+done
 
 # Run the full YAML flow test suite via terminal-phone test
 if terminal-phone test "$IOS_DIR/flows/simpmusic-e2e.flow.yaml" \
@@ -188,25 +214,44 @@ if terminal-phone test "$IOS_DIR/flows/simpmusic-e2e.flow.yaml" \
   --junit "$RESULTS_DIR/junit.xml" | tee "$RESULTS_DIR/terminal-phone-test.log"; then
   echo "terminal-phone flow suite passed!"
 else
-  echo "Flow step reported an issue; running step-by-step agent CLI verification..."
+  echo "Flow step reported an issue; inspecting logs and running step-by-step agent CLI verification..."
+  TP_PHONE_DIR="$HOME/Library/Application Support/terminal-phone/phones/simpmusic"
+  if [ -d "$TP_PHONE_DIR" ]; then
+    cp -f "$TP_PHONE_DIR"/*.log "$RESULTS_DIR/" 2>/dev/null || true
+    for lf in "$TP_PHONE_DIR"/*.log; do
+      [ -f "$lf" ] && echo "--- $lf ---" && cat "$lf" || true
+    done
+  fi
   terminal-phone launch simpmusic com.maxrave.simpmusic || true
   sleep 2
-  terminal-phone observe simpmusic > "$RESULTS_DIR/step1-home.json" || true
-  terminal-phone act simpmusic tap --id btn-home-quick-jazz --observe > "$RESULTS_DIR/step2-jarvis-jazz.json" || true
-  terminal-phone act simpmusic tap --id btn-expand-player --observe > "$RESULTS_DIR/step3-player.json" || true
-  terminal-phone act simpmusic tap --id btn-ab-set-a --observe > "$RESULTS_DIR/step4-ab-a.json" || true
-  terminal-phone act simpmusic tap --id btn-ab-set-b --observe > "$RESULTS_DIR/step5-ab-b.json" || true
-  terminal-phone act simpmusic tap --id btn-toggle-lyrics --observe > "$RESULTS_DIR/step6-lyrics.json" || true
-  terminal-phone act simpmusic tap --id btn-close-player --observe > "$RESULTS_DIR/step7-close-player.json" || true
-  terminal-phone act simpmusic tap --id tab-search --observe > "$RESULTS_DIR/step8-search.json" || true
-  terminal-phone act simpmusic tap --id tab-library --observe > "$RESULTS_DIR/step9-library.json" || true
-  terminal-phone act simpmusic tap --id btn-quick-sync-spotify --observe > "$RESULTS_DIR/step10-spotify.json" || true
-  terminal-phone act simpmusic tap --id tab-settings --observe > "$RESULTS_DIR/step11-settings.json" || true
+  terminal-phone observe simpmusic | tee "$RESULTS_DIR/step1-home.json" || true
+  terminal-phone act simpmusic tap --id btn-home-quick-jazz --observe | tee "$RESULTS_DIR/step2-jarvis-jazz.json" || true
+  terminal-phone action simpmusic screenshot --output "$RESULTS_DIR/02-hey-jarvis-play-jazz.png" || true
+  terminal-phone act simpmusic tap --id btn-expand-player --observe | tee "$RESULTS_DIR/step3-player.json" || true
+  terminal-phone act simpmusic tap --id btn-ab-set-a --observe | tee "$RESULTS_DIR/step4-ab-a.json" || true
+  terminal-phone act simpmusic tap --id btn-ab-set-b --observe | tee "$RESULTS_DIR/step5-ab-b.json" || true
+  terminal-phone action simpmusic screenshot --output "$RESULTS_DIR/03-now-playing-ab-loop.png" || true
+  terminal-phone act simpmusic tap --id btn-toggle-lyrics --observe | tee "$RESULTS_DIR/step6-lyrics.json" || true
+  terminal-phone action simpmusic screenshot --output "$RESULTS_DIR/04-synced-lyrics.png" || true
+  terminal-phone act simpmusic tap --id btn-close-player --observe | tee "$RESULTS_DIR/step7-close-player.json" || true
+  terminal-phone act simpmusic tap --id tab-search --observe | tee "$RESULTS_DIR/step8-search.json" || true
+  terminal-phone action simpmusic screenshot --output "$RESULTS_DIR/06-search-results.png" || true
+  terminal-phone act simpmusic tap --id tab-library --observe | tee "$RESULTS_DIR/step9-library.json" || true
+  terminal-phone act simpmusic tap --id btn-quick-sync-spotify --observe | tee "$RESULTS_DIR/step10-spotify.json" || true
+  terminal-phone action simpmusic screenshot --output "$RESULTS_DIR/07-library-spotify-synced.png" || true
+  terminal-phone act simpmusic tap --id tab-settings --observe | tee "$RESULTS_DIR/step11-settings.json" || true
+  terminal-phone action simpmusic screenshot --output "$RESULTS_DIR/08-settings-hey-jarvis.png" || true
 fi
 
-terminal-phone observe simpmusic > "$RESULTS_DIR/final-observe.json" || true
+TP_PHONE_DIR="$HOME/Library/Application Support/terminal-phone/phones/simpmusic"
+if [ -d "$TP_PHONE_DIR" ]; then
+  cp -f "$TP_PHONE_DIR"/*.log "$RESULTS_DIR/" 2>/dev/null || true
+  cp -f "$TP_PHONE_DIR"/*.jsonl "$RESULTS_DIR/" 2>/dev/null || true
+fi
+
+terminal-phone observe simpmusic | tee "$RESULTS_DIR/final-observe.json" || true
 terminal-phone stop simpmusic || true
 
 (cd "$DIST_DIR" && zip -qry "$DIST_DIR/SimpMusic-HeyJarvis-v${VERSION}-iOS-TerminalPhone-TestReport.zip" terminal-phone-results)
 echo "=== All iOS Builds & terminal-phone Verifications Complete ==="
-ls -lh "$DIST_DIR"
+ls -lh "$DIST_DIR" "$RESULTS_DIR"

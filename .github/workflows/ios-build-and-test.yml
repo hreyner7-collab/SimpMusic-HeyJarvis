@@ -30,6 +30,7 @@ jobs:
           bash scripts/ios/build-and-test-ios.sh
 
       - name: Upload iOS IPA & terminal-phone Test Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: SimpMusic-HeyJarvis-iOS-v2.6.13
@@ -43,16 +44,24 @@ jobs:
             dist/ios/terminal-phone-results/**
 
       - name: Attach iOS IPA & One-Click Installer to Latest GitHub Release
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="$(gh release view --json tagName -q .tagName 2>/dev/null || echo 'v2.6.12-heyjarvis')"
           echo "Uploading iOS artifacts to release $TAG..."
-          gh release upload "$TAG" \
+          FILES=()
+          for f in \
             dist/ios/SimpMusic-HeyJarvis-v2.6.13-iOS.ipa \
             dist/ios/SimpMusic-HeyJarvis-v2.6.13-iOS-Simulator.app.zip \
             dist/ios/SimpMusic-HeyJarvis-OneClick.mobileconfig \
             dist/ios/SimpMusic-HeyJarvis-iOS-OneClick-Installer.html \
             dist/ios/manifest.plist \
-            dist/ios/SimpMusic-HeyJarvis-v2.6.13-iOS-TerminalPhone-TestReport.zip \
-            --clobber
+            dist/ios/SimpMusic-HeyJarvis-v2.6.13-iOS-TerminalPhone-TestReport.zip; do
+            if [ -f "$f" ]; then
+              FILES+=("$f")
+            fi
+          done
+          if [ ${#FILES[@]} -gt 0 ]; then
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          fi
