@@ -37,4 +37,4 @@ jobs:
       - name: Compile ComposeApp iOS Simulator Framework
         run: |
           chmod +x gradlew
-          ./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --no-daemon --stacktrace
+          ./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --no-daemon --no-configuration-cache --stacktrace

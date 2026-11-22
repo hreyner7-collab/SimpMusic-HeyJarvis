@@ -84,6 +84,7 @@ kotlin {
             implementation(libs.koin.androidx.compose)
 
             implementation(libs.jetbrains.ui.tooling.preview)
+            implementation(libs.ui.tooling.preview)
             implementation(libs.constraintlayout.compose)
             implementation("com.alphacephei:vosk-android:0.3.47")
 
@@ -124,8 +125,6 @@ kotlin {
             // Compose
             implementation(libs.compose.material3.adaptive)
             implementation(libs.compose.material.ripple)
-
-            implementation(libs.ui.tooling.preview)
 
             // Other module
             api(projects.common)
