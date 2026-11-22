@@ -50,7 +50,7 @@ public final class AppViewModel: ObservableObject {
     @Published public var jarvisSensitivity: JarvisSensitivity = .normal
     @Published public var jarvisWakeChime: Bool = true
     @Published public var jarvisLowRam: Bool = false
-    @Published public var jarvisMicLevel: Float = 0.08f
+    @Published public var jarvisMicLevel: Float = 0.08
     @Published public var jarvisSpeechActive: Bool = false
     @Published public var jarvisLastHeard: String = ""
     @Published public var jarvisTestInput: String = ""
@@ -101,7 +101,7 @@ public final class AppViewModel: ObservableObject {
     private func configureAudioSessionAndRemoteCommands() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP])
+            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothHFP, .allowBluetoothA2DP])
             try session.setActive(true)
         } catch {
             // Simulator or headless CI without audio hardware continues gracefully
@@ -141,7 +141,7 @@ public final class AppViewModel: ObservableObject {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
-        var info: [String: Any] = [
+        let info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist,
             MPMediaItemPropertyAlbumTitle: track.album,
@@ -150,7 +150,6 @@ public final class AppViewModel: ObservableObject {
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        _ = info
     }
 
     // MARK: - Playback Controls
