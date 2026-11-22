@@ -34,7 +34,12 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Patch core/ commonMain Dispatchers.IO for Kotlin/Native iOS
+        run: |
+          chmod +x scripts/ios/patch-core-for-ios.sh
+          bash scripts/ios/patch-core-for-ios.sh
+
       - name: Compile ComposeApp iOS Simulator Framework
         run: |
           chmod +x gradlew
-          ./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --no-daemon --no-configuration-cache --stacktrace
+          ./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --no-daemon --no-configuration-cache --stacktrace --continue
