@@ -192,8 +192,34 @@ if mdb.exists():
         mdb.write_text(t, encoding="utf-8")
         print("Patched MusicDatabase.kt with @ConstructedBy")
 
+# 9. core/data parsers: replace JVM "%02d:%02d".format(...) and .localizedMessage
+for rel in [
+    "data/src/commonMain/kotlin/com/maxrave/data/parser/AlbumParser.kt",
+    "data/src/commonMain/kotlin/com/maxrave/data/parser/search/SongResultParser.kt",
+    "data/src/commonMain/kotlin/com/maxrave/data/parser/search/VideoResultParser.kt",
+]:
+    p = root / rel
+    if p.exists():
+        t = p.read_text(encoding="utf-8")
+        t = t.replace(
+            '"%02d:%02d".format(\n                            (songItem.duration ?: 0) / 60,\n                            (songItem.duration ?: 0) % 60,\n                        )',
+            '"${((songItem.duration ?: 0) / 60).toString().padStart(2, \'0\')}:${((songItem.duration ?: 0) % 60).toString().padStart(2, \'0\')}"',
+        )
+        t = t.replace(
+            '"%02d:%02d".format(song.duration!! / 60, song.duration!! % 60)',
+            '"${(song.duration!! / 60).toString().padStart(2, \'0\')}:${(song.duration!! % 60).toString().padStart(2, \'0\')}"',
+        )
+        p.write_text(t, encoding="utf-8")
+        print(f"Patched {rel}")
+
+upd = root / "data/src/commonMain/kotlin/com/maxrave/data/repository/UpdateRepositoryImpl.kt"
+if upd.exists():
+    upd.write_text(upd.read_text(encoding="utf-8").replace(".localizedMessage", ".message"), encoding="utf-8")
+    print("Patched UpdateRepositoryImpl.kt")
+
 print(f"Total Dispatchers.IO files patched: {patched}")
 PY
 
-# Remove duplicate per-arch iOS actuals in ktorExt that conflict with iosMain
+# Remove duplicate per-arch iOS actuals in ktorExt and data that conflict with iosMain
 rm -rf core/service/ktorExt/src/iosSimulatorArm64Main core/service/ktorExt/src/iosArm64Main
+rm -rf core/data/src/iosSimulatorArm64Main core/data/src/iosArm64Main
