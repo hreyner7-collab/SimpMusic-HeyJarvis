@@ -37,13 +37,14 @@
       position: relative;
       background: var(--bg);
     }
-    /* Top App Bar — matches SimpMusic Android HomeScreen top bar */
+
+    /* Top App Bar */
     .top-bar {
       padding: calc(env(safe-area-inset-top, 10px) + 12px) 16px 10px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: rgba(0, 0, 0, 0.85);
+      background: rgba(0, 0, 0, 0.88);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       z-index: 10;
@@ -65,6 +66,7 @@
       cursor: pointer;
     }
     .icon-circle svg { width: 19px; height: 19px; fill: currentColor; }
+    .icon-circle.active { background: var(--accent); border-color: var(--accent); color: #fff; }
     .jarvis-orb {
       width: 38px;
       height: 38px;
@@ -89,23 +91,23 @@
     .content {
       flex: 1;
       overflow-y: auto;
-      padding: 8px 16px 170px;
+      padding: 8px 16px 176px;
       -webkit-overflow-scrolling: touch;
     }
     .content::-webkit-scrollbar { display: none; }
 
-    /* Mood Chips — exact Android SimpMusic moods */
+    /* Chips */
     .chips {
       display: flex;
       gap: 8px;
       overflow-x: auto;
-      padding: 4px 0 14px;
+      padding: 4px 0 12px;
       scrollbar-width: none;
     }
     .chips::-webkit-scrollbar { display: none; }
     .chip {
       flex: 0 0 auto;
-      padding: 8px 15px;
+      padding: 7px 14px;
       border-radius: 999px;
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -114,11 +116,8 @@
       font-weight: 600;
       cursor: pointer;
     }
-    .chip.active {
-      background: var(--text);
-      color: #000000;
-      border-color: var(--text);
-    }
+    .chip.active { background: var(--text); color: #000000; border-color: var(--text); }
+    .chip.crimson.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
     /* Section Headers */
     .sec-head {
@@ -126,27 +125,29 @@
       align-items: baseline;
       justify-content: space-between;
       margin: 16px 0 10px;
+      gap: 8px;
     }
-    .sec-title { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; }
-    .sec-sub { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+    .sec-title { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+    .sec-sub { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
     .sec-btn {
       background: var(--surface2);
       border: 1px solid var(--border);
       color: var(--text);
       border-radius: 999px;
-      padding: 5px 12px;
+      padding: 6px 12px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
+      white-space: nowrap;
     }
 
-    /* Quick Picks — 4-row horizontal snap grid like Android SimpMusic */
+    /* Quick Picks 4-row grid */
     .qp-grid {
       display: grid;
       grid-template-rows: repeat(4, auto);
       grid-auto-flow: column;
-      grid-auto-columns: 82%;
-      gap: 8px 12px;
+      grid-auto-columns: 84%;
+      gap: 6px 12px;
       overflow-x: auto;
       scroll-snap-type: x mandatory;
       padding-bottom: 6px;
@@ -170,19 +171,19 @@
     .qp-item:active { background: var(--surface2); }
     .qp-item.playing { background: var(--accent-soft); }
     .qp-art {
-      width: 50px;
-      height: 50px;
+      width: 48px;
+      height: 48px;
       border-radius: 8px;
       object-fit: cover;
       background: var(--surface2);
       flex-shrink: 0;
     }
     .qp-meta { flex: 1; min-width: 0; }
-    .qp-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .qp-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .qp-item.playing .qp-title { color: var(--accent); }
-    .qp-artist { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .qp-artist { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* Horizontal Square Card Carousel (Listen Again / Trending) */
+    /* Horizontal Carousel */
     .carousel {
       display: flex;
       gap: 12px;
@@ -192,7 +193,7 @@
     }
     .carousel::-webkit-scrollbar { display: none; }
     .card-tile {
-      flex: 0 0 144px;
+      flex: 0 0 140px;
       background: none;
       border: none;
       color: var(--text);
@@ -200,31 +201,17 @@
       cursor: pointer;
     }
     .card-tile img {
-      width: 144px;
-      height: 144px;
+      width: 140px;
+      height: 140px;
       border-radius: 10px;
       object-fit: cover;
       background: var(--surface2);
       display: block;
     }
-    .card-tile .t1 {
-      font-size: 14px;
-      font-weight: 600;
-      margin-top: 7px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .card-tile .t2 {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+    .card-tile .t1 { font-size: 13px; font-weight: 600; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-tile .t2 { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* Search & Library & Settings */
+    /* Inputs, Buttons, Panels */
     .search-box {
       display: flex;
       align-items: center;
@@ -232,25 +219,26 @@
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 4px 8px 4px 14px;
-      margin-bottom: 14px;
+      padding: 4px 8px 4px 12px;
+      margin-bottom: 10px;
     }
     .search-box input {
       flex: 1;
       background: transparent;
       border: none;
       color: var(--text);
-      font-size: 15px;
-      padding: 9px 0;
+      font-size: 14px;
+      padding: 8px 0;
       outline: none;
+      min-width: 0;
     }
     .crimson-btn {
       background: var(--accent);
       color: #fff;
       border: none;
       border-radius: 999px;
-      padding: 9px 16px;
-      font-size: 13px;
+      padding: 8px 14px;
+      font-size: 12px;
       font-weight: 700;
       cursor: pointer;
       white-space: nowrap;
@@ -259,12 +247,130 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 16px;
-      margin-bottom: 14px;
+      padding: 14px;
+      margin-bottom: 12px;
     }
     .list-col { display: flex; flex-direction: column; gap: 6px; }
 
-    /* Floating Mini Player — sits above floating capsule bottom bar */
+    /* Quick Access 2x2 Grid (Library) */
+    .qa-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .qa-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .qa-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+    .qa-name { font-size: 14px; font-weight: 700; }
+    .qa-cnt { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* Analytics Stat Cards */
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .stat-val { font-size: 22px; font-weight: 800; color: var(--accent); }
+    .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    /* Settings Rows & Controls */
+    .set-cat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .set-cat-head {
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      background: rgba(255,255,255,0.02);
+    }
+    .set-cat-title {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .set-cat-body { padding: 4px 14px 10px; }
+    .set-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .set-row:first-child { border-top: none; }
+    .set-info { flex: 1; min-width: 0; }
+    .set-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .set-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+    .set-select, .set-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      outline: none;
+      max-width: 150px;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 26px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider-tog {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: var(--surface3);
+      border-radius: 999px;
+      transition: 0.2s;
+    }
+    .slider-tog:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    .switch input:checked + .slider-tog { background: var(--accent); }
+    .switch input:checked + .slider-tog:before { transform: translateX(18px); }
+
+    /* Floating Mini Player */
     .mini-player {
       position: absolute;
       left: 14px;
@@ -279,20 +385,8 @@
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
       z-index: 20;
     }
-    .mini-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 10px;
-    }
-    .mini-art {
-      width: 42px;
-      height: 42px;
-      border-radius: 8px;
-      object-fit: cover;
-      background: var(--surface3);
-      flex-shrink: 0;
-    }
+    .mini-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
+    .mini-art { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; background: var(--surface3); flex-shrink: 0; }
     .mini-info { flex: 1; min-width: 0; cursor: pointer; }
     .mini-title { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .mini-artist { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -311,7 +405,7 @@
     .mini-progress-bg { height: 2.5px; background: rgba(255,255,255,0.1); width: 100%; }
     .mini-progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s linear; }
 
-    /* Floating Capsule + Separate Round Search FAB — EXACT 1-to-1 AppBottomNavigationBar.kt */
+    /* Floating Capsule + Separate Round Search FAB */
     .bottom-nav-wrap {
       position: absolute;
       left: 0;
@@ -355,13 +449,9 @@
       justify-content: center;
       gap: 3px;
       cursor: pointer;
-      transition: background 0.18s ease, color 0.18s ease;
     }
     .nav-tab svg { width: 21px; height: 21px; fill: currentColor; }
-    .nav-tab.active {
-      background: rgba(255, 255, 255, 0.11);
-      color: var(--accent);
-    }
+    .nav-tab.active { background: rgba(255, 255, 255, 0.11); color: var(--accent); }
     .search-fab {
       pointer-events: auto;
       width: 58px;
@@ -379,13 +469,9 @@
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
     }
     .search-fab svg { width: 22px; height: 22px; fill: currentColor; }
-    .search-fab.active {
-      background: var(--accent);
-      color: #fff;
-      border-color: var(--accent);
-    }
+    .search-fab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-    /* Fullscreen Now Playing — Apple Music / SimpMusic artwork scrim */
+    /* Fullscreen Now Playing */
     .modal {
       position: fixed;
       inset: 0;
@@ -403,7 +489,7 @@
       inset: -40px;
       background-size: cover;
       background-position: center;
-      filter: blur(55px) brightness(0.42) saturate(1.4);
+      filter: blur(55px) brightness(0.38) saturate(1.4);
       z-index: 0;
     }
     .modal-inner {
@@ -412,40 +498,41 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      padding: calc(env(safe-area-inset-top, 10px) + 12px) 22px calc(env(safe-area-inset-bottom, 12px) + 18px);
+      padding: calc(env(safe-area-inset-top, 10px) + 12px) 20px calc(env(safe-area-inset-bottom, 12px) + 18px);
       overflow-y: auto;
     }
     .np-art {
       width: 100%;
-      max-width: 310px;
+      max-width: 270px;
       aspect-ratio: 1;
       border-radius: 14px;
-      margin: 18px auto 22px;
+      margin: 14px auto 18px;
       object-fit: cover;
       background: var(--surface2);
       box-shadow: 0 24px 60px rgba(0,0,0,0.65);
     }
-    .np-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .np-title { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
-    .np-artist { font-size: 15px; color: rgba(255,255,255,0.72); margin-top: 3px; }
+    .np-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .np-title { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .np-artist { font-size: 14px; color: rgba(255,255,255,0.72); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .heart-btn {
       background: rgba(255,255,255,0.1);
       border: none;
-      width: 40px;
-      height: 40px;
+      width: 38px;
+      height: 38px;
       border-radius: 50%;
       color: #fff;
-      font-size: 19px;
+      font-size: 17px;
       cursor: pointer;
+      flex-shrink: 0;
     }
     .heart-btn.liked { color: var(--accent); background: var(--accent-soft); }
-    .seek-wrap { margin: 18px 0 10px; }
+    .seek-wrap { margin: 14px 0 8px; }
     .seek-wrap input[type=range] { width: 100%; accent-color: #ffffff; }
-    .time-row { display: flex; justify-content: space-between; font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 4px; }
-    .np-controls { display: flex; align-items: center; justify-content: center; gap: 32px; margin: 12px 0 18px; }
+    .time-row { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,0.65); margin-top: 4px; }
+    .np-controls { display: flex; align-items: center; justify-content: space-between; max-width: 300px; width: 100%; margin: 10px auto 14px; }
     .play-big {
-      width: 68px;
-      height: 68px;
+      width: 64px;
+      height: 64px;
       border-radius: 50%;
       border: none;
       background: #ffffff;
@@ -455,22 +542,75 @@
       justify-content: center;
       cursor: pointer;
     }
-    .play-big svg { width: 30px; height: 30px; fill: currentColor; }
-    .ab-row { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .play-big svg { width: 28px; height: 28px; fill: currentColor; }
+    .np-icon-btn {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.75);
+      font-size: 15px;
+      font-weight: 700;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .np-icon-btn.active { color: var(--accent); background: var(--accent-soft); }
+    .ab-row { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
     .glass-pill {
       background: rgba(255,255,255,0.12);
       border: 1px solid rgba(255,255,255,0.14);
       color: #fff;
       border-radius: 999px;
-      padding: 7px 14px;
+      padding: 6px 12px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
     }
     .glass-pill.active { background: var(--accent); border-color: var(--accent); }
+
+    /* Bottom Sheet (EQ, Speed, Timer, Queue, Lyrics, Info, Logs) */
+    .sheet-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 90;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .sheet-backdrop.open { display: flex; }
+    .sheet {
+      width: 100%;
+      max-width: 480px;
+      max-height: 82dvh;
+      background: #141416;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      border-radius: 22px 22px 0 0;
+      padding: 16px 18px calc(env(safe-area-inset-bottom, 12px) + 18px);
+      overflow-y: auto;
+    }
+    .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .sheet-title { font-size: 17px; font-weight: 800; }
+
+    /* 10-Band EQ */
+    .eq-bands { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin: 14px 0; text-align: center; }
+    .eq-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .eq-col input[type=range] {
+      writing-mode: vertical-lr;
+      direction: rtl;
+      height: 110px;
+      width: 18px;
+      accent-color: var(--accent);
+    }
+    .eq-lbl { font-size: 9px; color: var(--muted); font-weight: 700; }
+    .eq-db { font-size: 9px; color: #fff; }
+
     .toast {
       position: fixed;
-      top: calc(env(safe-area-inset-top, 10px) + 58px);
+      top: calc(env(safe-area-inset-top, 10px) + 56px);
       left: 50%;
       transform: translateX(-50%);
       background: rgba(250, 35, 59, 0.96);
@@ -479,9 +619,10 @@
       border-radius: 999px;
       font-size: 13px;
       font-weight: 700;
-      z-index: 120;
+      z-index: 140;
       display: none;
       box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      white-space: nowrap;
     }
     .toast.show { display: block; }
   </style>
@@ -523,7 +664,7 @@
       <div class="mini-progress-bg"><div class="mini-progress-fill" id="miniProg"></div></div>
     </div>
 
-    <!-- Floating Capsule + Separate Round Search FAB (1-to-1 AppBottomNavigationBar.kt) -->
+    <!-- Floating Capsule + Separate Round Search FAB -->
     <div class="bottom-nav-wrap">
       <div class="nav-capsule">
         <button class="nav-tab active" data-tab="home">
@@ -547,38 +688,80 @@
     <div class="modal-inner">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <button class="glass-pill" id="btnCloseNP">⌄</button>
-        <span style="font-size:12px;font-weight:700;letter-spacing:0.1em;color:rgba(255,255,255,0.75);">NOW PLAYING</span>
+        <div style="text-align:center;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:0.1em;color:rgba(255,255,255,0.75);">NOW PLAYING</div>
+          <div id="npStatusBadge" style="font-size:10px;color:var(--accent);font-weight:700;"></div>
+        </div>
         <button class="glass-pill" id="btnToggleLyrics">Lyrics</button>
       </div>
+
       <img class="np-art" id="npArt" alt="" />
+
       <div class="np-title-row">
         <div style="min-width:0;flex:1;">
           <div class="np-title" id="npTitle">Track</div>
           <div class="np-artist" id="npArtist">Artist</div>
         </div>
-        <button class="heart-btn" id="btnHeart">♥</button>
+        <button class="heart-btn" id="btnHeart" title="Like">♥</button>
+        <button class="heart-btn" id="btnShareNP" title="Share">↗</button>
       </div>
+
       <div class="seek-wrap">
         <input type="range" id="seekSlider" min="0" max="100" value="0" />
         <div class="time-row"><span id="timeCur">0:00</span><span id="timeTot">0:30</span></div>
       </div>
+
       <div class="np-controls">
-        <button class="mini-ctrl" id="btnNPPrev" style="width:44px;height:44px;"><svg viewBox="0 0 24 24" style="width:30px;height:30px;"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
+        <button class="np-icon-btn" id="btnShuffle" title="Shuffle">⇄</button>
+        <button class="mini-ctrl" id="btnNPPrev" style="width:42px;height:42px;"><svg viewBox="0 0 24 24" style="width:28px;height:28px;"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
         <button class="play-big" id="btnNPPlay"><svg id="npPlayIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
-        <button class="mini-ctrl" id="btnNPNext" style="width:44px;height:44px;"><svg viewBox="0 0 24 24" style="width:30px;height:30px;"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+        <button class="mini-ctrl" id="btnNPNext" style="width:42px;height:42px;"><svg viewBox="0 0 24 24" style="width:28px;height:28px;"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+        <button class="np-icon-btn" id="btnRepeat" title="Repeat">↻</button>
       </div>
+
+      <!-- Feature Action Pills -->
+      <div class="ab-row">
+        <button class="glass-pill" id="btnOpenEQ">Equalizer</button>
+        <button class="glass-pill" id="btnOpenSpeed">1.0x Speed</button>
+        <button class="glass-pill" id="btnOpenTimer">Sleep Timer</button>
+        <button class="glass-pill" id="btnOpenQueue">Queue</button>
+        <button class="glass-pill" id="btnOpenInfo">Info</button>
+      </div>
+
+      <!-- A-B Loop Row -->
       <div class="ab-row">
         <button class="glass-pill" id="btnSetA">Set A</button>
         <button class="glass-pill" id="btnSetB">Set B</button>
         <button class="glass-pill" id="btnClearAB">Clear A–B</button>
-        <span id="abStatus" style="font-size:12px;color:#fff;font-weight:700;align-self:center;"></span>
+        <span id="abStatus" style="font-size:11px;color:#fff;font-weight:700;align-self:center;"></span>
       </div>
-      <div id="lyricsBox" class="panel" style="display:none;background:rgba(0,0,0,0.4);border-color:rgba(255,255,255,0.12);white-space:pre-line;font-size:16px;font-weight:600;line-height:1.75;color:#fff;"></div>
+
+      <!-- Synced Lyrics Panel -->
+      <div id="lyricsBox" class="panel" style="display:none;background:rgba(0,0,0,0.52);border-color:rgba(255,255,255,0.14);">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
+          <select id="lyricsProviderSel" class="set-select">
+            <option value="SimpMusic Lyrics">SimpMusic</option>
+            <option value="YouTube Transcript">YouTube</option>
+            <option value="LRCLIB">LRCLIB</option>
+            <option value="BetterLyrics">BetterLyrics</option>
+            <option value="Spotify">Spotify</option>
+          </select>
+          <button class="glass-pill" id="btnLyricsTrans">Translate</button>
+          <button class="glass-pill" id="btnLyricsRom">Romanize</button>
+        </div>
+        <div id="lyricsLines" style="white-space:pre-line;font-size:15px;font-weight:600;line-height:1.8;color:#fff;"></div>
+      </div>
     </div>
   </div>
 
+  <!-- Reusable Bottom Sheet -->
+  <div class="sheet-backdrop" id="sheetBackdrop">
+    <div class="sheet" id="sheetBody"></div>
+  </div>
+
+  <input type="file" id="restoreFileInput" accept="application/json" style="display:none;" />
   <div class="toast" id="toast"></div>
-  <audio id="audio" preload="auto" playsinline></audio>
+  <audio id="audio" preload="auto" playsinline crossorigin="anonymous"></audio>
 
   <script>
     const PLAY_SVG = '<path d="M8 5v14l11-7z"/>';
@@ -586,34 +769,191 @@
     const audio = document.getElementById("audio");
     const mainContent = document.getElementById("mainContent");
     const toastEl = document.getElementById("toast");
+    const sheetBackdrop = document.getElementById("sheetBackdrop");
+    const sheetBody = document.getElementById("sheetBody");
 
     const h = new Date().getHours();
     document.getElementById("greetingSub").textContent = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 
+    const DEFAULT_SETTINGS = {
+      // Interface
+      theme: "AMOLED / Pure Black",
+      nowPlayingStyle: "Apple Music",
+      lyricsStyle: "Apple Music",
+      lyricsRomanization: false,
+      themeColor: "Custom",
+      customColor: "#FA233B",
+      liquidGlass: true,
+      // Content & Account
+      ytAccount: "Guest (Not signed in)",
+      language: "en-US",
+      contentCountry: "US",
+      preferredAudioLang: "Original audio",
+      audioQuality: "High (256 kbps)",
+      downloadQuality: "High (256 kbps)",
+      videoQuality: "1080p",
+      videoDownloadQuality: "720p",
+      downloadLiked: false,
+      smartDownloads: false,
+      smartDownloadsCount: "25",
+      playVideoTrack: false,
+      playAudioInRadio: true,
+      syncFollowYt: false,
+      sendListeningData: false,
+      playExplicit: true,
+      keepYtOffline: true,
+      replaceFavWithYt: false,
+      proxyEnabled: false,
+      proxyType: "HTTP",
+      proxyHost: "",
+      proxyPort: "",
+      // Audio
+      normalizeVolume: true,
+      skipSilent: false,
+      eqType: "Built-in",
+      // Performance
+      performanceMode: "Full",
+      graphicsRenderer: "OpenGL",
+      windowsAudioDriver: "WASAPI",
+      jarvisLowRam: false,
+      // Hey Jarvis
+      jarvisEnabled: true,
+      jarvisMic: "Default Microphone",
+      jarvisSensitivity: "Normal",
+      jarvisChime: true,
+      // Playback
+      eqEnabled: false,
+      eqPreset: "Flat",
+      eqBands: [0,0,0,0,0,0,0,0,0,0],
+      delayEnabled: false,
+      reverbEnabled: false,
+      audio8D: false,
+      savePlaybackState: true,
+      killServiceOnExit: false,
+      crossfadeEnabled: false,
+      crossfadeDuration: 4,
+      djTransition: false,
+      keepAlbumsContinuous: true,
+      endlessQueue: true,
+      // Listening History
+      trackHistory: true,
+      // Lyrics
+      lyricsProvider: "SimpMusic Lyrics",
+      lyricsOffsetMs: 0,
+      translationLang: "en",
+      ytSubtitleLang: "en",
+      helpLyricsDb: false,
+      contributorName: "",
+      contributorEmail: "",
+      // AI
+      aiProvider: "Gemini",
+      aiApiKey: "",
+      aiModelId: "gemini-2.0-flash",
+      aiBaseUrl: "",
+      aiLyricTranslation: false,
+      // Spotify
+      spotifyConnected: false,
+      spotifyLyrics: false,
+      spotifyCanvas: true,
+      animatedArtwork: true,
+      // Discord
+      discordConnected: false,
+      discordRpc: false,
+      // Last.fm
+      lastfmConnected: false,
+      lastfmScrobble: false,
+      // SponsorBlock
+      sponsorBlockEnabled: true,
+      sponsorSegments: ["Sponsor", "Self-Promotion", "Intro", "Outro"],
+      // Storage
+      limitPlayerCache: "1 GB",
+      // Backup
+      backupDownloaded: false,
+      autoBackup: false,
+      backupFrequency: "Weekly",
+      keepBackups: "5",
+      lastBackup: "Never",
+      // About
+      autoCheckUpdate: true,
+      updateChannel: "Stable"
+    };
+
+    const EQ_FREQS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+    const EQ_PRESETS = {
+      Flat: [0,0,0,0,0,0,0,0,0,0],
+      "Bass Boost": [6,5,4,2,0,0,0,0,1,2],
+      Rock: [4,3,2,0,-1,0,2,3,4,4],
+      Pop: [-1,1,3,4,3,0,-1,1,2,3],
+      Jazz: [3,2,1,2,-1,-1,0,1,2,3],
+      Vocal: [-2,-1,0,2,4,4,3,1,0,-1],
+      Electronic: [5,4,2,0,-1,1,2,3,4,5]
+    };
+
+    const savedSettings = JSON.parse(localStorage.getItem("simpmusic_settings") || "{}");
+    const settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
+    if (!Array.isArray(settings.eqBands) || settings.eqBands.length !== 10) settings.eqBands = [0,0,0,0,0,0,0,0,0,0];
+
+    function saveSettings() {
+      localStorage.setItem("simpmusic_settings", JSON.stringify(settings));
+      applyAppearance();
+    }
+
+    function applyAppearance() {
+      const accent = settings.themeColor === "Custom" && settings.customColor ? settings.customColor : "#FA233B";
+      document.documentElement.style.setProperty("--accent", accent);
+      document.documentElement.style.setProperty("--bg", settings.theme === "Light" ? "#121214" : "#000000");
+    }
+    applyAppearance();
+
     const state = {
       tab: "home",
+      libSubTab: "playlists",
+      analyticsRange: "Last 7 days",
       mood: "All",
+      searchFilter: "All",
+      searchQuery: "",
+      searchResults: [],
+      searchHistory: JSON.parse(localStorage.getItem("simpmusic_search_history") || '["The Weeknd","Daft Punk","Lo-fi beats"]'),
       quickPicks: [],
       listenAgain: [],
+      charts: [],
       queue: [],
       index: 0,
       isPlaying: false,
-      likedIds: new Set(JSON.parse(localStorage.getItem("simpmusic_liked") || "[]")),
+      shuffle: false,
+      repeat: "off", // off | all | one
+      speed: 1.0,
+      pitch: 0,
+      sleepTimerEnd: null,
+      sleepTimerMode: "off",
       pointA: null,
       pointB: null,
-      searchQuery: "",
-      searchResults: [],
+      lyricsTranslated: false,
+      lyricsRomanized: false,
+      likedIds: new Set(JSON.parse(localStorage.getItem("simpmusic_liked") || "[]")),
+      downloadedIds: new Set(JSON.parse(localStorage.getItem("simpmusic_downloaded") || "[]")),
+      playCounts: JSON.parse(localStorage.getItem("simpmusic_playcounts") || "{}"),
+      totalSeconds: Number(localStorage.getItem("simpmusic_totalsec") || "4380"),
+      settingsQuery: "",
+      logs: [`[${new Date().toLocaleTimeString()}] SimpMusic v2.6.13 initialized`],
       playlists: JSON.parse(localStorage.getItem("simpmusic_playlists") || "null") || [
         { id: "liked", name: "Liked Songs", source: "Local" },
-        { id: "downloaded", name: "Downloaded", source: "Local" }
+        { id: "downloaded", name: "Downloaded", source: "Local" },
+        { id: "mix1", name: "Mix For You · Late Night", source: "Auto-generated" }
       ]
     };
+
+    function addLog(msg) {
+      state.logs.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
+      if (state.logs.length > 60) state.logs.pop();
+    }
 
     function showToast(msg) {
       toastEl.textContent = msg;
       toastEl.classList.add("show");
       clearTimeout(showToast._t);
-      showToast._t = setTimeout(() => toastEl.classList.remove("show"), 2400);
+      showToast._t = setTimeout(() => toastEl.classList.remove("show"), 2300);
+      addLog(msg);
     }
 
     function fmtTime(s) {
@@ -621,6 +961,37 @@
       const m = Math.floor(s / 60);
       const r = Math.floor(s % 60);
       return `${m}:${r < 10 ? "0" : ""}${r}`;
+    }
+
+    // Web Audio API 10-Band Equalizer
+    let audioCtx = null;
+    let eqFilters = [];
+    function initWebAudio() {
+      if (audioCtx) return;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AC();
+        const src = audioCtx.createMediaElementSource(audio);
+        let prev = src;
+        eqFilters = EQ_FREQS.map((freq, idx) => {
+          const f = audioCtx.createBiquadFilter();
+          f.type = idx === 0 ? "lowshelf" : idx === EQ_FREQS.length - 1 ? "highshelf" : "peaking";
+          f.frequency.value = freq;
+          f.Q.value = 1.4;
+          f.gain.value = settings.eqEnabled ? settings.eqBands[idx] : 0;
+          prev.connect(f);
+          prev = f;
+          return f;
+        });
+        prev.connect(audioCtx.destination);
+      } catch (e) {}
+    }
+
+    function applyEQ() {
+      if (!eqFilters.length) return;
+      eqFilters.forEach((f, i) => {
+        f.gain.value = settings.eqEnabled ? (settings.eqBands[i] || 0) : 0;
+      });
     }
 
     async function searchItunes(term, limit = 16) {
@@ -632,6 +1003,7 @@
         title: r.trackName,
         artist: r.artistName,
         album: r.collectionName || "",
+        genre: r.primaryGenreName || "Music",
         artwork: (r.artworkUrl100 || "").replace("100x100", "400x400"),
         url: r.previewUrl,
         duration: Math.round((r.trackTimeMillis || 30000) / 1000)
@@ -642,17 +1014,43 @@
 
     function playTrack(track, newQueue = null) {
       if (newQueue) {
-        state.queue = newQueue;
-        state.index = Math.max(0, newQueue.findIndex(t => t.id === track.id));
+        state.queue = [...newQueue];
+        state.index = Math.max(0, state.queue.findIndex(t => t.id === track.id));
       }
+      initWebAudio();
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
       state.pointA = null;
       state.pointB = null;
       updateABStatus();
       audio.src = track.url;
+      audio.playbackRate = state.speed;
       audio.play().catch(() => {});
       state.isPlaying = true;
+      if (settings.trackHistory) {
+        state.playCounts[track.id] = (state.playCounts[track.id] || 0) + 1;
+        state.totalSeconds += 30;
+        localStorage.setItem("simpmusic_playcounts", JSON.stringify(state.playCounts));
+        localStorage.setItem("simpmusic_totalsec", String(state.totalSeconds));
+      }
       updatePlayerUI(track);
       render();
+    }
+
+    function updateLyricsView(track) {
+      if (!track) return;
+      const base = [
+        `♪ ${track.title}`,
+        `${track.artist}${track.album ? " — " + track.album : ""}`,
+        "",
+        "[00:02] Midnight lights across the avenue",
+        "[00:08] Rhythm echoes in pure obsidian black",
+        "[00:15] Turn the volume up, feel the crimson glow",
+        "[00:22] SimpMusic synced lyrics · " + settings.lyricsProvider
+      ];
+      let text = base.join("\n");
+      if (state.lyricsTranslated) text += `\n\n[Translated → ${settings.translationLang.toUpperCase()}]\nLuces de medianoche en la avenida · Brillo carmesí`;
+      if (state.lyricsRomanized || settings.lyricsRomanization) text += `\n\n[Romanized]\nMiddonaito raito · Kurimuzon gurou`;
+      document.getElementById("lyricsLines").textContent = text;
     }
 
     function updatePlayerUI(track) {
@@ -667,12 +1065,31 @@
       document.getElementById("miniPlayIcon").innerHTML = state.isPlaying ? PAUSE_SVG : PLAY_SVG;
       document.getElementById("npPlayIcon").innerHTML = state.isPlaying ? PAUSE_SVG : PLAY_SVG;
       document.getElementById("btnHeart").classList.toggle("liked", state.likedIds.has(track.id));
-      document.getElementById("lyricsBox").textContent =
-        `${track.title}\n${track.artist}\n\nStreaming live via SimpMusic Hey Jarvis\nBackground audio & A–B Loop ready`;
+      document.getElementById("btnShuffle").classList.toggle("active", state.shuffle);
+      document.getElementById("btnRepeat").classList.toggle("active", state.repeat !== "off");
+      document.getElementById("btnRepeat").textContent = state.repeat === "one" ? "↻1" : "↻";
+      document.getElementById("btnOpenSpeed").textContent = `${state.speed.toFixed(2).replace(/\.00$/, ".0")}x Speed`;
+      document.getElementById("btnOpenEQ").classList.toggle("active", settings.eqEnabled);
+      document.getElementById("lyricsProviderSel").value = settings.lyricsProvider;
+      updateLyricsView(track);
+      updateStatusBadge();
+    }
+
+    function updateStatusBadge() {
+      const parts = [];
+      if (settings.eqEnabled) parts.push(`EQ: ${settings.eqPreset}`);
+      if (settings.crossfadeEnabled) parts.push(`Crossfade ${settings.crossfadeDuration}s`);
+      if (state.sleepTimerMode === "end") parts.push("Sleep: End of track");
+      else if (state.sleepTimerEnd) {
+        const rem = Math.max(0, Math.ceil((state.sleepTimerEnd - Date.now()) / 60000));
+        parts.push(`Sleep: ${rem}m`);
+      }
+      document.getElementById("npStatusBadge").textContent = parts.join(" · ");
     }
 
     function togglePlay() {
       if (!audio.src && state.queue.length) { playTrack(state.queue[0]); return; }
+      initWebAudio();
       if (audio.paused) { audio.play().catch(() => {}); state.isPlaying = true; }
       else { audio.pause(); state.isPlaying = false; }
       updatePlayerUI(currentTrack());
@@ -680,7 +1097,11 @@
 
     function nextTrack() {
       if (!state.queue.length) return;
-      state.index = (state.index + 1) % state.queue.length;
+      if (state.sleepTimerMode === "end") {
+        audio.pause(); state.isPlaying = false; state.sleepTimerMode = "off"; updatePlayerUI(currentTrack()); showToast("Sleep Timer paused playback"); return;
+      }
+      if (state.repeat === "one") { audio.currentTime = 0; audio.play().catch(() => {}); return; }
+      state.index = state.shuffle ? Math.floor(Math.random() * state.queue.length) : (state.index + 1) % state.queue.length;
       playTrack(state.queue[state.index]);
     }
 
@@ -697,6 +1118,19 @@
       else el.textContent = "";
     }
 
+    setInterval(() => {
+      if (state.sleepTimerEnd && Date.now() >= state.sleepTimerEnd) {
+        state.sleepTimerEnd = null;
+        state.sleepTimerMode = "off";
+        audio.pause();
+        state.isPlaying = false;
+        updatePlayerUI(currentTrack());
+        showToast("Sleep Timer finished");
+      } else if (state.sleepTimerEnd) {
+        updateStatusBadge();
+      }
+    }, 5000);
+
     audio.addEventListener("timeupdate", () => {
       const cur = audio.currentTime || 0;
       const dur = audio.duration || 30;
@@ -708,6 +1142,183 @@
       document.getElementById("timeTot").textContent = fmtTime(dur);
     });
     audio.addEventListener("ended", nextTrack);
+
+    // Sheet helpers
+    function openSheet(html) {
+      sheetBody.innerHTML = html;
+      sheetBackdrop.classList.add("open");
+    }
+    function closeSheet() { sheetBackdrop.classList.remove("open"); }
+    sheetBackdrop.onclick = e => { if (e.target === sheetBackdrop) closeSheet(); };
+
+    function openEQSheet() {
+      openSheet(`
+        <div class="sheet-head">
+          <div class="sheet-title">10-Band Equalizer & Effects</div>
+          <button class="sec-btn" id="btnCloseSheet">Done</button>
+        </div>
+        <div class="set-row" style="border-top:none;">
+          <div class="set-info"><div class="set-name">Enable Equalizer</div><div class="set-desc">Web Audio API 10-band parametric curve</div></div>
+          <label class="switch"><input type="checkbox" id="eqMasterToggle" ${settings.eqEnabled ? "checked" : ""}><span class="slider-tog"></span></label>
+        </div>
+        <div class="chips">
+          ${Object.keys(EQ_PRESETS).map(p => `<button class="chip crimson ${settings.eqPreset === p ? "active" : ""}" data-eqp="${p}">${p}</button>`).join("")}
+        </div>
+        <div class="eq-bands">
+          ${EQ_FREQS.map((f, i) => `
+            <div class="eq-col">
+              <span class="eq-db" id="eqVal${i}">${settings.eqBands[i] > 0 ? "+" : ""}${settings.eqBands[i]}</span>
+              <input type="range" min="-12" max="12" step="1" value="${settings.eqBands[i]}" data-eqi="${i}" />
+              <span class="eq-lbl">${f >= 1000 ? (f/1000) + "k" : f}</span>
+            </div>`).join("")}
+        </div>
+        <div class="set-row">
+          <div class="set-info"><div class="set-name">Delay</div><div class="set-desc">Echo the sound with a repeating delay</div></div>
+          <label class="switch"><input type="checkbox" id="eqDelay" ${settings.delayEnabled ? "checked" : ""}><span class="slider-tog"></span></label>
+        </div>
+        <div class="set-row">
+          <div class="set-info"><div class="set-name">Reverb</div><div class="set-desc">Place music in a room, hall, or plate</div></div>
+          <label class="switch"><input type="checkbox" id="eqReverb" ${settings.reverbEnabled ? "checked" : ""}><span class="slider-tog"></span></label>
+        </div>
+        <div class="set-row">
+          <div class="set-info"><div class="set-name">8D Audio</div><div class="set-desc">Spatial stereo panning effect</div></div>
+          <label class="switch"><input type="checkbox" id="eq8d" ${settings.audio8D ? "checked" : ""}><span class="slider-tog"></span></label>
+        </div>
+      `);
+      document.getElementById("btnCloseSheet").onclick = closeSheet;
+      document.getElementById("eqMasterToggle").onchange = e => { settings.eqEnabled = e.target.checked; saveSettings(); applyEQ(); updatePlayerUI(currentTrack()); };
+      document.getElementById("eqDelay").onchange = e => { settings.delayEnabled = e.target.checked; saveSettings(); showToast("Delay " + (settings.delayEnabled ? "ON" : "OFF")); };
+      document.getElementById("eqReverb").onchange = e => { settings.reverbEnabled = e.target.checked; saveSettings(); showToast("Reverb " + (settings.reverbEnabled ? "ON" : "OFF")); };
+      document.getElementById("eq8d").onchange = e => { settings.audio8D = e.target.checked; saveSettings(); showToast("8D Audio " + (settings.audio8D ? "ON" : "OFF")); };
+      sheetBody.querySelectorAll("[data-eqp]").forEach(b => b.onclick = () => {
+        settings.eqPreset = b.dataset.eqp;
+        settings.eqBands = [...EQ_PRESETS[b.dataset.eqp]];
+        settings.eqEnabled = true;
+        saveSettings(); applyEQ(); updatePlayerUI(currentTrack()); openEQSheet();
+      });
+      sheetBody.querySelectorAll("[data-eqi]").forEach(r => r.oninput = e => {
+        const idx = Number(r.dataset.eqi);
+        const val = Number(e.target.value);
+        settings.eqBands[idx] = val;
+        settings.eqPreset = "Custom";
+        document.getElementById("eqVal" + idx).textContent = (val > 0 ? "+" : "") + val;
+        saveSettings(); applyEQ();
+      });
+    }
+
+    function openSpeedSheet() {
+      openSheet(`
+        <div class="sheet-head">
+          <div class="sheet-title">Playback Speed & Pitch</div>
+          <button class="sec-btn" id="btnCloseSheet">Done</button>
+        </div>
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>Speed</span><strong id="spdLbl">${state.speed.toFixed(2)}x</strong></div>
+          <input type="range" id="spdRange" min="0.25" max="2.0" step="0.05" value="${state.speed}" style="width:100%;accent-color:var(--accent);" />
+        </div>
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>Pitch (Semitones)</span><strong id="pitLbl">${state.pitch > 0 ? "+" : ""}${state.pitch} st</strong></div>
+          <input type="range" id="pitRange" min="-12" max="12" step="1" value="${state.pitch}" style="width:100%;accent-color:var(--accent);" />
+        </div>
+        <button class="crimson-btn" id="btnResetSpd" style="width:100%;">Reset to Default (1.0x / 0 st)</button>
+      `);
+      document.getElementById("btnCloseSheet").onclick = closeSheet;
+      document.getElementById("spdRange").oninput = e => {
+        state.speed = Number(e.target.value);
+        audio.playbackRate = state.speed;
+        document.getElementById("spdLbl").textContent = state.speed.toFixed(2) + "x";
+        updatePlayerUI(currentTrack());
+      };
+      document.getElementById("pitRange").oninput = e => {
+        state.pitch = Number(e.target.value);
+        document.getElementById("pitLbl").textContent = (state.pitch > 0 ? "+" : "") + state.pitch + " st";
+      };
+      document.getElementById("btnResetSpd").onclick = () => {
+        state.speed = 1.0; state.pitch = 0; audio.playbackRate = 1.0; updatePlayerUI(currentTrack()); openSpeedSheet();
+      };
+    }
+
+    function openTimerSheet() {
+      const presets = [5, 10, 15, 30, 45, 60];
+      openSheet(`
+        <div class="sheet-head">
+          <div class="sheet-title">Sleep Timer</div>
+          <button class="sec-btn" id="btnCloseSheet">Done</button>
+        </div>
+        <div class="list-col">
+          <button class="sec-btn" data-tm="off" style="padding:12px;text-align:left;">Off</button>
+          ${presets.map(m => `<button class="sec-btn" data-tm="${m}" style="padding:12px;text-align:left;">${m} minutes</button>`).join("")}
+          <button class="sec-btn" data-tm="end" style="padding:12px;text-align:left;">End of current track</button>
+        </div>
+      `);
+      document.getElementById("btnCloseSheet").onclick = closeSheet;
+      sheetBody.querySelectorAll("[data-tm]").forEach(b => b.onclick = () => {
+        const v = b.dataset.tm;
+        if (v === "off") { state.sleepTimerEnd = null; state.sleepTimerMode = "off"; showToast("Sleep Timer off"); }
+        else if (v === "end") { state.sleepTimerEnd = null; state.sleepTimerMode = "end"; showToast("Sleep Timer: End of track"); }
+        else { state.sleepTimerMode = "min"; state.sleepTimerEnd = Date.now() + Number(v) * 60000; showToast(`Sleep Timer set for ${v}m`); }
+        updateStatusBadge();
+        closeSheet();
+      });
+    }
+
+    function openQueueSheet() {
+      openSheet(`
+        <div class="sheet-head">
+          <div class="sheet-title">Up Next Queue (${state.queue.length})</div>
+          <button class="sec-btn" id="btnCloseSheet">Done</button>
+        </div>
+        <div class="set-row" style="border-top:none;margin-bottom:8px;">
+          <div class="set-info"><div class="set-name">Endless Queue</div><div class="set-desc">Auto-append similar songs</div></div>
+          <label class="switch"><input type="checkbox" id="qEndless" ${settings.endlessQueue ? "checked" : ""}><span class="slider-tog"></span></label>
+        </div>
+        <div class="list-col">
+          ${state.queue.map((t, i) => `
+            <div class="qp-item ${i === state.index ? "playing" : ""}" style="justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer;" data-qj="${i}">
+                <img class="qp-art" src="${t.artwork}" alt="" />
+                <div class="qp-meta"><div class="qp-title">${t.title}</div><div class="qp-artist">${t.artist}</div></div>
+              </div>
+              <button class="sec-btn" data-qdel="${i}">✕</button>
+            </div>`).join("")}
+        </div>
+      `);
+      document.getElementById("btnCloseSheet").onclick = closeSheet;
+      document.getElementById("qEndless").onchange = e => { settings.endlessQueue = e.target.checked; saveSettings(); };
+      sheetBody.querySelectorAll("[data-qj]").forEach(el => el.onclick = () => {
+        state.index = Number(el.dataset.qj);
+        playTrack(state.queue[state.index]);
+        closeSheet();
+      });
+      sheetBody.querySelectorAll("[data-qdel]").forEach(el => el.onclick = () => {
+        const idx = Number(el.dataset.qdel);
+        if (state.queue.length <= 1) return;
+        state.queue.splice(idx, 1);
+        if (state.index >= state.queue.length) state.index = 0;
+        openQueueSheet();
+      });
+    }
+
+    function openInfoSheet() {
+      const t = currentTrack();
+      if (!t) return;
+      openSheet(`
+        <div class="sheet-head">
+          <div class="sheet-title">Song Info</div>
+          <button class="sec-btn" id="btnCloseSheet">Done</button>
+        </div>
+        <div class="panel" style="font-size:13px;line-height:1.8;">
+          <div><strong>Title:</strong> ${t.title}</div>
+          <div><strong>Artist:</strong> ${t.artist}</div>
+          <div><strong>Album:</strong> ${t.album || "Single"}</div>
+          <div><strong>Genre:</strong> ${t.genre || "Music"}</div>
+          <div><strong>Quality:</strong> ${settings.audioQuality} · AAC/M4A</div>
+          <div><strong>SponsorBlock:</strong> ${settings.sponsorBlockEnabled ? "Active (" + settings.sponsorSegments.length + " segments)" : "Disabled"}</div>
+          <div><strong>Plays:</strong> ${state.playCounts[t.id] || 1}</div>
+        </div>
+      `);
+      document.getElementById("btnCloseSheet").onclick = closeSheet;
+    }
 
     async function runJarvisCommand(text) {
       const q = text.toLowerCase().trim();
@@ -723,8 +1334,307 @@
       }
     }
 
+    // Settings Helper Builders
+    function togRow(key, name, desc = "") {
+      return `
+        <div class="set-row">
+          <div class="set-info"><div class="set-name">${name}</div>${desc ? `<div class="set-desc">${desc}</div>` : ""}</div>
+          <label class="switch"><input type="checkbox" data-set-tog="${key}" ${settings[key] ? "checked" : ""}><span class="slider-tog"></span></label>
+        </div>`;
+    }
+    function selRow(key, name, options, desc = "") {
+      return `
+        <div class="set-row">
+          <div class="set-info"><div class="set-name">${name}</div>${desc ? `<div class="set-desc">${desc}</div>` : ""}</div>
+          <select class="set-select" data-set-sel="${key}">
+            ${options.map(o => `<option value="${o}" ${settings[key] === o ? "selected" : ""}>${o}</option>`).join("")}
+          </select>
+        </div>`;
+    }
+    function inpRow(key, name, type = "text", placeholder = "") {
+      return `
+        <div class="set-row">
+          <div class="set-info"><div class="set-name">${name}</div></div>
+          <input class="set-input" type="${type}" data-set-inp="${key}" value="${settings[key] || ""}" placeholder="${placeholder}" />
+        </div>`;
+    }
+
+    function renderSettings() {
+      const q = state.settingsQuery.toLowerCase().trim();
+      const categories = [
+        {
+          title: "Devices & Sync",
+          html: `
+            <div class="set-row"><div class="set-info"><div class="set-name">Devices (Listen Together)</div><div class="set-desc">This Web/iOS Device · Active</div></div><button class="sec-btn" id="btnSyncNow">Sync Now</button></div>
+          `
+        },
+        {
+          title: "Appearance & Interface",
+          html: [
+            selRow("theme", "Theme", ["AMOLED / Pure Black", "Dark", "Light", "System default"]),
+            selRow("nowPlayingStyle", "Now Playing style", ["Apple Music", "Classic", "Material 3 Expressive", "SoundCloud"]),
+            selRow("lyricsStyle", "Lyrics style", ["Apple Music", "Classic"]),
+            togRow("lyricsRomanization", "Lyrics romanization", "Transliterate CJK / Cyrillic lyrics"),
+            selRow("themeColor", "Theme color", ["Custom", "Dynamic / Artwork", "System"]),
+            `<div class="set-row"><div class="set-info"><div class="set-name">Custom accent color</div><div class="set-desc">Default Apple Music Crimson (#FA233B)</div></div><input type="color" id="setAccentColor" value="${settings.customColor}" style="width:38px;height:28px;border:none;background:none;cursor:pointer;" /></div>`,
+            togRow("liquidGlass", "Enable liquid glass (BETA)", "iOS translucent glass surfaces")
+          ].join("")
+        },
+        {
+          title: "Account & Content",
+          html: [
+            `<div class="set-row"><div class="set-info"><div class="set-name">YouTube Account</div><div class="set-desc">${settings.ytAccount}</div></div><button class="sec-btn" id="btnYtAcct">${settings.ytAccount.includes("Guest") ? "Sign In" : "Sign Out"}</button></div>`,
+            selRow("language", "Language", ["en-US", "es-ES", "fr-FR", "de-DE", "ja-JP", "vi-VN"]),
+            selRow("contentCountry", "Content Country", ["US", "GB", "CA", "JP", "DE", "VN"]),
+            selRow("preferredAudioLang", "Preferred audio language", ["Original audio", "en", "es", "ja"]),
+            selRow("audioQuality", "Audio Quality", ["Low (64 kbps)", "Medium (128 kbps)", "High (256 kbps)"]),
+            selRow("downloadQuality", "Download Quality", ["Low (64 kbps)", "Medium (128 kbps)", "High (256 kbps)"]),
+            selRow("videoQuality", "Video Quality", ["360p", "720p", "1080p"]),
+            selRow("videoDownloadQuality", "Video Download Quality", ["360p", "720p", "1080p"]),
+            togRow("downloadLiked", "Download songs you like", "Auto-download favorites for offline playback"),
+            togRow("smartDownloads", "Smart downloads", "Automatically keep recent tracks offline"),
+            selRow("smartDownloadsCount", "Smart downloads — Songs to keep", ["10", "25", "50", "100"]),
+            togRow("playVideoTrack", "Play video for video track", "Music videos, lyrics videos, podcasts"),
+            togRow("playAudioInRadio", "Play audio version instead of MV in radio"),
+            togRow("syncFollowYt", "Sync Follow with YouTube"),
+            togRow("sendListeningData", "Send back listening data to Google"),
+            togRow("playExplicit", "Play explicit content"),
+            togRow("keepYtOffline", "Keep showing YouTube playlist when offline"),
+            togRow("replaceFavWithYt", "Replace Favorite by YouTube Liked"),
+            togRow("proxyEnabled", "Enable Proxy"),
+            selRow("proxyType", "Proxy type", ["HTTP", "SOCKS"]),
+            inpRow("proxyHost", "Proxy host", "text", "127.0.0.1"),
+            inpRow("proxyPort", "Proxy port", "text", "8080")
+          ].join("")
+        },
+        {
+          title: "Audio & Equalizer",
+          html: [
+            togRow("normalizeVolume", "Normalize Volume", "Balance media loudness"),
+            togRow("skipSilent", "Skip Silent", "Skip non-music silent sections"),
+            selRow("eqType", "Equalizer type", ["Built-in", "System"]),
+            `<div class="set-row"><div class="set-info"><div class="set-name">10-Band Equalizer</div><div class="set-desc">Preset: ${settings.eqPreset}</div></div><button class="crimson-btn" id="btnSetOpenEQ">Open EQ</button></div>`
+          ].join("")
+        },
+        {
+          title: "Playback",
+          html: [
+            togRow("eqEnabled", "Equalizer", "Shape sound with a 10-band curve"),
+            togRow("delayEnabled", "Delay", "Echo sound with repeating delay"),
+            togRow("reverbEnabled", "Reverb", "Room, hall, or plate acoustics"),
+            togRow("audio8D", "8D Audio", "Spatial stereo panning"),
+            togRow("savePlaybackState", "Save Playback State", "Save shuffle and repeat mode"),
+            togRow("killServiceOnExit", "Kill service on exit", "Stop background player on exit"),
+            togRow("crossfadeEnabled", "Crossfade (BETA)", "Smoothly blend between tracks"),
+            `<div class="set-row"><div class="set-info"><div class="set-name">Crossfade Duration</div><div class="set-desc">${settings.crossfadeDuration} seconds</div></div><input type="range" id="setCrossfadeRange" min="0" max="12" value="${settings.crossfadeDuration}" style="width:110px;accent-color:var(--accent);" /></div>`,
+            togRow("djTransition", "DJ-Style Transition"),
+            togRow("keepAlbumsContinuous", "Keep albums continuous")
+          ].join("")
+        },
+        {
+          title: "Hey Jarvis Voice Assistant",
+          html: [
+            togRow("jarvisEnabled", "Hey Jarvis", "Enable hands-free voice assistant"),
+            selRow("jarvisMic", "Microphone", ["Default Microphone", "Bluetooth Headset", "Built-in Mic"]),
+            selRow("jarvisSensitivity", "Mic Sensitivity", ["Low", "Normal", "High"]),
+            togRow("jarvisChime", "Wake Confirmation Chime", "Play subtle tone when Jarvis hears you"),
+            `<div class="set-row"><div class="set-info"><div class="set-name">Voice Engine (Parakeet-110M)</div><div class="set-desc">Ready · Test quick commands below</div></div></div>`,
+            `<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:6px;">
+              <button class="sec-btn" id="btnTestJazz">Play Smooth Jazz</button>
+              <button class="sec-btn" id="btnTestNext">Next Song</button>
+              <button class="sec-btn" id="btnTestPause">Pause</button>
+            </div>`
+          ].join("")
+        },
+        {
+          title: "Performance & Old PC Mode",
+          html: [
+            selRow("performanceMode", "Performance Mode", ["Full", "Balanced", "Old PC", "Low-spec"]),
+            selRow("graphicsRenderer", "Graphics Renderer", ["OpenGL", "Direct3D", "Software"]),
+            selRow("windowsAudioDriver", "Windows Audio Driver", ["WASAPI", "WinMM", "SDL"]),
+            togRow("jarvisLowRam", "Hey Jarvis Low-RAM Mode", "Use lightweight Vosk engine only")
+          ].join("")
+        },
+        {
+          title: "Listening History",
+          html: [
+            togRow("trackHistory", "Local tracking listening history", "Log listening history locally"),
+            `<div class="set-row"><div class="set-info"><div class="set-name">Clear listening history</div><div class="set-desc">Reset local play counts & stats</div></div><button class="sec-btn" id="btnClearHist">Clear</button></div>`
+          ].join("")
+        },
+        {
+          title: "Lyrics",
+          html: [
+            selRow("lyricsProvider", "Main Lyrics Provider", ["SimpMusic Lyrics", "YouTube Transcript", "LRCLIB", "BetterLyrics"]),
+            inpRow("lyricsOffsetMs", "Lyrics timing offset (ms)", "number", "0"),
+            selRow("translationLang", "Translation Language", ["en", "es", "fr", "de", "ja", "ko"]),
+            selRow("ytSubtitleLang", "YouTube Subtitle Language", ["en", "es", "fr", "ja"]),
+            togRow("helpLyricsDb", "Help build SimpMusic lyrics DB"),
+            inpRow("contributorName", "Contributor name", "text", "Optional"),
+            inpRow("contributorEmail", "Contributor email", "email", "Optional")
+          ].join("")
+        },
+        {
+          title: "AI Translation",
+          html: [
+            selRow("aiProvider", "AI Provider", ["Gemini", "OpenAI"]),
+            inpRow("aiApiKey", "Your AI API Key", "password", "••••••••"),
+            inpRow("aiModelId", "Custom AI model ID", "text", "gemini-2.0-flash"),
+            inpRow("aiBaseUrl", "Custom Base URL", "text", "https://..."),
+            togRow("aiLyricTranslation", "Use AI Lyric Translation")
+          ].join("")
+        },
+        {
+          title: "Spotify, Discord & Last.fm",
+          html: [
+            togRow("spotifyConnected", "Spotify Account Connected"),
+            togRow("spotifyLyrics", "Enable Spotify Lyrics"),
+            togRow("spotifyCanvas", "Enable Spotify Canvas"),
+            togRow("animatedArtwork", "Animated artwork", "Play album animated cover"),
+            togRow("discordConnected", "Discord Account Connected"),
+            togRow("discordRpc", "Enable Discord Rich Presence"),
+            togRow("lastfmConnected", "Last.fm Account Connected"),
+            togRow("lastfmScrobble", "Enable Last.fm Scrobbling")
+          ].join("")
+        },
+        {
+          title: "SponsorBlock",
+          html: [
+            togRow("sponsorBlockEnabled", "Enable SponsorBlock", "Skip sponsor & non-music segments"),
+            `<div style="padding:8px 0;"><div class="set-desc" style="margin-bottom:8px;">Skip-segment categories:</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                ${["Sponsor","Self-Promotion","Interaction Reminder","Intro","Outro","Preview/Recap","Non-Music Section","Filler"].map(seg =>
+                  `<button class="chip crimson ${settings.sponsorSegments.includes(seg) ? "active" : ""}" data-sbseg="${seg}">${seg}</button>`
+                ).join("")}
+              </div></div>`
+          ].join("")
+        },
+        {
+          title: "Storage & Cache",
+          html: [
+            `<div class="set-row"><div class="set-info"><div class="set-name">Player Cache</div><div class="set-desc">18.4 MB</div></div><button class="sec-btn" data-clear-cache="Player">Clear</button></div>`,
+            `<div class="set-row"><div class="set-info"><div class="set-name">Downloaded Cache</div><div class="set-desc">${state.downloadedIds.size} tracks</div></div><button class="sec-btn" data-clear-cache="Downloaded">Clear</button></div>`,
+            `<div class="set-row"><div class="set-info"><div class="set-name">Thumbnail & Canvas Cache</div><div class="set-desc">6.2 MB</div></div><button class="sec-btn" data-clear-cache="Thumbnail">Clear</button></div>`,
+            selRow("limitPlayerCache", "Limit Player Cache", ["100 MB", "500 MB", "1 GB", "2 GB", "Unlimited"])
+          ].join("")
+        },
+        {
+          title: "Backup & Restore",
+          html: [
+            togRow("backupDownloaded", "Backup downloaded data"),
+            togRow("autoBackup", "Auto backup"),
+            selRow("backupFrequency", "Backup frequency", ["Daily", "Weekly", "Monthly"]),
+            selRow("keepBackups", "Keep backups", ["3", "5", "10"]),
+            `<div class="set-row"><div class="set-info"><div class="set-name">Last backup</div><div class="set-desc">${settings.lastBackup}</div></div></div>`,
+            `<div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:6px;">
+              <button class="crimson-btn" id="btnExportJson">Export JSON Backup</button>
+              <button class="sec-btn" id="btnImportJson">Restore JSON</button>
+            </div>`
+          ].join("")
+        },
+        {
+          title: "About & Developer Option",
+          html: [
+            `<div class="set-row"><div class="set-info"><div class="set-name">SimpMusic · Hey Jarvis Edition</div><div class="set-desc">v2.6.13 · Author: hreyner7-collab</div></div><button class="sec-btn" id="btnCheckUpd">Check Update</button></div>`,
+            togRow("autoCheckUpdate", "Automatic check for update"),
+            selRow("updateChannel", "Update channel", ["Stable", "Beta"]),
+            `<div class="set-row"><div class="set-info"><div class="set-name">Developer Option → App Log</div><div class="set-desc">${state.logs.length} recent events</div></div><button class="sec-btn" id="btnViewLogs">View Logs</button></div>`
+          ].join("")
+        }
+      ];
+
+      const filtered = q ? categories.filter(c => (c.title + " " + c.html).toLowerCase().includes(q)) : categories;
+
+      mainContent.innerHTML = `
+        <div class="search-box">
+          <input id="setSearchInp" type="search" placeholder="Filter settings (e.g. Equalizer, SponsorBlock, Backup)…" value="${state.settingsQuery}" />
+        </div>
+        ${filtered.map(c => `
+          <div class="set-cat">
+            <div class="set-cat-head"><span class="set-cat-title">${c.title}</span></div>
+            <div class="set-cat-body">${c.html}</div>
+          </div>`).join("")}
+      `;
+
+      document.getElementById("setSearchInp").oninput = e => { state.settingsQuery = e.target.value; renderSettings(); document.getElementById("setSearchInp").focus(); };
+      mainContent.querySelectorAll("[data-set-tog]").forEach(el => el.onchange = () => {
+        settings[el.dataset.setTog] = el.checked;
+        saveSettings();
+        if (el.dataset.setTog === "eqEnabled") applyEQ();
+        showToast("Saved");
+      });
+      mainContent.querySelectorAll("[data-set-sel]").forEach(el => el.onchange = () => {
+        settings[el.dataset.setSel] = el.value;
+        saveSettings();
+        showToast("Saved");
+      });
+      mainContent.querySelectorAll("[data-set-inp]").forEach(el => el.onchange = () => {
+        settings[el.dataset.setInp] = el.value;
+        saveSettings();
+      });
+      const accCol = document.getElementById("setAccentColor");
+      if (accCol) accCol.oninput = e => { settings.customColor = e.target.value; settings.themeColor = "Custom"; saveSettings(); };
+      const cfRng = document.getElementById("setCrossfadeRange");
+      if (cfRng) cfRng.oninput = e => { settings.crossfadeDuration = Number(e.target.value); saveSettings(); updateStatusBadge(); };
+      const btnSync = document.getElementById("btnSyncNow");
+      if (btnSync) btnSync.onclick = () => showToast("Library synced");
+      const btnYt = document.getElementById("btnYtAcct");
+      if (btnYt) btnYt.onclick = () => {
+        settings.ytAccount = settings.ytAccount.includes("Guest") ? "Signed in (YouTube Music)" : "Guest (Not signed in)";
+        saveSettings(); renderSettings(); showToast(settings.ytAccount);
+      };
+      const btnEQ = document.getElementById("btnSetOpenEQ");
+      if (btnEQ) btnEQ.onclick = openEQSheet;
+      const btnTJ = document.getElementById("btnTestJazz");
+      if (btnTJ) btnTJ.onclick = () => runJarvisCommand("Hey Jarvis play smooth jazz");
+      const btnTN = document.getElementById("btnTestNext");
+      if (btnTN) btnTN.onclick = () => runJarvisCommand("Hey Jarvis next song");
+      const btnTP = document.getElementById("btnTestPause");
+      if (btnTP) btnTP.onclick = () => runJarvisCommand("Hey Jarvis pause");
+      const btnCH = document.getElementById("btnClearHist");
+      if (btnCH) btnCH.onclick = () => {
+        state.playCounts = {}; state.totalSeconds = 0;
+        localStorage.setItem("simpmusic_playcounts", "{}");
+        localStorage.setItem("simpmusic_totalsec", "0");
+        showToast("Listening history cleared");
+      };
+      mainContent.querySelectorAll("[data-sbseg]").forEach(b => b.onclick = () => {
+        const seg = b.dataset.sbseg;
+        if (settings.sponsorSegments.includes(seg)) settings.sponsorSegments = settings.sponsorSegments.filter(x => x !== seg);
+        else settings.sponsorSegments.push(seg);
+        saveSettings(); renderSettings();
+      });
+      mainContent.querySelectorAll("[data-clear-cache]").forEach(b => b.onclick = () => showToast(`${b.dataset.clearCache} cache cleared`));
+      const btnExp = document.getElementById("btnExportJson");
+      if (btnExp) btnExp.onclick = () => {
+        settings.lastBackup = new Date().toLocaleString();
+        saveSettings();
+        const payload = { settings, playlists: state.playlists, likedIds: [...state.likedIds], searchHistory: state.searchHistory };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "simpmusic-backup.json";
+        a.click();
+        showToast("Backup exported");
+        renderSettings();
+      };
+      const btnImp = document.getElementById("btnImportJson");
+      if (btnImp) btnImp.onclick = () => document.getElementById("restoreFileInput").click();
+      const btnUpd = document.getElementById("btnCheckUpd");
+      if (btnUpd) btnUpd.onclick = () => showToast("SimpMusic v2.6.13 is up to date");
+      const btnLogs = document.getElementById("btnViewLogs");
+      if (btnLogs) btnLogs.onclick = () => {
+        openSheet(`
+          <div class="sheet-head"><div class="sheet-title">App Logs</div><button class="sec-btn" id="btnCloseSheet">Done</button></div>
+          <pre style="font-size:11px;color:var(--muted);white-space:pre-wrap;line-height:1.6;">${state.logs.join("\n")}</pre>
+        `);
+        document.getElementById("btnCloseSheet").onclick = closeSheet;
+      };
+    }
+
     function render() {
       document.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("active", b.dataset.tab === state.tab));
+      document.getElementById("btnSettingsTop").classList.toggle("active", state.tab === "settings");
       const titleMap = { home: "SimpMusic", library: "Library", search: "Search", settings: "Settings" };
       document.getElementById("headerTitle").textContent = titleMap[state.tab] || "SimpMusic";
       const cur = currentTrack();
@@ -758,6 +1668,17 @@
                 <div class="t2">${t.artist}</div>
               </button>`).join("")}
           </div>
+          <div class="sec-head">
+            <div><div class="sec-sub">${settings.contentCountry} Top Charts</div><div class="sec-title">Trending now</div></div>
+          </div>
+          <div class="carousel">
+            ${state.charts.map(t => `
+              <button class="card-tile" data-ch="${t.id}">
+                <img src="${t.artwork}" alt="" />
+                <div class="t1">${t.title}</div>
+                <div class="t2">${t.artist}</div>
+              </button>`).join("")}
+          </div>
         `;
         mainContent.querySelectorAll("[data-mood]").forEach(btn => btn.onclick = async () => {
           state.mood = btn.dataset.mood;
@@ -775,12 +1696,22 @@
           const t = state.listenAgain.find(x => x.id === b.dataset.la);
           if (t) playTrack(t, state.listenAgain);
         });
+        mainContent.querySelectorAll("[data-ch]").forEach(b => b.onclick = () => {
+          const t = state.charts.find(x => x.id === b.dataset.ch);
+          if (t) playTrack(t, state.charts);
+        });
       } else if (state.tab === "search") {
+        const filters = ["All", "Songs", "Videos", "Albums", "Artists", "Playlists", "Podcasts"];
         mainContent.innerHTML = `
           <div class="search-box">
             <input id="searchInput" type="search" placeholder="Search songs, artists, albums…" value="${state.searchQuery}" />
             <button class="crimson-btn" id="btnSearchGo">Search</button>
           </div>
+          <div class="chips">${filters.map(f => `<button class="chip crimson ${state.searchFilter === f ? "active" : ""}" data-sf="${f}">${f}</button>`).join("")}</div>
+          ${!state.searchResults.length && state.searchHistory.length ? `
+            <div class="sec-head"><div class="sec-title" style="font-size:16px;">Recent searches</div><button class="sec-btn" id="btnClearSH">Clear</button></div>
+            <div class="chips">${state.searchHistory.map(h => `<button class="chip" data-sh="${h}">${h}</button>`).join("")}</div>
+          ` : ""}
           <div class="list-col">
             ${state.searchResults.map(t => `
               <button class="qp-item ${cur && cur.id === t.id ? "playing" : ""}" data-sr="${t.id}">
@@ -789,76 +1720,122 @@
                   <div class="qp-title">${t.title}</div>
                   <div class="qp-artist">${t.artist} · ${fmtTime(t.duration)}</div>
                 </div>
-              </button>`).join("") || `<div class="panel" style="color:var(--muted);">Search any song, artist, or album on SimpMusic.</div>`}
+              </button>`).join("") || `<div class="panel" style="color:var(--muted);">Search any song, artist, album, or playlist on SimpMusic.</div>`}
           </div>
         `;
-        const doSearch = async () => {
-          state.searchQuery = document.getElementById("searchInput").value.trim();
-          if (!state.searchQuery) return;
-          state.searchResults = await searchItunes(state.searchQuery, 15);
+        const doSearch = async (termOverride) => {
+          const q = (termOverride ?? document.getElementById("searchInput").value).trim();
+          if (!q) return;
+          state.searchQuery = q;
+          if (!state.searchHistory.includes(q)) {
+            state.searchHistory.unshift(q);
+            state.searchHistory = state.searchHistory.slice(0, 8);
+            localStorage.setItem("simpmusic_search_history", JSON.stringify(state.searchHistory));
+          }
+          const suffix = state.searchFilter === "All" || state.searchFilter === "Songs" ? "" : " " + state.searchFilter;
+          state.searchResults = await searchItunes(q + suffix, 16);
           render();
         };
-        document.getElementById("btnSearchGo").onclick = doSearch;
+        document.getElementById("btnSearchGo").onclick = () => doSearch();
         document.getElementById("searchInput").onkeydown = e => { if (e.key === "Enter") doSearch(); };
+        mainContent.querySelectorAll("[data-sf]").forEach(b => b.onclick = () => { state.searchFilter = b.dataset.sf; if (state.searchQuery) doSearch(state.searchQuery); else render(); });
+        mainContent.querySelectorAll("[data-sh]").forEach(b => b.onclick = () => doSearch(b.dataset.sh));
+        const btnCSH = document.getElementById("btnClearSH");
+        if (btnCSH) btnCSH.onclick = () => { state.searchHistory = []; localStorage.setItem("simpmusic_search_history", "[]"); render(); };
         mainContent.querySelectorAll("[data-sr]").forEach(b => b.onclick = () => {
           const t = state.searchResults.find(x => x.id === b.dataset.sr);
           if (t) playTrack(t, state.searchResults);
         });
       } else if (state.tab === "library") {
+        const mins = Math.max(1, Math.round(state.totalSeconds / 60));
+        const totalPlays = Object.values(state.playCounts).reduce((a, b) => a + b, 0) + 12;
         mainContent.innerHTML = `
-          <div class="panel">
-            <div style="font-size:15px;font-weight:700;margin-bottom:4px;">Import Spotify / YouTube Link</div>
-            <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Paste any public playlist link to add it to your Library.</div>
-            <div class="search-box" style="margin-bottom:0;">
-              <input id="importUrlInput" placeholder="https://open.spotify.com/playlist/..." />
-              <button class="crimson-btn" id="btnImportDo">Import</button>
+          <div class="qa-grid">
+            <button class="qa-card" id="qaLiked"><div class="qa-icon">♥</div><div><div class="qa-name">Liked Songs</div><div class="qa-cnt">${state.likedIds.size} tracks</div></div></button>
+            <button class="qa-card" id="qaDown"><div class="qa-icon">↓</div><div><div class="qa-name">Downloaded</div><div class="qa-cnt">${state.downloadedIds.size} offline</div></div></button>
+            <button class="qa-card" id="qaMost"><div class="qa-icon">★</div><div><div class="qa-name">Most Played</div><div class="qa-cnt">${totalPlays} plays</div></div></button>
+            <button class="qa-card" id="qaMix"><div class="qa-icon">✦</div><div><div class="qa-name">Mix For You</div><div class="qa-cnt">Daily mixes</div></div></button>
+          </div>
+          <div class="chips">
+            <button class="chip crimson ${state.libSubTab === "playlists" ? "active" : ""}" data-lsub="playlists">Playlists & Import</button>
+            <button class="chip crimson ${state.libSubTab === "analytics" ? "active" : ""}" data-lsub="analytics">Analytics & Wrapped</button>
+          </div>
+          ${state.libSubTab === "playlists" ? `
+            <div class="panel">
+              <div style="font-size:14px;font-weight:700;margin-bottom:4px;">Import Spotify / YouTube Link</div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Paste any public playlist, album, or track URL.</div>
+              <div class="search-box" style="margin-bottom:0;">
+                <input id="importUrlInput" placeholder="https://open.spotify.com/playlist/..." />
+                <button class="crimson-btn" id="btnImportDo">Import</button>
+              </div>
             </div>
-          </div>
-          <div class="sec-head"><div class="sec-title">Your Playlists</div></div>
-          <div class="list-col">
-            ${state.playlists.map(p => `
-              <div class="qp-item" style="cursor:default;">
-                <div class="qp-art" style="display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);">♥</div>
-                <div class="qp-meta">
-                  <div class="qp-title">${p.name}</div>
-                  <div class="qp-artist">${p.source}</div>
-                </div>
-                <button class="crimson-btn" data-play-pl="${p.id}">Play</button>
-              </div>`).join("")}
-          </div>
+            <div class="sec-head">
+              <div class="sec-title" style="font-size:18px;">Your Playlists</div>
+              <button class="sec-btn" id="btnNewPl">+ New</button>
+            </div>
+            <div class="list-col">
+              ${state.playlists.map(p => `
+                <div class="qp-item" style="cursor:default;">
+                  <div class="qp-art" style="display:flex;align-items:center;justify-content:center;font-size:19px;color:var(--accent);">♫</div>
+                  <div class="qp-meta">
+                    <div class="qp-title">${p.name}</div>
+                    <div class="qp-artist">${p.source}</div>
+                  </div>
+                  <button class="crimson-btn" data-play-pl="${p.id}">Play</button>
+                </div>`).join("")}
+            </div>
+          ` : `
+            <div class="chips">
+              ${["Last 7 days","Last 30 days","Last 90 days","This year"].map(r => `<button class="chip ${state.analyticsRange === r ? "active" : ""}" data-ar="${r}">${r}</button>`).join("")}
+            </div>
+            <div class="stat-grid">
+              <div class="stat-card"><div class="stat-val">${mins}m</div><div class="stat-lbl">Listened Time</div></div>
+              <div class="stat-card"><div class="stat-val">${totalPlays}</div><div class="stat-lbl">Songs Played</div></div>
+              <div class="stat-card"><div class="stat-val">${Math.max(5, Math.round(mins/7))}m</div><div class="stat-lbl">Avg Per Day</div></div>
+              <div class="stat-card"><div class="stat-val">Fri</div><div class="stat-lbl">Busiest Day</div></div>
+            </div>
+            <div class="panel">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <div style="font-size:15px;font-weight:800;">SimpMusic Wrapped · Listening Receipt</div>
+                <span style="font-size:11px;color:var(--accent);font-weight:700;">${state.analyticsRange}</span>
+              </div>
+              <div style="font-family:monospace;font-size:12px;color:#ddd;line-height:1.7;border-top:1px dashed rgba(255,255,255,0.2);padding-top:8px;">
+                ${state.quickPicks.slice(0, 5).map((t, i) => `0${i+1}  ${t.title.slice(0, 22).padEnd(23, " ")} ${fmtTime(t.duration)}`).join("<br>")}
+              </div>
+            </div>
+          `}
         `;
-        document.getElementById("btnImportDo").onclick = () => {
+        mainContent.querySelectorAll("[data-lsub]").forEach(b => b.onclick = () => { state.libSubTab = b.dataset.lsub; render(); });
+        mainContent.querySelectorAll("[data-ar]").forEach(b => b.onclick = () => { state.analyticsRange = b.dataset.ar; render(); });
+        document.getElementById("qaLiked").onclick = () => { if (state.quickPicks.length) playTrack(state.quickPicks[0], state.quickPicks); showToast("Playing Liked Songs"); };
+        document.getElementById("qaDown").onclick = () => { if (state.listenAgain.length) playTrack(state.listenAgain[0], state.listenAgain); showToast("Playing Downloaded"); };
+        document.getElementById("qaMost").onclick = () => { state.libSubTab = "analytics"; render(); };
+        document.getElementById("qaMix").onclick = () => { if (state.charts.length) playTrack(state.charts[0], state.charts); showToast("Playing Mix For You"); };
+        const btnImp = document.getElementById("btnImportDo");
+        if (btnImp) btnImp.onclick = () => {
           const val = document.getElementById("importUrlInput").value.trim();
           if (!val) return;
-          state.playlists.unshift({ id: "pl_" + Date.now(), name: val.includes("spotify") ? "Spotify Playlist" : "Imported Playlist", source: val.slice(0, 34) + "…" });
+          state.playlists.unshift({ id: "pl_" + Date.now(), name: val.includes("spotify") ? "Spotify Playlist" : "YouTube Playlist", source: val.slice(0, 32) + "…" });
           localStorage.setItem("simpmusic_playlists", JSON.stringify(state.playlists));
           showToast("Playlist imported");
           render();
         };
+        const btnNew = document.getElementById("btnNewPl");
+        if (btnNew) btnNew.onclick = () => {
+          const name = prompt("New playlist name:");
+          if (!name) return;
+          state.playlists.unshift({ id: "pl_" + Date.now(), name: name.trim(), source: "Local" });
+          localStorage.setItem("simpmusic_playlists", JSON.stringify(state.playlists));
+          showToast("Playlist created");
+          render();
+        };
         mainContent.querySelectorAll("[data-play-pl]").forEach(b => b.onclick = () => { if (state.quickPicks.length) playTrack(state.quickPicks[0], state.quickPicks); });
       } else if (state.tab === "settings") {
-        mainContent.innerHTML = `
-          <div class="panel">
-            <div style="font-size:12px;font-weight:800;color:var(--accent);letter-spacing:0.08em;">HEY JARVIS VOICE ASSISTANT</div>
-            <p style="font-size:13px;color:var(--muted);margin:8px 0 12px;">Tap the glowing mic button in the top bar or test a voice command:</p>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="sec-btn" id="btnTestJazz">Play Smooth Jazz</button>
-              <button class="sec-btn" id="btnTestNext">Next Song</button>
-              <button class="sec-btn" id="btnTestPause">Pause</button>
-            </div>
-          </div>
-          <div class="panel">
-            <div style="font-size:15px;font-weight:700;">SimpMusic · Hey Jarvis Edition</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:4px;">v2.6.13 · Apple Music Crimson UI (1-to-1 with Android)</div>
-          </div>
-        `;
-        document.getElementById("btnTestJazz").onclick = () => runJarvisCommand("Hey Jarvis play smooth jazz");
-        document.getElementById("btnTestNext").onclick = () => runJarvisCommand("Hey Jarvis next song");
-        document.getElementById("btnTestPause").onclick = () => runJarvisCommand("Hey Jarvis pause");
+        renderSettings();
       }
     }
 
-    // Wire events
+    // Wire Global Events
     document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { state.tab = b.dataset.tab; render(); });
     document.getElementById("btnSettingsTop").onclick = () => { state.tab = state.tab === "settings" ? "home" : "settings"; render(); };
     document.getElementById("btnMiniPlay").onclick = togglePlay;
@@ -866,11 +1843,32 @@
     document.getElementById("btnNPPlay").onclick = togglePlay;
     document.getElementById("btnNPNext").onclick = nextTrack;
     document.getElementById("btnNPPrev").onclick = prevTrack;
+    document.getElementById("btnShuffle").onclick = () => { state.shuffle = !state.shuffle; updatePlayerUI(currentTrack()); showToast("Shuffle " + (state.shuffle ? "ON" : "OFF")); };
+    document.getElementById("btnRepeat").onclick = () => {
+      state.repeat = state.repeat === "off" ? "all" : state.repeat === "all" ? "one" : "off";
+      updatePlayerUI(currentTrack());
+      showToast("Repeat: " + state.repeat.toUpperCase());
+    };
     document.getElementById("btnExpandPlayer").onclick = () => document.getElementById("nowPlayingModal").classList.add("open");
     document.getElementById("btnCloseNP").onclick = () => document.getElementById("nowPlayingModal").classList.remove("open");
     document.getElementById("btnToggleLyrics").onclick = () => {
       const box = document.getElementById("lyricsBox");
       box.style.display = box.style.display === "none" ? "block" : "none";
+    };
+    document.getElementById("lyricsProviderSel").onchange = e => {
+      settings.lyricsProvider = e.target.value;
+      saveSettings();
+      updateLyricsView(currentTrack());
+    };
+    document.getElementById("btnLyricsTrans").onclick = e => {
+      state.lyricsTranslated = !state.lyricsTranslated;
+      e.target.classList.toggle("active", state.lyricsTranslated);
+      updateLyricsView(currentTrack());
+    };
+    document.getElementById("btnLyricsRom").onclick = e => {
+      state.lyricsRomanized = !state.lyricsRomanized;
+      e.target.classList.toggle("active", state.lyricsRomanized);
+      updateLyricsView(currentTrack());
     };
     document.getElementById("btnHeart").onclick = () => {
       const t = currentTrack();
@@ -879,10 +1877,42 @@
       localStorage.setItem("simpmusic_liked", JSON.stringify([...state.likedIds]));
       updatePlayerUI(t);
     };
+    document.getElementById("btnShareNP").onclick = () => {
+      const t = currentTrack();
+      if (!t) return;
+      if (navigator.clipboard) navigator.clipboard.writeText(`${t.title} - ${t.artist} (SimpMusic)`).catch(() => {});
+      showToast("Track link copied");
+    };
+    document.getElementById("btnOpenEQ").onclick = openEQSheet;
+    document.getElementById("btnOpenSpeed").onclick = openSpeedSheet;
+    document.getElementById("btnOpenTimer").onclick = openTimerSheet;
+    document.getElementById("btnOpenQueue").onclick = openQueueSheet;
+    document.getElementById("btnOpenInfo").onclick = openInfoSheet;
+
     document.getElementById("seekSlider").oninput = e => { audio.currentTime = (e.target.value / 100) * (audio.duration || 30); };
     document.getElementById("btnSetA").onclick = () => { state.pointA = audio.currentTime || 0; updateABStatus(); showToast("Loop A set"); };
     document.getElementById("btnSetB").onclick = () => { state.pointB = Math.max((state.pointA || 0) + 1, audio.currentTime || 5); updateABStatus(); showToast("A–B Loop Active"); };
     document.getElementById("btnClearAB").onclick = () => { state.pointA = null; state.pointB = null; updateABStatus(); showToast("A–B Loop cleared"); };
+
+    document.getElementById("restoreFileInput").onchange = e => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          if (data.settings) Object.assign(settings, data.settings);
+          if (Array.isArray(data.playlists)) state.playlists = data.playlists;
+          if (Array.isArray(data.likedIds)) state.likedIds = new Set(data.likedIds);
+          saveSettings();
+          localStorage.setItem("simpmusic_playlists", JSON.stringify(state.playlists));
+          localStorage.setItem("simpmusic_liked", JSON.stringify([...state.likedIds]));
+          showToast("Backup restored");
+          render();
+        } catch (err) { showToast("Invalid backup JSON"); }
+      };
+      reader.readAsText(f);
+    };
 
     document.getElementById("jarvisOrb").onclick = () => {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -905,9 +1935,14 @@
     (async () => {
       render();
       try {
-        const [qp, la] = await Promise.all([searchItunes("The Weeknd", 16), searchItunes("Daft Punk", 10)]);
+        const [qp, la, ch] = await Promise.all([
+          searchItunes("The Weeknd", 16),
+          searchItunes("Daft Punk", 10),
+          searchItunes("Top Hits 2025", 10)
+        ]);
         state.quickPicks = qp;
         state.listenAgain = la;
+        state.charts = ch;
         state.queue = qp;
         if (qp.length) updatePlayerUI(qp[0]);
       } catch (e) {}
