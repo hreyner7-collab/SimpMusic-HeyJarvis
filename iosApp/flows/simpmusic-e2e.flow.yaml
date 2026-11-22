@@ -1,0 +1,46 @@
+# End-to-End Verification Flow for SimpMusic Hey Jarvis iOS using govijr/terminal-phone
+- launch: com.maxrave.simpmusic
+- expect: "SimpMusic"
+- expect: "Quick Picks"
+- screenshot: terminal-phone-results/01-home-screen.png
+
+# 1. Trigger Hey Jarvis Voice Command on Home ("Play Smooth Jazz")
+- tap: {id: btn-home-quick-jazz}
+- expect: "Take Five"
+- screenshot: terminal-phone-results/02-hey-jarvis-play-jazz.png
+
+# 2. Expand Fullscreen Now Playing & Verify A-B Loop + Synced Lyrics + Queue
+- tap: {id: btn-expand-player}
+- expect: "NOW PLAYING"
+- tap: {id: btn-ab-set-a}
+- tap: {id: btn-ab-set-b}
+- expect: "A–B"
+- screenshot: terminal-phone-results/03-now-playing-ab-loop.png
+- tap: {id: btn-toggle-lyrics}
+- expect: "Synced Lyrics"
+- screenshot: terminal-phone-results/04-synced-lyrics.png
+- tap: {id: btn-toggle-queue}
+- expect: "Up Next in Queue"
+- screenshot: terminal-phone-results/05-queue-panel.png
+- tap: {id: btn-close-player}
+
+# 3. Search Tab Verification
+- tap: {id: tab-search}
+- fill: {id: search-input, text: "Bohemian"}
+- tap: {id: search-submit}
+- expect: "Bohemian Rhapsody"
+- screenshot: terminal-phone-results/06-search-results.png
+
+# 4. Library Tab & Spotify Link Importer Verification
+- tap: {id: tab-library}
+- expect: "Spotify Library & Link Importer"
+- tap: {id: btn-quick-sync-spotify}
+- expect: "Synced"
+- screenshot: terminal-phone-results/07-library-spotify-synced.png
+
+# 5. Settings Tab & Hey Jarvis Voice Diagnostics Verification
+- tap: {id: tab-settings}
+- expect: "HEY JARVIS VOICE ASSISTANT"
+- tap: {id: btn-voice-vol70}
+- expect: "SimpMusic Hey Jarvis v2.6.13"
+- screenshot: terminal-phone-results/08-settings-hey-jarvis.png
