@@ -22,3 +22,7 @@ for path in root.rglob("commonMain/**/*.kt"):
             patched += 1
 print(f"Total core files patched: {patched}")
 PY
+
+# Remove duplicate per-arch iOS actuals in ktorExt that conflict with iosMain
+rm -rf core/service/ktorExt/src/iosSimulatorArm64Main core/service/ktorExt/src/iosArm64Main
+
