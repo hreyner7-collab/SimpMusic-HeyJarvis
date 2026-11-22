@@ -57,15 +57,15 @@ kotlin {
         }
     }
 
-//    listOf(
-//        iosArm64(),
-//        iosSimulatorArm64()
-//    ).forEach { iosTarget ->
-//        iosTarget.binaries.framework {
-//            baseName = "ComposeApp"
-//            isStatic = true
-//        }
-//    }
+    listOf(
+        iosArm64(),
+        iosSimulatorArm64(),
+    ).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "ComposeApp"
+            isStatic = true
+        }
+    }
 
     jvm()
 
@@ -75,9 +75,10 @@ kotlin {
             val koinBom = project.dependencies.platform(libs.koin.bom)
             implementation(composeBom)
             implementation(koinBom)
-            implementation(libs.commons.io)
         }
         androidMain.dependencies {
+            implementation(libs.commons.io)
+            api(libs.coil.network.okhttp)
             api(project.dependencies.platform(libs.koin.bom))
             api(libs.koin.android)
             implementation(libs.koin.androidx.compose)
@@ -150,7 +151,6 @@ kotlin {
 
             // Coil
             api(libs.coil.compose)
-            api(libs.coil.network.okhttp)
             api(libs.kmpalette.core)
             api(libs.kmpalette.network)
             implementation(libs.materialkolor)
@@ -190,7 +190,13 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
+            api("io.coil-kt.coil3:coil-network-ktor3:3.6.3")
+        }
         jvmMain.dependencies {
+            implementation(libs.commons.io)
+            api(libs.coil.network.okhttp)
             // Desktop app entry (main.kt), jpackage/Conveyor
             // packaging, and tray icon live in :desktopApp per the
             // JetBrains 2026 KMP default structure. This module keeps the
