@@ -64,6 +64,7 @@ jobs:
             -target "arm64-apple-ios17.0-simulator" \
             -F "$SIM_FW" \
             -framework ComposeApp \
+            -Xlinker -lsqlite3 -Xlinker -lc++ \
             -Xlinker -rpath -Xlinker @executable_path/Frameworks \
             iosApp/KmpHost/SimpMusicKmpApp.swift \
             -o build/kmp-sim/SimpMusic.app/SimpMusic
@@ -78,6 +79,7 @@ jobs:
             -target "arm64-apple-ios16.0" \
             -F "$DEV_FW" \
             -framework ComposeApp \
+            -Xlinker -lsqlite3 -Xlinker -lc++ \
             -Xlinker -rpath -Xlinker @executable_path/Frameworks \
             iosApp/KmpHost/SimpMusicKmpApp.swift \
             -o build/kmp-dev/Payload/SimpMusic.app/SimpMusic
