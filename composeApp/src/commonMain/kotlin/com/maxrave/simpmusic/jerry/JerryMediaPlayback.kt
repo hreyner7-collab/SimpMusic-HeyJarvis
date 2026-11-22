@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic.jerry
 
+import kotlin.concurrent.Volatile
+
 import com.maxrave.common.Config
 import com.maxrave.common.LOCAL_PLAYLIST_ID
 import com.maxrave.common.MERGING_DATA_TYPE
@@ -47,7 +49,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.Locale
 
 fun interface JerryVolume {
     fun adjust(up: Boolean)
@@ -855,7 +856,7 @@ class JerryMediaPlayback(
         val titleQuery = byMatch?.groupValues?.get(1)?.trim() ?: query.trim()
         val artistQuery = byMatch?.groupValues?.get(2)?.trim()?.takeIf { it.isNotEmpty() }
 
-        val qLower = query.lowercase(Locale.ROOT)
+        val qLower = query.lowercase()
         val wantsLive = "live" in qLower
         val wantsRemix = "remix" in qLower
         val wantsCover = "cover" in qLower
@@ -875,7 +876,7 @@ class JerryMediaPlayback(
         return results.maxByOrNull { song ->
             var score = 0
             val rawTitle = song.title.orEmpty()
-            val titleLower = rawTitle.lowercase(Locale.ROOT)
+            val titleLower = rawTitle.lowercase()
             val normTitle = normalizeMatchKey(rawTitle)
 
             score += when (song.videoType) {
@@ -953,7 +954,7 @@ class JerryMediaPlayback(
     }
 
     private suspend fun tryPlayMix(query: String): String? {
-        val rawLower = query.lowercase(Locale.ROOT).trim()
+        val rawLower = query.lowercase().trim()
         val normalized = normalizeMixTitle(query)
         if (normalized.isEmpty()) return null
 
@@ -1046,7 +1047,7 @@ class JerryMediaPlayback(
         val fresh = runCatching { repo.getMixedForYou().firstOrNull() }.getOrNull().orEmpty()
         val likedMixes = runCatching { repo.getLikedPlaylists().firstOrNull() }.getOrNull().orEmpty()
             .filter { p ->
-                val t = p.title.lowercase(Locale.ROOT)
+                val t = p.title.lowercase()
                 "mix" in t || "remix" in t
             }
             .map { p ->
@@ -1133,7 +1134,7 @@ class JerryMediaPlayback(
     }
 
     private suspend fun tryPlayLibraryCollection(query: String): String? {
-        val lower = query.lowercase(Locale.ROOT).trim()
+        val lower = query.lowercase().trim()
             .removePrefix("my ").removeSuffix(" playlist").trim()
         return when (lower) {
             "favorite", "favorites", "favourite", "favourites", "favorite songs", "favourite songs",
@@ -1170,7 +1171,7 @@ class JerryMediaPlayback(
     }
 
     private suspend fun tryPlayUserLibrary(query: String): String? {
-        val rawLower = query.lowercase(Locale.ROOT).trim()
+        val rawLower = query.lowercase().trim()
         val explicitPlaylist = rawLower.contains("playlist") || rawLower.startsWith("my ")
         val explicitAlbum = rawLower.contains("album")
         val target = rawLower
@@ -1293,7 +1294,7 @@ class JerryMediaPlayback(
     }
 
     private fun normalizeMatchKey(raw: String): String =
-        raw.lowercase(Locale.ROOT).replace(NON_ALNUM_REGEX, " ").replace(WHITESPACE_REGEX, " ").trim()
+        raw.lowercase().replace(NON_ALNUM_REGEX, " ").replace(WHITESPACE_REGEX, " ").trim()
 
     companion object {
         private const val TAG = "JerryMediaPlayback"
@@ -1330,7 +1331,7 @@ class JerryMediaPlayback(
         )
 
         internal fun normalizeMixTitle(raw: String): String {
-            val cleaned = raw.lowercase(Locale.ROOT)
+            val cleaned = raw.lowercase()
                 .replace('-', ' ')
                 .replace('_', ' ')
                 .replace(WHITESPACE_REGEX, " ")

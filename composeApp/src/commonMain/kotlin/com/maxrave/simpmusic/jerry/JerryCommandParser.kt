@@ -1,6 +1,5 @@
 package com.maxrave.simpmusic.jerry
 
-import java.util.Locale
 
 object JerryCommandParser {
     private val unkPattern = Regex("\\[unk\\]", RegexOption.IGNORE_CASE)
@@ -281,7 +280,7 @@ object JerryCommandParser {
             .replace(transportSuffixPattern, "")
             .trimEnd(',', '.', '!', '?', ':', ';')
             .trim()
-        val transportLowerRaw = transportCandidate.lowercase(Locale.ROOT)
+        val transportLowerRaw = transportCandidate.lowercase()
         val transportNorm = JerrySttNormalizer.normalizeCommandTokens(transportLowerRaw)
 
         if (transportNorm.isNotEmpty()) {
@@ -321,13 +320,13 @@ object JerryCommandParser {
     private fun parseQueueAddCommand(queryCleaned: String): JerryCommand? {
         playNextPrefixRegex.matchEntire(queryCleaned)?.let { m ->
             val target = m.groupValues[1].trim()
-            if (target.isNotEmpty() && target.lowercase(Locale.ROOT) !in playNextExclusions) {
+            if (target.isNotEmpty() && target.lowercase() !in playNextExclusions) {
                 return JerryCommand.PlayNextQuery(target)
             }
         }
         playBodyNextRegex.matchEntire(queryCleaned)?.let { m ->
             val target = m.groupValues[1].trim()
-            val targetLower = target.lowercase(Locale.ROOT)
+            val targetLower = target.lowercase()
             if (target.isNotEmpty() && targetLower !in setOf("the", "a", "song", "track", "one", "this", "up")) {
                 return JerryCommand.PlayNextQuery(target)
             }
@@ -347,7 +346,7 @@ object JerryCommandParser {
         }
         queueDirectRegex.matchEntire(queryCleaned)?.let { m ->
             val target = m.groupValues[1].trim()
-            val tLower = target.lowercase(Locale.ROOT)
+            val tLower = target.lowercase()
             if (target.isNotEmpty() && tLower !in setOf("up", "next")) {
                 return JerryCommand.AddToQueueQuery(target)
             }
@@ -360,7 +359,7 @@ object JerryCommandParser {
         var target = m.groupValues[1].trim()
         if (target.isEmpty()) return null
         target = JerrySttNormalizer.normalizeLeadingDescriptor(target)
-        val lower = target.lowercase(Locale.ROOT)
+        val lower = target.lowercase()
         if (lower in setOf("on", "off", "mode", "mode on", "mode off", "queue", "the queue")) {
             return null
         }
@@ -393,7 +392,7 @@ object JerryCommandParser {
     }
 
     private fun parseRadioCommand(queryCleaned: String): JerryCommand.PlayRadio? {
-        val lower = JerrySttNormalizer.normalizeCommandTokens(queryCleaned.lowercase(Locale.ROOT))
+        val lower = JerrySttNormalizer.normalizeCommandTokens(queryCleaned.lowercase())
         if (lower in setOf("radio", "play radio", "start radio", "play the radio", "start the radio", "play a radio", "start a radio")) {
             return JerryCommand.PlayRadio(null)
         }
@@ -418,7 +417,7 @@ object JerryCommandParser {
     }
 
     private fun extractPlayTargetCommand(queryCleaned: String): JerryCommand? {
-        val lower = queryCleaned.lowercase(Locale.ROOT)
+        val lower = queryCleaned.lowercase()
         val rawBody = when {
             lower.startsWith("play ") || lower.startsWith("play,") -> queryCleaned.substring(4)
             lower.startsWith("put on ") -> queryCleaned.substring(7)
@@ -447,7 +446,7 @@ object JerryCommandParser {
         if (cleaned.isEmpty()) return null
 
         val descNormalized = JerrySttNormalizer.normalizeLeadingDescriptor(cleaned)
-        val qLower = descNormalized.lowercase(Locale.ROOT)
+        val qLower = descNormalized.lowercase()
 
         if (qLower in indirectDiscoveryMixPhrases) {
             return JerryCommand.PlayQuery("discovery mix")
@@ -513,7 +512,7 @@ object JerryCommandParser {
         }
         Regex("^(.+?)\\s+(?:songs|music|tracks)$", RegexOption.IGNORE_CASE).matchEntire(descNormalized)?.let {
             val body = it.groupValues[1].trim()
-            val bLower = body.lowercase(Locale.ROOT)
+            val bLower = body.lowercase()
             if (body.length >= 2 && bLower !in setOf("some", "the", "a", "my", "good", "new", "more", "any", "this", "that")) {
                 return JerryCommand.PlayArtist(body)
             }
@@ -547,7 +546,7 @@ object JerryCommandParser {
     }
 
     private fun parseScaledVolume(token: String, hasPercent: Boolean): Int? {
-        val clean = token.trim().lowercase(Locale.ROOT)
+        val clean = token.trim().lowercase()
         val n = clean.toIntOrNull() ?: numberWords[clean] ?: return null
         if (n < 0 || n > 100) return null
         if (hasPercent) return n
@@ -576,7 +575,7 @@ object JerryCommandParser {
     }
 
     private fun parseDurationMinutes(tail: String): Int? {
-        val clean = tail.trim().lowercase(Locale.ROOT)
+        val clean = tail.trim().lowercase()
         if (clean == "half an hour" || clean == "half hour") return 30
         if (clean == "an hour and a half" || clean == "one and a half hours") return 90
         if (clean == "an hour" || clean == "one hour" || clean == "1 hour") return 60
@@ -617,7 +616,7 @@ object JerryCommandParser {
     }
 
     private fun parseDurationSeconds(tail: String): Int? {
-        val clean = tail.trim().lowercase(Locale.ROOT)
+        val clean = tail.trim().lowercase()
         if (clean == "a minute" || clean == "one minute" || clean == "1 minute") return 60
         if (clean == "half a minute") return 30
         Regex("^(\\d{1,4}|[a-z-]+(?:\\s+[a-z-]+)?)\\s*(seconds?|secs?|s|minutes?|mins?|m)?$")

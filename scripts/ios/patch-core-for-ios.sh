@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# Copy custom Spotify library/importer overlay files into core/ submodule checkout
+if [ -d "scripts/ios/core-overlay" ]; then
+  cp -r scripts/ios/core-overlay/* core/
+  echo "Applied scripts/ios/core-overlay to core/"
+fi
+
 python3 - <<'PY'
 import pathlib
 

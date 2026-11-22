@@ -7,6 +7,7 @@ import com.maxrave.simpmusic.expect.shareImage
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.utils.VersionManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.number
 import java.io.File
