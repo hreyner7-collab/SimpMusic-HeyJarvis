@@ -145,7 +145,7 @@ cat > "$DIST_DIR/SimpMusic-HeyJarvis-OneClick.mobileconfig" <<EOF
             <key>PreComposed</key>
             <true/>
             <key>URL</key>
-            <string>https://github.com/hreyner7-collab/SimpMusic-HeyJarvis/releases/latest/download/SimpMusic-HeyJarvis-iOS-OneClick-Installer.html</string>
+            <string>https://hreyner7-collab.github.io/SimpMusic-HeyJarvis/app.html</string>
         </dict>
     </array>
     <key>PayloadDescription</key>

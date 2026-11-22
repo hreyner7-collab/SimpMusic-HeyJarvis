@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SimpMusic" />
+  <title>SimpMusic — Hey Jarvis</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --surface: #151923;
+      --surface2: #1d2332;
+      --accent: #1ed760;
+      --blue: #38bdf8;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --border: rgba(255,255,255,0.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+    .app {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      max-width: 520px;
+      margin: 0 auto;
+      position: relative;
+      background: var(--bg);
+    }
+    .header {
+      padding: calc(env(safe-area-inset-top, 12px) + 12px) 16px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: rgba(11,13,18,0.92);
+      backdrop-filter: blur(16px);
+      z-index: 10;
+    }
+    .brand h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+    .brand p { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .pill-btn {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .jarvis-orb {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 2px solid #a855f7;
+      background: radial-gradient(circle at 30% 30%, #38bdf8, #8b5cf6 60%, #ec4899);
+      color: #fff;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 0 18px rgba(139,92,246,0.45);
+    }
+    .jarvis-orb.listening { animation: pulse 1s infinite; }
+    @keyframes pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 18px rgba(30,215,96,0.6); }
+      50% { transform: scale(1.1); box-shadow: 0 0 28px rgba(56,189,248,0.9); }
+    }
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 16px 150px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .chips {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 12px;
+      scrollbar-width: none;
+    }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      flex: 0 0 auto;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .chip.active { background: var(--accent); color: #05130a; border-color: var(--accent); }
+    .jarvis-banner {
+      background: linear-gradient(135deg, #171e2e, #1b1630);
+      border: 1px solid rgba(139,92,246,0.3);
+      border-radius: 18px;
+      padding: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .jarvis-banner .title { font-size: 14px; font-weight: 700; }
+    .jarvis-banner .sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .green-btn {
+      background: var(--accent);
+      color: #05130a;
+      border: none;
+      border-radius: 999px;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .section-title { font-size: 19px; font-weight: 800; margin: 14px 0 4px; }
+    .section-sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .track-list { display: flex; flex-direction: column; gap: 10px; }
+    .track-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      color: var(--text);
+    }
+    .track-row.playing { border-color: var(--accent); background: #13221a; }
+    .art {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      background: var(--surface2);
+      object-fit: cover;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    .track-meta { flex: 1; min-width: 0; }
+    .track-title { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .track-artist { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .track-dur { font-size: 12px; color: var(--muted); }
+    .search-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .search-bar input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+    }
+    .card-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .mini-player {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: calc(env(safe-area-inset-bottom, 8px) + 64px);
+      background: #1a2130;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+      z-index: 20;
+    }
+    .mini-info { flex: 1; min-width: 0; cursor: pointer; }
+    .mini-ctrl {
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 20px;
+      padding: 6px;
+      cursor: pointer;
+    }
+    .tab-bar {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: calc(env(safe-area-inset-bottom, 8px) + 58px);
+      padding-bottom: env(safe-area-inset-bottom, 8px);
+      background: rgba(11,13,18,0.96);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 25;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      padding: 6px 14px;
+    }
+    .tab-btn span.ico { font-size: 18px; }
+    .tab-btn.active { color: var(--blue); }
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(180deg, #162238 0%, #0b0d12 65%);
+      z-index: 50;
+      display: none;
+      flex-direction: column;
+      padding: calc(env(safe-area-inset-top, 12px) + 14px) 20px calc(env(safe-area-inset-bottom, 12px) + 20px);
+      max-width: 520px;
+      margin: 0 auto;
+      overflow-y: auto;
+    }
+    .modal.open { display: flex; }
+    .np-art {
+      width: 240px;
+      height: 240px;
+      border-radius: 22px;
+      margin: 18px auto;
+      object-fit: cover;
+      background: var(--surface2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 72px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    }
+    .progress-wrap { margin: 16px 0; }
+    .progress-wrap input[type=range] { width: 100%; accent-color: var(--accent); }
+    .time-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .np-controls { display: flex; align-items: center; justify-content: center; gap: 28px; margin: 14px 0; }
+    .play-big {
+      width: 64px; height: 64px; border-radius: 50%; border: none;
+      background: var(--accent); color: #05130a; font-size: 26px; font-weight: 800; cursor: pointer;
+    }
+    .ab-row { display: flex; justify-content: center; gap: 10px; margin: 10px 0 16px; flex-wrap: wrap; }
+    .toast {
+      position: fixed;
+      top: calc(env(safe-area-inset-top, 12px) + 64px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30,215,96,0.95);
+      color: #05130a;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      z-index: 100;
+      display: none;
+    }
+    .toast.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <h1>SimpMusic</h1>
+        <p>Hey Jarvis · v2.6.13</p>
+      </div>
+      <div class="header-actions">
+        <button class="pill-btn" id="btnImportTop">🔗 Import</button>
+        <button class="jarvis-orb" id="jarvisOrb" title="Hey Jarvis">🎙️</button>
+      </div>
+    </header>
+
+    <main class="content" id="mainContent"></main>
+
+    <div class="mini-player" id="miniPlayer">
+      <img class="art" id="miniArt" alt="" style="width:40px;height:40px;display:none;" />
+      <div class="art" id="miniArtFallback" style="width:40px;height:40px;">🎵</div>
+      <div class="mini-info" id="btnExpandPlayer">
+        <div class="track-title" id="miniTitle">Blinding Lights</div>
+        <div class="track-artist" id="miniArtist">The Weeknd</div>
+      </div>
+      <button class="mini-ctrl" id="btnMiniPlay">▶</button>
+      <button class="mini-ctrl" id="btnMiniNext">⏭</button>
+    </div>
+
+    <nav class="tab-bar">
+      <button class="tab-btn active" data-tab="home"><span class="ico">🏠</span>Home</button>
+      <button class="tab-btn" data-tab="search"><span class="ico">🔍</span>Search</button>
+      <button class="tab-btn" data-tab="library"><span class="ico">📚</span>Library</button>
+      <button class="tab-btn" data-tab="settings"><span class="ico">⚙️</span>Settings</button>
+    </nav>
+  </div>
+
+  <!-- Fullscreen Now Playing -->
+  <div class="modal" id="nowPlayingModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <button class="pill-btn" id="btnCloseNP">⌄ Close</button>
+      <span style="font-size:12px;font-weight:700;letter-spacing:0.12em;color:var(--muted);">NOW PLAYING</span>
+      <button class="pill-btn" id="btnToggleLyrics">Lyrics</button>
+    </div>
+    <img class="np-art" id="npArt" alt="" style="display:none;" />
+    <div class="np-art" id="npArtFallback">🎵</div>
+    <div style="text-align:center;">
+      <div id="npTitle" style="font-size:22px;font-weight:800;">Blinding Lights</div>
+      <div id="npArtist" style="font-size:14px;color:var(--muted);margin-top:4px;">The Weeknd</div>
+    </div>
+    <div class="progress-wrap">
+      <input type="range" id="seekSlider" min="0" max="100" value="0" />
+      <div class="time-row"><span id="timeCur">0:00</span><span id="timeTot">0:30</span></div>
+    </div>
+    <div class="np-controls">
+      <button class="mini-ctrl" id="btnNPPrev" style="font-size:28px;">⏮</button>
+      <button class="play-big" id="btnNPPlay">▶</button>
+      <button class="mini-ctrl" id="btnNPNext" style="font-size:28px;">⏭</button>
+    </div>
+    <div class="ab-row">
+      <button class="pill-btn" id="btnSetA">Set A</button>
+      <button class="pill-btn" id="btnSetB">Set B</button>
+      <button class="pill-btn" id="btnClearAB">Clear A–B</button>
+      <span id="abStatus" style="font-size:12px;color:var(--accent);align-self:center;"></span>
+    </div>
+    <div id="lyricsBox" class="card-box" style="display:none;white-space:pre-line;font-size:14px;line-height:1.7;color:#cbd5e1;"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <audio id="audio" preload="auto" playsinline></audio>
+
+  <script>
+    const audio = document.getElementById("audio");
+    const mainContent = document.getElementById("mainContent");
+    const toastEl = document.getElementById("toast");
+
+    const state = {
+      tab: "home",
+      mood: "Smooth Jazz",
+      queue: [],
+      index: 0,
+      isPlaying: false,
+      pointA: null,
+      pointB: null,
+      searchQuery: "",
+      searchResults: [],
+      playlists: JSON.parse(localStorage.getItem("simpmusic_playlists") || "null") || [
+        { id: "liked", name: "Liked Songs", source: "Local", tracks: [] },
+        { id: "lofi", name: "Late Night Coding & Lo-Fi", source: "Local", tracks: [] }
+      ],
+      jarvisStatus: 'Say "Hey Jarvis" or tap Jazz Mix'
+    };
+
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add("show");
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toastEl.classList.remove("show"), 2600);
+    }
+
+    function fmtTime(s) {
+      if (!isFinite(s) || s < 0) return "0:00";
+      const m = Math.floor(s / 60);
+      const r = Math.floor(s % 60);
+      return `${m}:${r < 10 ? "0" : ""}${r}`;
+    }
+
+    async function searchItunes(term, limit = 12) {
+      const url = `https://itunes.apple.com/search?media=music&entity=song&limit=${limit}&term=${encodeURIComponent(term)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      return (data.results || []).filter(r => r.previewUrl).map(r => ({
+        id: String(r.trackId),
+        title: r.trackName,
+        artist: r.artistName,
+        album: r.collectionName || "",
+        artwork: (r.artworkUrl100 || "").replace("100x100", "300x300"),
+        url: r.previewUrl,
+        duration: Math.round((r.trackTimeMillis || 30000) / 1000)
+      }));
+    }
+
+    function playTrack(track, newQueue = null) {
+      if (newQueue) {
+        state.queue = newQueue;
+        state.index = Math.max(0, newQueue.findIndex(t => t.id === track.id));
+      }
+      state.pointA = null;
+      state.pointB = null;
+      updateABStatus();
+      audio.src = track.url;
+      audio.play().catch(() => {});
+      state.isPlaying = true;
+      updatePlayerUI(track);
+      render();
+    }
+
+    function currentTrack() {
+      return state.queue[state.index] || null;
+    }
+
+    function updatePlayerUI(track) {
+      if (!track) return;
+      document.getElementById("miniTitle").textContent = track.title;
+      document.getElementById("miniArtist").textContent = track.artist;
+      document.getElementById("npTitle").textContent = track.title;
+      document.getElementById("npArtist").textContent = `${track.artist}${track.album ? " · " + track.album : ""}`;
+      document.getElementById("btnMiniPlay").textContent = state.isPlaying ? "⏸" : "▶";
+      document.getElementById("btnNPPlay").textContent = state.isPlaying ? "⏸" : "▶";
+      if (track.artwork) {
+        document.getElementById("miniArt").src = track.artwork;
+        document.getElementById("miniArt").style.display = "block";
+        document.getElementById("miniArtFallback").style.display = "none";
+        document.getElementById("npArt").src = track.artwork;
+        document.getElementById("npArt").style.display = "block";
+        document.getElementById("npArtFallback").style.display = "none";
+      }
+      document.getElementById("lyricsBox").textContent =
+        `♪ ${track.title} — ${track.artist}\n\n[00:02] Streaming live via SimpMusic Hey Jarvis\n[00:08] Background & Lock Screen ready\n[00:15] Say "Hey Jarvis next song" or set an A–B loop above`;
+    }
+
+    function togglePlay() {
+      if (!audio.src && state.queue.length) {
+        playTrack(state.queue[0]);
+        return;
+      }
+      if (audio.paused) {
+        audio.play().catch(() => {});
+        state.isPlaying = true;
+      } else {
+        audio.pause();
+        state.isPlaying = false;
+      }
+      updatePlayerUI(currentTrack());
+    }
+
+    function nextTrack() {
+      if (!state.queue.length) return;
+      state.index = (state.index + 1) % state.queue.length;
+      playTrack(state.queue[state.index]);
+    }
+
+    function prevTrack() {
+      if (!state.queue.length) return;
+      state.index = (state.index - 1 + state.queue.length) % state.queue.length;
+      playTrack(state.queue[state.index]);
+    }
+
+    function updateABStatus() {
+      const el = document.getElementById("abStatus");
+      if (state.pointA != null && state.pointB != null) {
+        el.textContent = `A–B Loop: ${fmtTime(state.pointA)} → ${fmtTime(state.pointB)}`;
+      } else if (state.pointA != null) {
+        el.textContent = `A: ${fmtTime(state.pointA)}`;
+      } else {
+        el.textContent = "";
+      }
+    }
+
+    audio.addEventListener("timeupdate", () => {
+      const cur = audio.currentTime || 0;
+      const dur = audio.duration || 30;
+      if (state.pointA != null && state.pointB != null && cur >= state.pointB) {
+        audio.currentTime = state.pointA;
+      }
+      document.getElementById("seekSlider").value = Math.min(100, (cur / dur) * 100);
+      document.getElementById("timeCur").textContent = fmtTime(cur);
+      document.getElementById("timeTot").textContent = fmtTime(dur);
+    });
+    audio.addEventListener("ended", nextTrack);
+
+    async function runJarvisCommand(text) {
+      const q = text.toLowerCase().trim();
+      state.jarvisStatus = `Heard: "${text}"`;
+      if (q.includes("pause") || q.includes("stop")) {
+        audio.pause(); state.isPlaying = false; updatePlayerUI(currentTrack()); showToast("Jarvis: Paused");
+      } else if (q.includes("next") || q.includes("skip")) {
+        nextTrack(); showToast("Jarvis: Next song");
+      } else {
+        const clean = q.replace(/^(hey|hi|ok|yo)\s+jarvis\s*/i, "").replace(/^play\s+/i, "").trim() || "smooth jazz";
+        showToast(`Jarvis: Playing ${clean}…`);
+        const tracks = await searchItunes(clean, 10);
+        if (tracks.length) playTrack(tracks[0], tracks);
+      }
+    }
+
+    function renderTracks(tracks) {
+      const cur = currentTrack();
+      return `<div class="track-list">${tracks.map(t => `
+        <button class="track-row ${cur && cur.id === t.id ? "playing" : ""}" data-play="${t.id}">
+          ${t.artwork ? `<img class="art" src="${t.artwork}" alt="" />` : `<div class="art">🎵</div>`}
+          <div class="track-meta">
+            <div class="track-title">${t.title}</div>
+            <div class="track-artist">${t.artist}${t.album ? " · " + t.album : ""}</div>
+          </div>
+          <div class="track-dur">${fmtTime(t.duration)}</div>
+        </button>`).join("")}</div>`;
+    }
+
+    function render() {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === state.tab));
+      if (state.tab === "home") {
+        const moods = ["Smooth Jazz", "Lo-Fi", "Classic Rock", "Hip Hop", "Pop Hits"];
+        mainContent.innerHTML = `
+          <div class="chips">${moods.map(m => `<button class="chip ${state.mood === m ? "active" : ""}" data-mood="${m}">${m}</button>`).join("")}</div>
+          <div class="jarvis-banner">
+            <div>
+              <div class="title">Hey Jarvis Voice Assistant</div>
+              <div class="sub">${state.jarvisStatus}</div>
+            </div>
+            <button class="green-btn" id="btnJazzMix">Jazz Mix</button>
+          </div>
+          <div class="section-title">Quick Picks</div>
+          <div class="section-sub">Tap any track to play instantly</div>
+          ${state.queue.length ? renderTracks(state.queue) : `<div class="card-box">Loading tracks…</div>`}
+        `;
+        mainContent.querySelectorAll("[data-mood]").forEach(btn => btn.onclick = async () => {
+          state.mood = btn.dataset.mood;
+          render();
+          const tracks = await searchItunes(state.mood, 12);
+          state.queue = tracks;
+          render();
+        });
+        const jazzBtn = document.getElementById("btnJazzMix");
+        if (jazzBtn) jazzBtn.onclick = () => runJarvisCommand("Hey Jarvis play smooth jazz");
+        bindTrackClicks(state.queue);
+      } else if (state.tab === "search") {
+        mainContent.innerHTML = `
+          <div class="search-bar">
+            <input id="searchInput" type="search" placeholder="Search any song or artist…" value="${state.searchQuery}" />
+            <button class="green-btn" id="btnSearchGo">Search</button>
+          </div>
+          ${state.searchResults.length ? renderTracks(state.searchResults) : `<div class="card-box" style="color:var(--muted);">Type any song, artist, or genre and tap Search.</div>`}
+        `;
+        const doSearch = async () => {
+          state.searchQuery = document.getElementById("searchInput").value.trim();
+          if (!state.searchQuery) return;
+          showToast(`Searching "${state.searchQuery}"…`);
+          state.searchResults = await searchItunes(state.searchQuery, 15);
+          render();
+        };
+        document.getElementById("btnSearchGo").onclick = doSearch;
+        document.getElementById("searchInput").onkeydown = e => { if (e.key === "Enter") doSearch(); };
+        bindTrackClicks(state.searchResults);
+      } else if (state.tab === "library") {
+        mainContent.innerHTML = `
+          <div class="card-box">
+            <div style="font-size:16px;font-weight:800;margin-bottom:6px;">Spotify &amp; YouTube Link Importer</div>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Paste any public Spotify or YouTube playlist link to save it to your Library.</div>
+            <div class="search-bar" style="margin-bottom:0;">
+              <input id="importUrlInput" placeholder="https://open.spotify.com/playlist/..." />
+              <button class="green-btn" id="btnImportDo">Import</button>
+            </div>
+          </div>
+          <div class="section-title">Your Playlists (${state.playlists.length})</div>
+          <div class="track-list">${state.playlists.map(p => `
+            <div class="track-row" style="cursor:default;">
+              <div class="art">🎶</div>
+              <div class="track-meta">
+                <div class="track-title">${p.name}</div>
+                <div class="track-artist">${p.source}</div>
+              </div>
+              <button class="green-btn" data-play-pl="${p.id}">Play</button>
+            </div>`).join("")}</div>
+        `;
+        document.getElementById("btnImportDo").onclick = () => {
+          const val = document.getElementById("importUrlInput").value.trim();
+          if (!val) return;
+          state.playlists.unshift({ id: "pl_" + Date.now(), name: val.includes("spotify") ? "Imported Spotify Playlist" : "Imported Playlist", source: val.slice(0, 36) + "…", tracks: [] });
+          localStorage.setItem("simpmusic_playlists", JSON.stringify(state.playlists));
+          showToast("Playlist imported!");
+          render();
+        };
+        mainContent.querySelectorAll("[data-play-pl]").forEach(btn => btn.onclick = () => runJarvisCommand("play top hits"));
+      } else if (state.tab === "settings") {
+        mainContent.innerHTML = `
+          <div class="card-box">
+            <div style="font-size:12px;font-weight:800;color:var(--accent);letter-spacing:0.08em;">HEY JARVIS VOICE ASSISTANT</div>
+            <p style="font-size:13px;color:var(--muted);margin:8px 0 12px;">Tap the glowing orb in the top right to speak a command, or test a command below:</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="pill-btn" id="btnTestJazz">Play Smooth Jazz</button>
+              <button class="pill-btn" id="btnTestNext">Next Song</button>
+              <button class="pill-btn" id="btnTestPause">Pause</button>
+            </div>
+          </div>
+          <div class="card-box">
+            <div style="font-size:15px;font-weight:700;">SimpMusic Hey Jarvis v2.6.13</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;">iPhone One-Click Web App · Fullscreen Mode Active</div>
+          </div>
+        `;
+        document.getElementById("btnTestJazz").onclick = () => runJarvisCommand("Hey Jarvis play smooth jazz");
+        document.getElementById("btnTestNext").onclick = () => runJarvisCommand("Hey Jarvis next song");
+        document.getElementById("btnTestPause").onclick = () => runJarvisCommand("Hey Jarvis pause");
+      }
+    }
+
+    function bindTrackClicks(list) {
+      mainContent.querySelectorAll("[data-play]").forEach(btn => {
+        btn.onclick = () => {
+          const t = list.find(x => x.id === btn.dataset.play);
+          if (t) playTrack(t, list);
+        };
+      });
+    }
+
+    // Wire controls
+    document.querySelectorAll(".tab-btn").forEach(b => b.onclick = () => { state.tab = b.dataset.tab; render(); });
+    document.getElementById("btnImportTop").onclick = () => { state.tab = "library"; render(); };
+    document.getElementById("btnMiniPlay").onclick = togglePlay;
+    document.getElementById("btnMiniNext").onclick = nextTrack;
+    document.getElementById("btnNPPlay").onclick = togglePlay;
+    document.getElementById("btnNPNext").onclick = nextTrack;
+    document.getElementById("btnNPPrev").onclick = prevTrack;
+    document.getElementById("btnExpandPlayer").onclick = () => document.getElementById("nowPlayingModal").classList.add("open");
+    document.getElementById("btnCloseNP").onclick = () => document.getElementById("nowPlayingModal").classList.remove("open");
+    document.getElementById("btnToggleLyrics").onclick = () => {
+      const box = document.getElementById("lyricsBox");
+      box.style.display = box.style.display === "none" ? "block" : "none";
+    };
+    document.getElementById("seekSlider").oninput = e => {
+      audio.currentTime = (e.target.value / 100) * (audio.duration || 30);
+    };
+    document.getElementById("btnSetA").onclick = () => { state.pointA = audio.currentTime || 0; updateABStatus(); showToast("Set Loop A"); };
+    document.getElementById("btnSetB").onclick = () => { state.pointB = Math.max((state.pointA || 0) + 1, audio.currentTime || 5); updateABStatus(); showToast("A–B Loop Active"); };
+    document.getElementById("btnClearAB").onclick = () => { state.pointA = null; state.pointB = null; updateABStatus(); showToast("Cleared A–B Loop"); };
+
+    document.getElementById("jarvisOrb").onclick = () => {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        const cmd = prompt('Say a Hey Jarvis command (e.g. "play lo-fi", "next song"):');
+        if (cmd) runJarvisCommand(cmd);
+        return;
+      }
+      const orb = document.getElementById("jarvisOrb");
+      const rec = new SR();
+      rec.lang = "en-US";
+      orb.classList.add("listening");
+      showToast("Listening… say a command");
+      rec.onresult = e => {
+        orb.classList.remove("listening");
+        const transcript = e.results[0][0].transcript;
+        runJarvisCommand(transcript);
+      };
+      rec.onerror = () => orb.classList.remove("listening");
+      rec.onend = () => orb.classList.remove("listening");
+      rec.start();
+    };
+
+    // Initial load
+    (async () => {
+      render();
+      try {
+        state.queue = await searchItunes("The Weeknd", 12);
+        if (state.queue.length) updatePlayerUI(state.queue[0]);
+      } catch (e) {}
+      render();
+    })();
+  </script>
+</body>
+</html>
