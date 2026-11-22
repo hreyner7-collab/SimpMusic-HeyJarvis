@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic.ui.component
 
+import com.maxrave.simpmusic.expect.platformSynchronized
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Size
@@ -55,7 +57,7 @@ private class HolderPainter(
 ) : Painter() {
     /** The art's own background, read off its corner once per bitmap so the fill around it always matches. */
     private val background =
-        synchronized(holderBackgroundCache) {
+        platformSynchronized(holderBackgroundCache) {
             holderBackgroundCache.getOrPut(art) {
                 Color(IntArray(1).also { art.readPixels(it, width = 1, height = 1) }[0])
             }

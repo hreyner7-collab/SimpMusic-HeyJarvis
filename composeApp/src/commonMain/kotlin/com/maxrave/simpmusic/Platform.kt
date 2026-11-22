@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic
 
+import com.maxrave.simpmusic.expect.platformOsName
+
 sealed class Platform {
     object Android : Platform()
     object iOS : Platform()
@@ -8,7 +10,7 @@ sealed class Platform {
     fun osName(): String = when (this) {
         Android -> "android"
         iOS -> "iOS"
-        Desktop -> System.getProperty("os.name") ?: "jvm"
+        Desktop -> platformOsName()
     }
 }
 

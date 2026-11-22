@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic.utils
 
+import com.maxrave.simpmusic.expect.platformCurrentTimeMillis
+
 import coil3.ImageLoader
 import coil3.annotation.InternalCoilApi
 import coil3.disk.DiskCache
@@ -32,7 +34,7 @@ import java.util.UUID
  */
 class NetworkFirstInterceptor(
     private val ttlMillis: Long = 24L * 60 * 60 * 1000,
-    private val nowMillis: () -> Long = { System.currentTimeMillis() },
+    private val nowMillis: () -> Long = { platformCurrentTimeMillis() },
     private val staleWhileRevalidate: Boolean = false,
     private val imageLoader: () -> ImageLoader,
 ) : Interceptor {

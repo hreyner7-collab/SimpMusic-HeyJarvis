@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic.extension
 
+import com.maxrave.simpmusic.expect.platformSynchronized
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FloatSpringSpec
 import androidx.compose.animation.core.LinearEasing
@@ -798,7 +800,7 @@ fun smoothScrimBrush(
     steps: Int = 24,
 ): Brush {
     val key = ScrimBrushKey(from, to, startFraction, endFraction, startY, endY, steps)
-    synchronized(scrimBrushCacheLock) {
+    platformSynchronized(scrimBrushCacheLock) {
         scrimBrushCache[key]?.let { return it }
     }
     val brush =
@@ -812,7 +814,7 @@ fun smoothScrimBrush(
             startY = startY,
             endY = endY,
         )
-    synchronized(scrimBrushCacheLock) {
+    platformSynchronized(scrimBrushCacheLock) {
         if (scrimBrushCache.size >= 64) {
             scrimBrushCache.keys.firstOrNull()?.let { scrimBrushCache.remove(it) }
         }

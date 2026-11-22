@@ -120,12 +120,10 @@ fun TimeLine.lengthLabel(): String = if (isLive) stringResource(Res.string.live_
 @Composable
 fun formatDuration(duration: Long): String {
     if (duration < 0L) return stringResource(Res.string.na_na)
-    val minutes: Long = TimeUnit.MINUTES.convert(duration, TimeUnit.MILLISECONDS)
-    val seconds: Long = (
-        TimeUnit.SECONDS.convert(duration, TimeUnit.MILLISECONDS) -
-            minutes * TimeUnit.SECONDS.convert(1, TimeUnit.MINUTES)
-    )
-    return String.format(Locale.ENGLISH, "%02d:%02d", minutes, seconds)
+    val totalSeconds = duration / 1000L
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
 }
 
 fun parseTimestampToMilliseconds(timestamp: String): Double {

@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic.utils
 
+import com.maxrave.simpmusic.expect.platformSynchronized
+
 import com.maxrave.domain.data.model.browse.album.AlbumBrowse
 import com.maxrave.domain.data.model.browse.artist.ArtistBrowse
 import com.maxrave.domain.data.model.browse.playlist.PlaylistBrowse
@@ -52,7 +54,7 @@ object FastPageCache {
         key: String,
         ttlMs: Long,
     ): T? =
-        synchronized(cacheLock) {
+        platformSynchronized(cacheLock) {
             val entry = map[key] ?: return null
             if (nowMs() - entry.timestampMs <= ttlMs) {
                 // Bump LRU recency
@@ -69,7 +71,7 @@ object FastPageCache {
         map: LinkedHashMap<String, Entry<T>>,
         key: String,
         value: T,
-    ) = synchronized(cacheLock) {
+    ) = platformSynchronized(cacheLock) {
         map.remove(key)
         if (map.size >= MAX_ENTRIES) {
             val oldest = map.keys.firstOrNull()
@@ -107,18 +109,18 @@ object FastPageCache {
     ) = putBounded(playlistCache, id, snapshot)
 
     fun invalidatePlaylist(id: String) {
-        synchronized(cacheLock) {
+        platformSynchronized(cacheLock) {
             playlistCache.remove(id)
         }
     }
 
     fun clearHome() =
-        synchronized(cacheLock) {
+        platformSynchronized(cacheLock) {
             homeCache.clear()
         }
 
     fun clearAll() =
-        synchronized(cacheLock) {
+        platformSynchronized(cacheLock) {
             homeCache.clear()
             albumCache.clear()
             artistCache.clear()

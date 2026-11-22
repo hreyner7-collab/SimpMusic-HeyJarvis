@@ -1,5 +1,8 @@
 package com.maxrave.simpmusic.jerry
 
+import com.maxrave.simpmusic.expect.platformCurrentTimeMillis
+import com.maxrave.simpmusic.expect.platformSynchronized
+
 import kotlin.concurrent.Volatile
 
 import com.maxrave.common.Config
@@ -88,7 +91,7 @@ class JerryMediaPlayback(
         scope?.launch {
             handler.nowPlayingState.collect { state ->
                 val active = state.track ?: state.songEntity?.toTrack()
-                synchronized(historyLock) {
+                platformSynchronized(historyLock) {
                     val prev = lastObservedTrack
                     if (
                         prev != null &&
@@ -1040,7 +1043,7 @@ class JerryMediaPlayback(
 
     private suspend fun fetchMixesForYou(): List<PlaylistsResult> {
         val repo = playlistRepository ?: return emptyList()
-        val now = System.currentTimeMillis()
+        val now = platformCurrentTimeMillis()
         if (cachedMixes.isNotEmpty() && now - cachedMixesAtMs < MIX_CACHE_TTL_MS) {
             return cachedMixes
         }
@@ -1265,7 +1268,7 @@ class JerryMediaPlayback(
     private fun recordOutgoingCurrentTrack() {
         val current = handler.nowPlayingState.value.let { it.track ?: it.songEntity?.toTrack() } ?: return
         if (current.videoId.isBlank()) return
-        synchronized(historyLock) {
+        platformSynchronized(historyLock) {
             pushHistoryLocked(current)
             lastObservedTrack = current
         }
@@ -1280,7 +1283,7 @@ class JerryMediaPlayback(
     }
 
     private fun popPreviousFromHistory(currentId: String?): Track? {
-        synchronized(historyLock) {
+        platformSynchronized(historyLock) {
             while (playedHistory.isNotEmpty() && playedHistory.last().videoId == currentId) {
                 playedHistory.removeLast()
             }

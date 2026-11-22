@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic.viewModel.base
 
+import com.maxrave.simpmusic.expect.platformSynchronized
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.maxrave.common.Config
@@ -86,7 +88,7 @@ abstract class BaseViewModel :
     private val stringCache = HashMap<StringResource, String>()
 
     protected fun getString(resId: StringResource): String {
-        synchronized(stringCache) {
+        platformSynchronized(stringCache) {
             stringCache[resId]?.let { return it }
         }
         val resolved =
@@ -94,7 +96,7 @@ abstract class BaseViewModel :
                 org.jetbrains.compose.resources
                     .getString(resId)
             }
-        synchronized(stringCache) {
+        platformSynchronized(stringCache) {
             stringCache[resId] = resolved
         }
         return resolved

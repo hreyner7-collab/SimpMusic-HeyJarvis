@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic.viewModel
 
+import com.maxrave.simpmusic.expect.platformCurrentTimeMillis
+
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.viewModelScope
 import com.maxrave.common.AppIdentity
@@ -1297,7 +1299,7 @@ class SharedViewModel(
             val updateChannel = dataStoreManager.updateChannel.first()
             dataStoreManager.putString(
                 "CheckForUpdateAt",
-                System.currentTimeMillis().toString(),
+                platformCurrentTimeMillis().toString(),
             )
             if (updateChannel == DataStoreManager.GITHUB) {
                 updateRepository.checkForGithubReleaseUpdate().collectLatest { response ->
