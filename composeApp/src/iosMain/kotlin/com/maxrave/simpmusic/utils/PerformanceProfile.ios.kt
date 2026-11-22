@@ -3,10 +3,8 @@ package com.maxrave.simpmusic.utils
 actual fun detectHardwareProfile(): HardwareProfile =
     HardwareProfile(
         cpuCores = 6,
-        totalRamMb = 6144,
-        tier = HardwareTier.HIGH,
-        isLowEnd = false,
-        summary = "iPhone",
+        totalRamMb = 6144L,
+        isLowEndHardware = false,
     )
 
 actual fun applyPlatformPerformanceSettings(settings: PerformanceSettings) {}
