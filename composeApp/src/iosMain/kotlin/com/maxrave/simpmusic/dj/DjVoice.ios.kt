@@ -10,5 +10,7 @@ actual object DjVoice {
 
     actual suspend fun speak(text: String) = Unit
 
+    actual suspend fun playIntroClip() = Unit
+
     actual fun stop() = Unit
 }

@@ -17,5 +17,8 @@ expect object DjVoice {
 
     suspend fun speak(text: String)
 
+    /** Plays the bundled Ace DJ intro clip and returns when it finishes. */
+    suspend fun playIntroClip()
+
     fun stop()
 }

@@ -60,6 +60,41 @@ actual object DjVoice {
         }
     }
 
+    actual suspend fun playIntroClip() {
+        val context = KoinPlatform.getKoin().get<Context>()
+        val file = java.io.File(context.cacheDir, "ace_dj_voice.mp3")
+        if (!file.exists()) {
+            val bytes = simpmusic.composeapp.generated.resources.Res.readBytes("files/ace_dj_voice.mp3")
+            file.writeBytes(bytes)
+        }
+        suspendCancellableCoroutine { cont ->
+            val player = android.media.MediaPlayer()
+            try {
+                player.setDataSource(file.absolutePath)
+                player.setOnCompletionListener {
+                    it.release()
+                    if (cont.isActive) cont.resume(Unit)
+                }
+                player.setOnErrorListener { mp, _, _ ->
+                    mp.release()
+                    if (cont.isActive) cont.resume(Unit)
+                    true
+                }
+                player.prepare()
+                player.start()
+                cont.invokeOnCancellation {
+                    runCatching {
+                        if (player.isPlaying) player.stop()
+                        player.release()
+                    }
+                }
+            } catch (_: Exception) {
+                runCatching { player.release() }
+                if (cont.isActive) cont.resume(Unit)
+            }
+        }
+    }
+
     actual fun stop() {
         tts?.stop()
     }

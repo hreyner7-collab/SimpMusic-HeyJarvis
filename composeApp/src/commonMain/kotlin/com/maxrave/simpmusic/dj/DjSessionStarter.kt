@@ -60,6 +60,9 @@ class DjSessionStarter(
     private suspend fun play(picks: List<DjPick>): Int {
         // Start fetching the natural voice now, so it is ready by the time the DJ speaks.
         DjVoice.warmUp()
+        if (DjVoice.isAvailable()) {
+            runCatching { DjVoice.playIntroClip() }
+        }
         DjSessionState.begin(picks)
         val tracks = picks.map { it.track }
         withContext(Dispatchers.Main.immediate) {

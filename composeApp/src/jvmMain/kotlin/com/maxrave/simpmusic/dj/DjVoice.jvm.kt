@@ -77,6 +77,42 @@ actual object DjVoice {
         }
     }
 
+    actual suspend fun playIntroClip() {
+        withContext(Dispatchers.IO) {
+            try {
+                voiceDir.mkdirs()
+                val file = File(voiceDir, "ace_dj_voice.mp3")
+                if (!file.exists()) {
+                    val bytes = simpmusic.composeapp.generated.resources.Res.readBytes("files/ace_dj_voice.mp3")
+                    file.writeBytes(bytes)
+                }
+                if (isWindows) {
+                    val escaped = file.absolutePath.replace("'", "''")
+                    val script =
+                        "Add-Type -AssemblyName presentationCore; " +
+                            "\$p = New-Object System.Windows.Media.MediaPlayer; " +
+                            "\$p.Open([uri]'$escaped'); " +
+                            "\$p.Play(); " +
+                            "Start-Sleep -Milliseconds 300; " +
+                            "while (\$p.NaturalDuration.HasTimeSpan -and \$p.Position -lt \$p.NaturalDuration.TimeSpan) { Start-Sleep -Milliseconds 150 }; " +
+                            "\$p.Close()"
+                    val started =
+                        ProcessBuilder("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script)
+                            .redirectErrorStream(true)
+                            .start()
+                    process = started
+                    started.waitFor()
+                } else if (isMac) {
+                    val started = ProcessBuilder("afplay", file.absolutePath).start()
+                    process = started
+                    started.waitFor()
+                }
+            } catch (e: Exception) {
+                Logger.w(TAG, "Failed to play Ace intro clip: ${e.message}")
+            }
+        }
+    }
+
     actual fun stop() {
         process?.destroyForcibly()
         clip?.stop()
