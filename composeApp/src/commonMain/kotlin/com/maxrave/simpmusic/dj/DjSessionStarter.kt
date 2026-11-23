@@ -2,16 +2,22 @@ package com.maxrave.simpmusic.dj
 
 import com.maxrave.common.Config
 import com.maxrave.domain.data.model.browse.album.Track
+import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
 import com.maxrave.domain.mediaservice.handler.PlaylistType
 import com.maxrave.domain.mediaservice.handler.QueueData
 import com.maxrave.domain.repository.DjRepository
 import com.maxrave.domain.repository.SearchRepository
 import com.maxrave.domain.repository.SongRepository
+import com.maxrave.domain.repository.StreamRepository
 import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.Logger
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Builds a session and starts it as the player's queue; also answers the listener's requests. */
@@ -21,7 +27,10 @@ class DjSessionStarter(
     private val djRepository: DjRepository,
     private val searchRepository: SearchRepository,
     private val songRepository: SongRepository,
+    private val dataStoreManager: DataStoreManager,
+    private val streamRepository: StreamRepository,
 ) {
+    private val prewarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** A new mix from the listener's own music. The DJ button on the DJ screen calls this again for different picks. */
     suspend fun start(): Result<Int> =
         runCatching {
@@ -58,8 +67,22 @@ class DjSessionStarter(
         }.also { DjSessionState.setStatus(it.exceptionOrNull()?.message) }
 
     private suspend fun play(picks: List<DjPick>): Int {
-        // Start fetching the natural voice now, so it is ready by the time the DJ speaks.
+        // Start fetching the natural voice and resolving the first two picks' stream URLs while
+        // the Ace intro clip speaks so Track #1 begins immediately afterward.
         DjVoice.warmUp()
+        prewarmScope.launch {
+            picks.take(2).forEach { pick ->
+                runCatching {
+                    streamRepository
+                        .getStream(
+                            dataStoreManager,
+                            pick.track.videoId,
+                            isDownloading = false,
+                            isVideo = false,
+                        ).collect {}
+                }
+            }
+        }
         if (DjVoice.isAvailable()) {
             runCatching { DjVoice.playIntroClip() }
         }

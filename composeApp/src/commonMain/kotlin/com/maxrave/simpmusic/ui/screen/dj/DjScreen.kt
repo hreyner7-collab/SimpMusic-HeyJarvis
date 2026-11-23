@@ -54,6 +54,7 @@ import com.maxrave.domain.repository.CommonRepository
 import com.maxrave.domain.repository.DjRepository
 import com.maxrave.domain.repository.SearchRepository
 import com.maxrave.domain.repository.SongRepository
+import com.maxrave.domain.repository.StreamRepository
 import com.maxrave.simpmusic.dj.DjListen
 import com.maxrave.simpmusic.dj.DjSessionBuilder
 import com.maxrave.simpmusic.dj.DjSessionStarter
@@ -93,9 +94,18 @@ fun DjScreen(
     val commonRepository = koinInject<CommonRepository>()
     val djRepository = koinInject<DjRepository>()
     val searchRepository = koinInject<SearchRepository>()
+    val streamRepository = koinInject<StreamRepository>()
     val starter =
         remember {
-            DjSessionStarter(DjSessionBuilder(songRepository, commonRepository), handler, djRepository, searchRepository, songRepository)
+            DjSessionStarter(
+                DjSessionBuilder(songRepository, commonRepository),
+                handler,
+                djRepository,
+                searchRepository,
+                songRepository,
+                dataStore,
+                streamRepository,
+            )
         }
     val scope = rememberCoroutineScope()
 
