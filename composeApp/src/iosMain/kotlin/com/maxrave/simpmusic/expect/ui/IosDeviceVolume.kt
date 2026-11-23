@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.delay
 import platform.AVFAudio.AVAudioSession
+import platform.AVFAudio.outputVolume
 import platform.CoreGraphics.CGRectMake
 import platform.MediaPlayer.MPVolumeView
 import platform.UIKit.UIApplication

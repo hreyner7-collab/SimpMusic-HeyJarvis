@@ -229,3 +229,20 @@ PY
 # Remove duplicate per-arch iOS actuals in ktorExt and data that conflict with iosMain
 rm -rf core/service/ktorExt/src/iosSimulatorArm64Main core/service/ktorExt/src/iosArm64Main
 rm -rf core/data/src/iosSimulatorArm64Main core/data/src/iosArm64Main
+
+# iOS only: AVPlayer cannot play YouTube WebM/Opus (itags 249/250/251/774), and every non-Premium
+# quality setting selects Opus. Prefer AAC (141 for the 256 kbps settings, else 140) when present.
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("core/data/src/commonMain/kotlin/com/maxrave/data/repository/StreamRepositoryImpl.kt")
+t = p.read_text(encoding="utf-8")
+old = "val audioFormat =\n                        formatList.find { it.itag == itag } ?:"
+new = ("val audioFormat =\n"
+       "                        formatList.find { (itag == ITAG.AUDIO_AAC_HIGH || itag == ITAG.AUDIO_OPUS_HIGH) && it.itag == ITAG.AUDIO_AAC_HIGH }\n"
+       "                            ?: formatList.find { it.itag == 140 }\n"
+       "                            ?: formatList.find { it.itag == itag } ?:")
+if "it.itag == 140 }" not in t and old in t:
+    p.write_text(t.replace(old, new, 1), encoding="utf-8"); print("Patched StreamRepositoryImpl: prefer AAC on iOS")
+else:
+    print("StreamRepositoryImpl AAC patch: already applied or anchor not found")
+PY

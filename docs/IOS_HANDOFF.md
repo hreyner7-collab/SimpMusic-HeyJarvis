@@ -93,3 +93,23 @@ Routine whenever the owner says "update the iPhone app":
 
 Merging the iOS branch into `main` is the owner's decision. Ask first; never push to `main` or change the
 public GitHub release without being told to.
+
+## Status log (Mac session, 2026-11-23)
+
+Mac is Intel, macOS 14.8.1, Xcode 16.2 (newest that runs there). **No local simulator is possible**:
+androidx.paging (and likely other androidx KMP libs) dropped `iosX64`, so the app cannot be compiled for
+the Intel simulator. Local builds are `iosArm64` (device) only; simulator checks run in CI
+(`ios-kmp-framework.yml`, Apple-silicon runner).
+
+| Item | Compiles (device) | Verified running |
+|---|---|---|
+| Real KMP app, `linkDebugFrameworkIosArm64` (first full build 37 min) | yes | no |
+| `IosDeviceVolume` / `IosWebView` fixes (`outputVolume` import, `kotlinx.cinterop.ObjCSignatureOverride`) | yes | no |
+| AAC preference (itag 141, else 140) via `patch-core-for-ios.sh` | yes | no (needs CI sim) |
+| `scripts/ios/package-kmp-ipa.sh` -> `dist/ios-kmp/SimpMusic-HeyJarvis-KMP-iOS.ipa` (ad-hoc signed; re-sign with Sideloadly/AltStore) | yes | no |
+
+Notes: `patch-core-for-ios.sh` is NOT idempotent. Reset `core` (`git -C core checkout -- . && git -C core clean -fd`)
+before re-running it. Opus finding confirmed: Low/Medium/High-Opus quality = itags 250/251/774 (WebM/Opus),
+which AVPlayer cannot play; hence the AAC patch.
+
+Still missing (unchanged): everything under "Still empty on iOS" above. Nothing is verified on a simulator yet.
