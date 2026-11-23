@@ -70,3 +70,26 @@ a simulator `.app` and launched; reuse those steps locally and take screenshots 
 `xcrun simctl io booted screenshot out.png` to see the UI.
 
 Verify each feature on the simulator before calling it done. Do not claim one to one until it is true.
+
+## How the Mac is used (owner's rule)
+
+The MacBook is ONLY for the iPhone app: building the iOS framework, the simulator `.app` and the `.ipa`.
+Android and Desktop work happens on other computers in this same GitHub repo. Nobody works on
+Android/Desktop on the Mac.
+
+Routine whenever the owner says "update the iPhone app":
+
+1. `git fetch origin` and look at what changed on `main` since the last iOS build
+   (`git log --oneline <last-ios-commit>..origin/main`).
+2. Bring those changes into the iOS branch: `git merge origin/main` (resolve conflicts; do not rewrite
+   the Android or Desktop side).
+3. Run `scripts/ios/patch-core-for-ios.sh`, build the iOS framework, fix anything the new shared code
+   broke on iOS (typically `commonMain` code that uses an Android or JVM-only API, or a new `expect`
+   with no iOS `actual`), run it on the simulator, then build the `.ipa`.
+4. Keep iOS-only changes inside `composeApp/src/iosMain`, `scripts/ios/`, `iosApp/`, and
+   `.github/workflows/ios-*.yml`, so merging them into `main` never collides with Android/Desktop work.
+   If a shared (`commonMain`) change is truly needed, keep it small and tell the owner.
+5. Report what changed, what was fixed, and what was verified on the simulator.
+
+Merging the iOS branch into `main` is the owner's decision. Ask first; never push to `main` or change the
+public GitHub release without being told to.
