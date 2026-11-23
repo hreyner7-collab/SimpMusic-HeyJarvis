@@ -47,7 +47,8 @@ jobs:
       - name: Compile Real ComposeApp Frameworks (Simulator + Device)
         run: |
           chmod +x gradlew
-          ./gradlew :composeApp:linkReleaseFrameworkIosSimulatorArm64 :composeApp:linkReleaseFrameworkIosArm64 --no-daemon --no-configuration-cache
+          ./gradlew :composeApp:linkReleaseFrameworkIosSimulatorArm64 --no-daemon --no-configuration-cache -Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=1g" -Pkotlin.native.jvmArgs="-Xmx8g"
+          ./gradlew :composeApp:linkReleaseFrameworkIosArm64 --no-daemon --no-configuration-cache -Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=1g" -Pkotlin.native.jvmArgs="-Xmx8g"
 
       - name: Package Real KMP Simulator .app and Physical iPhone .ipa
         run: |
