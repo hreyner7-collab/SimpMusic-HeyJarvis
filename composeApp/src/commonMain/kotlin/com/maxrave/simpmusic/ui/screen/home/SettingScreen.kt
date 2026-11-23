@@ -146,6 +146,7 @@ import com.maxrave.simpmusic.ui.component.ImportPlaylistLinkDialog
 import com.maxrave.simpmusic.ui.component.LoadingDialog
 import com.maxrave.simpmusic.ui.component.RippleIconButton
 import com.maxrave.simpmusic.ui.component.SettingGroup
+import com.maxrave.simpmusic.ui.component.SpotifyOwnAppDialog
 import com.maxrave.simpmusic.ui.component.LocalSettingSearchQuery
 import com.maxrave.simpmusic.ui.component.SettingItem
 import com.maxrave.simpmusic.ui.icon.ArrowBackIosNew
@@ -506,6 +507,7 @@ fun SettingScreen(
     val platformContext = LocalPlatformContext.current
     val localDensity = LocalDensity.current
     val uriHandler = LocalUriHandler.current
+    var showSpotifyOwnApp by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     var width by rememberSaveable { mutableIntStateOf(0) }
@@ -2463,6 +2465,14 @@ fun SettingScreen(
                         }
                     },
                 )
+                SettingItem(
+                    title = "Use your own Spotify app",
+                    subtitle = "Fixes the rate-limit error when syncing your Spotify library",
+                    onClick = { showSpotifyOwnApp = true },
+                )
+                if (showSpotifyOwnApp) {
+                    SpotifyOwnAppDialog { showSpotifyOwnApp = false }
+                }
                 SettingItem(
                     title = stringResource(Res.string.enable_spotify_lyrics),
                     subtitle = stringResource(Res.string.spotify_lyrícs_info),

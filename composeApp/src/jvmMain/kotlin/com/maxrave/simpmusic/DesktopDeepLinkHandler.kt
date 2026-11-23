@@ -122,6 +122,9 @@ object DesktopDeepLinkHandler {
             // redirect, which App.kt matches on this exact scheme and host, not a page to open.
             parsed.scheme == "simpmusic" && parsed.host == "discord-auth" -> parsed
 
+            // simpmusic://spotify-auth?code=…&state=… → likewise Spotify's OAuth redirect (own-app login).
+            parsed.scheme == "simpmusic" && parsed.host == "spotify-auth" -> parsed
+
             // simpmusic://watch?v=xxx → https://simpmusic.org/app/watch?v=xxx
             // simpmusic://playlist?list=xxx → https://simpmusic.org/app/playlist?list=xxx
             // simpmusic://channel/UCxxx → https://simpmusic.org/app/channel/UCxxx

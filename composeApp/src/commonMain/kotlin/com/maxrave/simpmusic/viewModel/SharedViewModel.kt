@@ -695,6 +695,18 @@ class SharedViewModel(
         }
     }
 
+    private val spotifyLibraryRepository: com.maxrave.domain.repository.SpotifyLibraryRepository by inject()
+
+    /** Finishes the Spotify login of the user's own app from the `simpmusic://spotify-auth` redirect. */
+    fun completeSpotifyOwnAppLogin(callbackUrl: String) {
+        viewModelScope.launch {
+            spotifyLibraryRepository
+                .completeOwnAppLogin(callbackUrl)
+                .onSuccess { makeToast("Logged in with your own Spotify app") }
+                .onFailure { makeToast(it.message ?: "Spotify login failed") }
+        }
+    }
+
     fun showNotificationPermissionDialog() {
         _showNotificationPermissionDialog.value = true
     }

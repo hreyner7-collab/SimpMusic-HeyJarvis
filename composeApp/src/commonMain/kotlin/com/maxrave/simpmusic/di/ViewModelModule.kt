@@ -73,6 +73,7 @@ val viewModelModule =
         viewModel { LibrarySyncHostViewModel(get()) }
         viewModel { LibrarySyncPhoneViewModel(get()) }
         viewModel { BrowserLoginViewModel(get()) }
+        viewModel { com.maxrave.simpmusic.viewModel.SpotifyOwnAppViewModel(get(), get()) }
         viewModel { CommentsViewModel(get(), get()) }
         viewModel { SoundCloudPlayerViewModel(get()) }
         viewModel {

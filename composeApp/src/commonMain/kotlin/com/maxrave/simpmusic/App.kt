@@ -283,6 +283,11 @@ fun App(
                 Logger.d("MainActivity", "Discord callback, code present: ${!data.getQueryParameter("code").isNullOrEmpty()}")
                 viewModel.setIntent(null)
                 viewModel.completeDiscordLogin(data.toString())
+            } else if (data.scheme == "simpmusic" && data.host == "spotify-auth") {
+                // Spotify sends the user back here after they approve SimpMusic in their own app:
+                // simpmusic://spotify-auth?code=…&state=…. No navigation: the dialog is already open.
+                viewModel.setIntent(null)
+                viewModel.completeSpotifyOwnAppLogin(data.toString())
             } else if (data.host == "simpmusic.org" || data.scheme == "simpmusic") {
                 // https://simpmusic.org/app/watch?v=VIDEO_ID
                 // https://simpmusic.org/app/playlist?list=PLAYLIST_ID
