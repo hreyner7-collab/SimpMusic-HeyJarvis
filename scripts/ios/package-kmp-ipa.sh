@@ -18,7 +18,10 @@ xcrun --sdk iphoneos swiftc -parse-as-library -sdk "$SDK" -target arm64-apple-io
   iosApp/KmpHost/SimpMusicKmpApp.swift -o "$APP/SimpMusic"
 cp iosApp/Info-Device.plist "$APP/Info.plist"
 # Static framework: nothing to embed, the Kotlin code is linked into the executable.
-cp -R composeApp/build/compose/ios/composeApp/compose-resources "$APP/" 2>/dev/null || true
+RES_SRC="composeApp/build/generated/compose/resourceGenerator/preparedResources/commonMain/composeResources"
+[ -d "$RES_SRC" ] || { echo "Compose resources missing at $RES_SRC"; exit 1; }
+RES_DST="$APP/compose-resources/composeResources/simpmusic.composeapp.generated.resources"
+mkdir -p "$RES_DST" && cp -R "$RES_SRC"/. "$RES_DST"/
 codesign --force --sign - --entitlements iosApp/Entitlements.plist "$APP"
 (cd build/kmp-device && zip -qry "../../$OUT/SimpMusic-HeyJarvis-KMP-iOS.ipa" Payload)
 ls -lh "$OUT/SimpMusic-HeyJarvis-KMP-iOS.ipa"

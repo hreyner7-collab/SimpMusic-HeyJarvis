@@ -97,7 +97,10 @@ jobs:
             cp build/icon-out/AppIcon*.png build/kmp-sim/SimpMusic.app/ 2>/dev/null || true
             /usr/libexec/PlistBuddy -c "Merge build/icon-out/partial.plist" build/kmp-sim/SimpMusic.app/Info.plist 2>/dev/null || true
           fi
-          cp -R composeApp/build/compose/ios/composeApp/compose-resources build/kmp-sim/SimpMusic.app/ 2>/dev/null || true
+          RES_SRC="composeApp/build/generated/compose/resourceGenerator/preparedResources/commonMain/composeResources"
+          [ -d "$RES_SRC" ] || { echo "Compose resources missing at $RES_SRC"; exit 1; }
+          RES_DST="build/kmp-sim/SimpMusic.app/compose-resources/composeResources/simpmusic.composeapp.generated.resources"
+          mkdir -p "$RES_DST" && cp -R "$RES_SRC"/. "$RES_DST"/
           codesign --force --sign - build/kmp-sim/SimpMusic.app
           (cd build/kmp-sim && zip -qry ../../dist/ios-kmp/SimpMusic-HeyJarvis-v2.6.13-iOS-Simulator.app.zip SimpMusic.app)
           ls -lh dist/ios-kmp/
