@@ -22,13 +22,13 @@ actual object DjVoice {
     private const val TAG = "DjVoice"
 
     private const val PIPER_ZIP_URL = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip"
-    private const val VOICE_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium"
-    private const val MODEL_NAME = "en_US-lessac-medium.onnx"
-    private const val CONFIG_NAME = "en_US-lessac-medium.onnx.json"
+    private const val VOICE_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium"
+    private const val MODEL_NAME = "en_US-ryan-medium.onnx"
+    private const val CONFIG_NAME = "en_US-ryan-medium.onnx.json"
 
     // Fingerprints of the files this build was tested with. Anything else is never executed.
     private const val PIPER_EXE_SHA256 = "96f3da3811151580073e40bb4dd20eb0fb8115f5f5f76e2fb54282b3edfa5c1f"
-    private const val MODEL_SHA256 = "5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f"
+    private const val MODEL_SHA256 = "33b53106e049f68a51f014e4fa10bf5a04e0f7d6668692dc05228cc4554c1d71"
 
     private val os = System.getProperty("os.name").orEmpty().lowercase()
     private val isWindows = os.contains("win")
