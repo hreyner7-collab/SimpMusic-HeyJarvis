@@ -1,0 +1,225 @@
+diff --git a/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvLibrary.kt b/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvLibrary.kt
+index f541816..a4d10d4 100644
+--- a/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvLibrary.kt
++++ b/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvLibrary.kt
+@@ -112,6 +112,18 @@ interface MpvLibrary : Library {
+ 
+     // ---- events ----
+ 
++    /**
++     * `int mpv_request_log_messages(mpv_handle *ctx, const char *min_level);`
++     *
++     * Asks mpv to deliver its own log output as `MPV_EVENT_LOG_MESSAGE` events at or above
++     * [minLevel] ("fatal", "error", "warn", ...). Without this mpv's own explanation of why a
++     * file failed to open (HTTP 403, unknown format, audio device failure) is never seen.
++     */
++    fun mpv_request_log_messages(
++        ctx: Pointer,
++        minLevel: String,
++    ): Int
++
+     /**
+      * `mpv_event *mpv_wait_event(mpv_handle *ctx, double timeout);`
+      *
+@@ -559,6 +571,25 @@ open class MpvEventProperty(
+     @JvmField var data: Pointer? = null
+ }
+ 
++/**
++ * `struct mpv_event_log_message` — client.h.
++ *
++ * LP64 layout: prefix@0, level@8, text@16, log_level@24 (int). The three strings are owned by mpv
++ * and valid only until the next `mpv_wait_event`, so they are copied out immediately.
++ */
++@Structure.FieldOrder("prefix", "level", "text", "log_level")
++open class MpvEventLogMessage(
++    pointer: Pointer? = null,
++) : Structure(pointer) {
++    @JvmField var prefix: Pointer? = null
++
++    @JvmField var level: Pointer? = null
++
++    @JvmField var text: Pointer? = null
++
++    @JvmField var log_level: Int = 0
++}
++
+ /**
+  * `struct mpv_event_end_file` — client.h.
+  *
+diff --git a/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayer.kt b/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayer.kt
+index 5566589..e049fb2 100644
+--- a/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayer.kt
++++ b/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayer.kt
+@@ -10,6 +10,13 @@ import java.util.Locale
+ 
+ private const val TAG = "MpvPlayer"
+ 
++private const val MAX_RECENT_MESSAGES = 12
++
++private val URL_IN_MESSAGE = Regex("""https?://([^/\s"']+)[^\s"']*""")
++
++/** Keeps only the host of every URL in [text]; see [MpvPlayer.recentMpvMessages] for why. */
++private fun redactUrls(text: String): String = URL_IN_MESSAGE.replace(text) { "${it.groupValues[1]}/..." }
++
+ /**
+  * The two halves of the DJ-style filter sweep, mirroring `BiquadFilter.FilterType` on the Android
+  * backend: during a crossfade the outgoing track gets a low-pass whose cutoff falls, and the
+@@ -363,6 +370,12 @@ class MpvPlayer private constructor(
+                 return null
+             }
+ 
++            // Without this mpv never says WHY a file failed (HTTP 403, unknown format, audio device
++            // failure): the end-of-file event only carries a bare error code. Warnings and errors
++            // are kept per file and written out when playback fails. An old libmpv without the call
++            // just keeps today's behaviour.
++            runCatching { lib.mpv_request_log_messages(ctx, "warn") }
++
+             // The render context must exist before the first loadfile — render.h: "The renderer
+             // needs to be created with mpv_render_context_create() before you start playback (or
+             // otherwise cause a VO to be created)", and "Video initialization will fail if the
+@@ -405,6 +418,31 @@ class MpvPlayer private constructor(
+ 
+     private var pumpThread: Thread? = null
+ 
++    /** `mpv_event_end_file.error` of the last file that ended in an error; 0 when none did. */
++    @Volatile
++    var lastEndFileError: Int = 0
++        private set
++
++    /** mpv's own name for [lastEndFileError] (for example "loading failed"), or null. */
++    @Volatile
++    var lastEndFileErrorText: String? = null
++        private set
++
++    private val recentMessages = ArrayDeque<String>()
++
++    /**
++     * The newest mpv warnings and errors for the file being played, oldest first. URLs are cut down
++     * to their host: a googlevideo address carries the listener's IP and a signed token.
++     */
++    fun recentMpvMessages(): List<String> = synchronized(recentMessages) { recentMessages.toList() }
++
++    private fun rememberMpvMessage(line: String) {
++        synchronized(recentMessages) {
++            if (recentMessages.size >= MAX_RECENT_MESSAGES) recentMessages.removeFirst()
++            recentMessages.addLast(line)
++        }
++    }
++
+     // ---- play/pause edge detection (see maybeEmitPlayState) ----
+ 
+     @Volatile
+@@ -500,19 +538,42 @@ class MpvPlayer private constructor(
+             MpvEventId.START_FILE -> {
+                 playbackRestarted = false
+                 lastEmittedPlaying = null
++                lastEndFileError = 0
++                lastEndFileErrorText = null
++                synchronized(recentMessages) { recentMessages.clear() }
+                 listener?.opening(this)
+             }
+ 
++            MpvEventId.LOG_MESSAGE -> {
++                val data = event.data
++                if (data != null) {
++                    val message = MpvEventLogMessage(data).apply { read() }
++                    val prefix = message.prefix?.getString(0).orEmpty()
++                    val level = message.level?.getString(0).orEmpty()
++                    val text = message.text?.getString(0).orEmpty().trim()
++                    if (text.isNotEmpty()) {
++                        val line = redactUrls("[$prefix] $level: $text")
++                        rememberMpvMessage(line)
++                        // Errors reach the log files at once; warnings only when a file then fails.
++                        if (level == "error" || level == "fatal") {
++                            Logger.e(TAG, "mpv: $line")
++                        } else {
++                            Logger.d(TAG, "mpv: $line")
++                        }
++                    }
++                }
++            }
++
+             MpvEventId.END_FILE -> {
+                 playbackRestarted = false
+                 lastEmittedPlaying = null
+                 val dataPtr = event.data
+-                val reason =
+-                    if (dataPtr == null) {
+-                        MpvEndFileReason.QUIT
+-                    } else {
+-                        MpvEventEndFile(dataPtr).apply { read() }.reason
+-                    }
++                val endFile = dataPtr?.let { MpvEventEndFile(it).apply { read() } }
++                val reason = endFile?.reason ?: MpvEndFileReason.QUIT
++                if (endFile != null && reason == MpvEndFileReason.ERROR) {
++                    lastEndFileError = endFile.error
++                    lastEndFileErrorText = lib.mpv_error_string(endFile.error)
++                }
+                 when (reason) {
+                     MpvEndFileReason.EOF -> listener?.finished(this)
+                     MpvEndFileReason.ERROR -> listener?.error(this)
+diff --git a/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayerAdapter.kt b/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayerAdapter.kt
+index bbffab7..7b1f973 100644
+--- a/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayerAdapter.kt
++++ b/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayerAdapter.kt
+@@ -295,6 +295,10 @@ class MpvPlayerAdapter(
+     private var retryVideoId: String? = null
+     private val maxRetryCount = 2
+ 
++    /** mpv's own reason for the last failed file; the ERROR state reports it instead of a guess. */
++    @Volatile
++    private var lastPlaybackErrorDetail: String? = null
++
+     // Playlist management
+     private val playlist = mutableListOf<GenericMediaItem>()
+     private var localCurrentMediaItemIndex = -1
+@@ -1540,8 +1544,10 @@ class MpvPlayerAdapter(
+                     it.onPlayerError(
+                         PlayerError(
+                             errorCode = 403,
+-                            errorCodeName = "ERROR_UNKNOWN",
+-                            message = "Can not extract playable URL or playback error",
++                            errorCodeName = lastPlaybackErrorDetail ?: "ERROR_UNKNOWN",
++                            message =
++                                "Can not extract playable URL or playback error" +
++                                    (lastPlaybackErrorDetail?.let { " ($it)" } ?: ""),
+                         ),
+                     )
+                 }
+@@ -1761,7 +1767,15 @@ class MpvPlayerAdapter(
+                 }
+ 
+                 override fun error(player: MpvPlayer) {
+-                    Logger.e(TAG, "mpv playback error")
++                    val mpvReason = player.lastEndFileErrorText
++                    // mpv's own words for the failure. Until now this said only "mpv playback error",
++                    // and every cause (HTTP 403, unknown format, audio device) ended as a timeout toast.
++                    Logger.e(
++                        TAG,
++                        "mpv playback error: ${mpvReason ?: "unknown"} (code ${player.lastEndFileError}); " +
++                            "mpv said: ${player.recentMpvMessages().joinToString(" | ").ifEmpty { "nothing" }}",
++                    )
++                    if (currentPlayer === player) lastPlaybackErrorDetail = mpvReason
+                     coroutineScope.launch {
+                         // Ignore errors from a player that is no longer current.
+                         // This can happen when the old player fires error() after
+@@ -1805,8 +1819,8 @@ class MpvPlayerAdapter(
+                         val error =
+                             PlayerError(
+                                 errorCode = PlayerConstants.ERROR_CODE_TIMEOUT,
+-                                errorCodeName = "MPV_ERROR",
+-                                message = "Playback error",
++                                errorCodeName = player.lastEndFileErrorText ?: "MPV_ERROR",
++                                message = "Playback error" + (player.lastEndFileErrorText?.let { ": $it" } ?: ""),
+                             )
+                         listeners.forEach { it.onPlayerError(error) }
+                         transitionToState(InternalState.ERROR)
+@@ -1821,6 +1835,7 @@ class MpvPlayerAdapter(
+                             // Reset retry counter on successful playback
+                             retryCount = 0
+                             retryVideoId = null
++                            lastPlaybackErrorDetail = null
+                         }
+                         // Audio is up, so mpv can name its driver: the output caption has its answer
+                         // before anyone opens the sheet, and again once a device switch has settled.
