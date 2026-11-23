@@ -1,0 +1,48 @@
+name: Build Windows Setup EXE
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Apply core patches
+        shell: bash
+        run: |
+          chmod +x scripts/apply-core-patches.sh
+          bash scripts/apply-core-patches.sh
+
+      - name: Build Windows distributable
+        run: |
+          .\gradlew.bat :desktopApp:createDistributable --no-daemon --no-configuration-cache
+
+      - name: Build Setup EXE
+        shell: pwsh
+        run: |
+          $appDir = "desktopApp\build\compose\binaries\main\app\SimpMusic"
+          powershell -ExecutionPolicy Bypass -File scripts\windows\build_installer_exe.ps1 `
+            -AppDir $appDir `
+            -IconPath "composeApp\icon\circle_app_icon.ico" `
+            -Version "2.6.25" `
+            -OutputExe "SimpMusic-HeyJarvis-Setup.exe"
+          Get-Item "SimpMusic-HeyJarvis-Setup.exe" | Select-Object Name, Length
+
+      - name: Upload Windows Setup EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpMusic-HeyJarvis-Windows-Setup
+          path: SimpMusic-HeyJarvis-Setup.exe
