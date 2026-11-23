@@ -67,24 +67,6 @@ actual fun rememberCastReceivers(discover: Boolean): CastReceivers =
         CastReceivers(receivers = emptyList(), connect = {}, disconnect = {})
     }
 
-actual fun createWebViewCookieManager(): WebViewCookieManager =
-    object : WebViewCookieManager {
-        override fun getCookie(url: String): String = ""
-
-        override fun removeAllCookies() {}
-    }
-
-@Composable
-actual fun PlatformWebView(
-    state: MutableState<WebViewState>,
-    initUrl: String,
-    aboveContent: @Composable (BoxScope.() -> Unit),
-    clearCookies: Boolean,
-    onPageFinished: (String) -> Unit,
-) {
-    Box { aboveContent() }
-}
-
 @Composable
 actual fun DiscordWebView(
     state: MutableState<WebViewState>,
@@ -93,9 +75,6 @@ actual fun DiscordWebView(
 ) {
     Box { aboveContent() }
 }
-
-@Composable
-actual fun rememberDeviceVolumeController(): DeviceVolumeController? = null
 
 @Composable
 actual fun filePickerResult(onResultUri: (String?) -> Unit): FilePickerLauncher =
