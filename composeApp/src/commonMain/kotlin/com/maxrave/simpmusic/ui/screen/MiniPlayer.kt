@@ -130,6 +130,7 @@ import com.maxrave.simpmusic.ui.component.rememberHolderPainter
 import com.maxrave.simpmusic.ui.icon.Close
 import com.maxrave.simpmusic.ui.icon.Headphones
 import com.maxrave.simpmusic.ui.icon.OpenInFull
+import androidx.compose.runtime.collectAsState
 import com.maxrave.simpmusic.ui.icon.PictureInPictureAlt
 import com.maxrave.simpmusic.ui.icon.QueueMusic
 import com.maxrave.simpmusic.ui.icon.SimpIcons
@@ -981,6 +982,25 @@ fun MiniPlayer(
                     Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                         HeartCheckBox(checked = controllerState.isLiked, size = 32) {
                             sharedViewModel.onUIEvent(UIEvent.ToggleLike)
+                        }
+                    }
+                    // DJ: always one click away. Opens the DJ screen (Desktop capsule only, as it has the nav controller).
+                    val djActive by com.maxrave.simpmusic.dj.DjSessionState.active
+                        .collectAsState()
+                    if (navController != null && djActive) {
+                        val djSpeaking by com.maxrave.simpmusic.dj.DjSessionState.speaking
+                            .collectAsState()
+                        IconButton(
+                            onClick = {
+                                navController.navigate(
+                                    com.maxrave.simpmusic.ui.navigation.destination.dj.DjDestination,
+                                ) { launchSingleTop = true }
+                            },
+                        ) {
+                            com.maxrave.simpmusic.ui.component.DjRing(
+                                modifier = Modifier.size(24.dp),
+                                speaking = djSpeaking,
+                            )
                         }
                     }
                     IconButton(

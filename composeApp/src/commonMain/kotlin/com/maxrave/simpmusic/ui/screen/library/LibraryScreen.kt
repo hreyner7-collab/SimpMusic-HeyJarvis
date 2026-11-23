@@ -297,6 +297,15 @@ fun LibraryScreen(
                             ),
                         state = state,
                     ) {
+                        item(key = "dj") {
+                            com.maxrave.simpmusic.ui.component.DjCard(
+                                Modifier.padding(start = 10.dp, end = 10.dp, bottom = 8.dp),
+                                onClick = {
+                                    navController.navigate(com.maxrave.simpmusic.ui.navigation.destination.dj.DjDestination)
+                                },
+                            )
+                        }
+
                         item {
                             LibraryTilingBox(navController, libraryOverview, cachedPreview)
                         }

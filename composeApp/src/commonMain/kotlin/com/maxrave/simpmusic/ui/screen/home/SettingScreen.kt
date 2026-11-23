@@ -1903,6 +1903,8 @@ fun SettingScreen(
                 AnimatedVisibility(visible = eightDEnabled && eightDAvailable && !castState.isRemote) {
                     EightDSection()
                 }
+                StereoWidenerSettings(enabledByCast = !castState.isRemote)
+                AiDjSettings()
                 SettingItem(
                     title = stringResource(Res.string.save_playback_state),
                     subtitle = stringResource(Res.string.save_shuffle_and_repeat_mode),

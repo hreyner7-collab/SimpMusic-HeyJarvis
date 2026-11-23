@@ -30,6 +30,13 @@ fun NavGraphBuilder.loginScreenGraph(
         )
     }
 
+    composable<com.maxrave.simpmusic.ui.navigation.destination.dj.DjDestination> {
+        com.maxrave.simpmusic.ui.screen.dj.DjScreen(
+            innerPadding = innerPadding,
+            navController = navController,
+        )
+    }
+
     composable<SpotifyLoginDestination> {
         SpotifyLoginScreen(
             innerPadding = innerPadding,

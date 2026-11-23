@@ -163,6 +163,14 @@ fun App(
     val navController = rememberNavController()
     val isDesktopShell = getPlatform() == Platform.Desktop
 
+    // The AI DJ listens to the player for as long as the app is open; it speaks only when switched on.
+    val djHandler = koinInject<com.maxrave.domain.mediaservice.handler.MediaPlayerHandler>()
+    val djDataStore = koinInject<com.maxrave.domain.manager.DataStoreManager>()
+    val djRepository = koinInject<com.maxrave.domain.repository.DjRepository>()
+    LaunchedEffect(Unit) {
+        com.maxrave.simpmusic.dj.AiDjController(djHandler, djDataStore, djRepository).run()
+    }
+
     val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
     val nowPlayingData by viewModel.nowPlayingState.collectAsStateWithLifecycle()
     val updateData by viewModel.updateResponse.collectAsStateWithLifecycle()

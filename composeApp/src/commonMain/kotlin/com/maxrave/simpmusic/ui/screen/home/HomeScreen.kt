@@ -853,6 +853,13 @@ fun HomeScreen(
                                                 with(LocalDensity.current) { topAppBarHeightPx.toDp() } + 8.dp,
                                             ),
                                         )
+                                        // The DJ, at the top of Home like Spotify's: one tap opens it.
+                                        com.maxrave.simpmusic.ui.component.DjCard(
+                                            Modifier.padding(bottom = 4.dp),
+                                            onClick = {
+                                                navController.navigate(com.maxrave.simpmusic.ui.navigation.destination.dj.DjDestination)
+                                            },
+                                        )
                                     }
                                     // Android drops the 8dp over each section's title: the list's own 8dp
                                     // spacing already separates it from the shelf above.

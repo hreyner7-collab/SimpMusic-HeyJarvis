@@ -443,6 +443,18 @@ fun SearchScreen(
                         state = suggestionsState,
                         contentPadding = PaddingValues(top = searchBarHeight, bottom = 10.dp),
                     ) {
+                        // Searching "DJ" finds the DJ, as in Spotify.
+                        if (searchText.trim().equals("dj", ignoreCase = true)) {
+                            item {
+                                com.maxrave.simpmusic.ui.component.DjCard(
+                                    Modifier.padding(vertical = 8.dp),
+                                    onClick = {
+                                        focusManager.clearFocus()
+                                        navController.navigate(com.maxrave.simpmusic.ui.navigation.destination.dj.DjDestination)
+                                    },
+                                )
+                            }
+                        }
                         items(searchScreenState.suggestYTItems) { item ->
                             SuggestItemRow(
                                 searchResult = item,
