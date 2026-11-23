@@ -9,6 +9,7 @@ on:
       - "composeApp/**"
       - "core/**"
       - "iosApp/KmpHost/**"
+      - "scripts/ios/**"
       - ".github/workflows/ios-kmp-framework.yml"
 
 permissions:
@@ -89,7 +90,7 @@ jobs:
           (cd build/kmp-dev && zip -qry ../../dist/ios-kmp/SimpMusic-HeyJarvis-v2.6.13-iOS.ipa Payload)
           ls -lh dist/ios-kmp/
 
-      - name: Verify Real KMP ComposeApp on iPhone Simulator with govijr/terminal-phone
+      - name: Verify Real KMP ComposeApp on iPhone Simulator
         run: |
           set -euo pipefail
           curl -fsSL https://raw.githubusercontent.com/govijr/terminal-phone/main/install.sh | bash -s -- --prefix "$HOME/.local" --no-path
@@ -99,11 +100,10 @@ jobs:
           open -a Simulator || true
           sleep 2
           terminal-phone sim simpmusic statusbar clean || true
-          terminal-phone install simpmusic "$PWD/build/kmp-sim/SimpMusic.app"
-          terminal-phone launch simpmusic com.maxrave.simpmusic
-          sleep 6
-          terminal-phone action simpmusic screenshot --output dist/ios-kmp/results/kmp-01-home.png || true
-          terminal-phone action simpmusic screenshot --framed --output dist/ios-kmp/results/kmp-01-home-framed.png || true
+          xcrun simctl install booted "$PWD/build/kmp-sim/SimpMusic.app"
+          xcrun simctl launch booted com.maxrave.simpmusic
+          sleep 8
+          xcrun simctl io booted screenshot dist/ios-kmp/results/kmp-01-home.png
           terminal-phone stop simpmusic || true
 
       - name: Upload Real KMP iOS IPA & Screenshots
