@@ -2,6 +2,9 @@ name: Build Windows Setup EXE
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'release/2.6.25'
 
 permissions:
   contents: write
