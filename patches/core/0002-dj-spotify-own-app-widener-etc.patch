@@ -1,4 +1,4 @@
-﻿diff --git a/common/src/commonMain/kotlin/com/maxrave/common/Config.kt b/common/src/commonMain/kotlin/com/maxrave/common/Config.kt
+diff --git a/common/src/commonMain/kotlin/com/maxrave/common/Config.kt b/common/src/commonMain/kotlin/com/maxrave/common/Config.kt
 index e52f961..163a316 100644
 --- a/common/src/commonMain/kotlin/com/maxrave/common/Config.kt
 +++ b/common/src/commonMain/kotlin/com/maxrave/common/Config.kt
