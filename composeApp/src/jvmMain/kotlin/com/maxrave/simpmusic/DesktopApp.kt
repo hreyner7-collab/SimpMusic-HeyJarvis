@@ -88,7 +88,7 @@ import simpmusic.composeapp.generated.resources.explicit_content_blocked
 import simpmusic.composeapp.generated.resources.open_app
 import simpmusic.composeapp.generated.resources.open_miniplayer
 import simpmusic.composeapp.generated.resources.quit_app
-import simpmusic.composeapp.generated.resources.time_out_check_internet_connection_or_change_piped_instance_in_settings
+import simpmusic.composeapp.generated.resources.playback_failed_reason
 import java.awt.Canvas
 import java.awt.Container
 import java.awt.event.ComponentAdapter
@@ -256,7 +256,9 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                 }
 
                 is ToastType.PlayerError -> {
-                    runBlocking { getString(Res.string.time_out_check_internet_connection_or_change_piped_instance_in_settings, type.error) }
+                    // Desktop playback errors come from mpv with its own reason, not from a network
+                    // timeout, so the toast names that reason instead of blaming the connection.
+                    runBlocking { getString(Res.string.playback_failed_reason, type.error) }
                 }
 
                 is ToastType.SponsorBlockSkip -> {
