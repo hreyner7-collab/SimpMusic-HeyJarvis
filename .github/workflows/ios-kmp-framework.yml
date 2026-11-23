@@ -102,6 +102,27 @@ jobs:
           (cd build/kmp-sim && zip -qry ../../dist/ios-kmp/SimpMusic-HeyJarvis-v2.6.13-iOS-Simulator.app.zip SimpMusic.app)
           ls -lh dist/ios-kmp/
 
+      - name: Launch on iPhone Simulator and capture crash log
+        continue-on-error: true
+        run: |
+          mkdir -p dist/ios-kmp/results
+          RT="$(xcrun simctl list runtimes | grep -E 'iOS 18' | head -1 | sed -E 's/.*(com\.apple\.CoreSimulator\.SimRuntime\.[A-Za-z0-9-]+).*/\1/')"
+          [ -z "$RT" ] && RT="$(xcrun simctl list runtimes | grep -E 'iOS' | tail -1 | sed -E 's/.*(com\.apple\.CoreSimulator\.SimRuntime\.[A-Za-z0-9-]+).*/\1/')"
+          echo "Runtime: $RT"
+          UDID="$(xcrun simctl create SimpTest 'iPhone 15 Pro' "$RT" 2>/dev/null || xcrun simctl list devices available | grep -E 'iPhone' | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')"
+          echo "UDID: $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+          xcrun simctl install "$UDID" build/kmp-sim/SimpMusic.app
+          xcrun simctl launch --console-pty "$UDID" com.maxrave.simpmusic > dist/ios-kmp/results/launch.log 2>&1 &
+          sleep 25
+          xcrun simctl io "$UDID" screenshot dist/ios-kmp/results/kmp-01-home.png || true
+          echo "=== LAUNCH LOG ==="
+          head -c 12000 dist/ios-kmp/results/launch.log || true
+          echo "=== CRASH REPORTS ==="
+          ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i simp || true
+          cp ~/Library/Logs/DiagnosticReports/SimpMusic* dist/ios-kmp/results/ 2>/dev/null || true
+
       - name: Upload Real KMP iOS Simulator Build
         if: always()
         uses: actions/upload-artifact@v4
