@@ -47,15 +47,15 @@ jobs:
       - name: Compile Real ComposeApp Frameworks (Simulator + Device)
         run: |
           chmod +x gradlew
-          ./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 :composeApp:linkDebugFrameworkIosArm64 --no-daemon --no-configuration-cache
+          ./gradlew :composeApp:linkReleaseFrameworkIosSimulatorArm64 :composeApp:linkReleaseFrameworkIosArm64 --no-daemon --no-configuration-cache
 
       - name: Package Real KMP Simulator .app and Physical iPhone .ipa
         run: |
           set -euo pipefail
           mkdir -p dist/ios-kmp/results build/kmp-sim/SimpMusic.app build/kmp-dev/Payload/SimpMusic.app
 
-          SIM_FW="composeApp/build/bin/iosSimulatorArm64/debugFramework"
-          DEV_FW="composeApp/build/bin/iosArm64/debugFramework"
+          SIM_FW="composeApp/build/bin/iosSimulatorArm64/releaseFramework"
+          DEV_FW="composeApp/build/bin/iosArm64/releaseFramework"
           SIM_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
           IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 
@@ -89,7 +89,7 @@ jobs:
             -framework ComposeApp \
             -framework AVFoundation -framework AVFAudio -framework MediaPlayer \
             -framework Metal -framework CoreMedia -framework QuartzCore -framework UIKit \
-            -Xlinker -lsqlite3 -Xlinker -lc++ \
+            -Xlinker -dead_strip -Xlinker -lsqlite3 -Xlinker -lc++ \
             -Xlinker -rpath -Xlinker @executable_path/Frameworks \
             iosApp/KmpHost/SimpMusicKmpApp.swift \
             -o build/kmp-sim/SimpMusic.app/SimpMusic
@@ -111,7 +111,7 @@ jobs:
             -framework ComposeApp \
             -framework AVFoundation -framework AVFAudio -framework MediaPlayer \
             -framework Metal -framework CoreMedia -framework QuartzCore -framework UIKit \
-            -Xlinker -lsqlite3 -Xlinker -lc++ \
+            -Xlinker -dead_strip -Xlinker -lsqlite3 -Xlinker -lc++ \
             -Xlinker -rpath -Xlinker @executable_path/Frameworks \
             iosApp/KmpHost/SimpMusicKmpApp.swift \
             -o build/kmp-dev/Payload/SimpMusic.app/SimpMusic
