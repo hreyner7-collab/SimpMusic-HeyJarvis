@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalForeignApi::class)
+
 package com.maxrave.simpmusic.expect.ui
 
 import androidx.compose.foundation.layout.Box
@@ -9,9 +11,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -25,6 +27,7 @@ import com.maxrave.data.mediaservice.IosAvPlayerRegistry
 import com.maxrave.domain.data.model.metadata.Lyrics
 import com.maxrave.domain.data.model.streams.TimeLine
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.readValue
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.delay
 import platform.AVFoundation.AVLayerVideoGravityResizeAspect
@@ -37,12 +40,36 @@ import platform.AVFoundation.currentItem
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.pause
 import platform.AVFoundation.play
+import platform.AVFoundation.presentationSize
 import platform.AVFoundation.volume
+import platform.CoreGraphics.CGRectZero
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.Foundation.NSURL
 import platform.QuartzCore.CATransaction
 import platform.UIKit.UIColor
 import platform.UIKit.UIView
+
+/**
+ * A UIView that keeps one AVPlayerLayer exactly the size of the view. Compose sets this view's
+ * frame as it lays the composable out; layoutSubviews runs after every such change.
+ */
+private class VideoContainer(
+    private val videoLayer: AVPlayerLayer,
+) : UIView(frame = CGRectZero.readValue()) {
+    init {
+        backgroundColor = UIColor.blackColor
+        clipsToBounds = true
+        layer.addSublayer(videoLayer)
+    }
+
+    override fun layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        videoLayer.frame = bounds
+        CATransaction.commit()
+    }
+}
 
 /**
  * A muted, looping clip drawn straight from [url]: Spotify canvases (mp4) and Apple Music animated
@@ -74,22 +101,11 @@ private class LoopingClip(
 
     fun hasDrawnFrame(): Boolean {
         val item = player.currentItem ?: return false
-        return CMTimeGetSeconds(player.currentTime()) > 0.05 && item.presentationSize.useContents { width > 0.0 }
+        val hasSize = item.presentationSize.useContents { width > 0.0 }
+        return hasSize && CMTimeGetSeconds(player.currentTime()) > 0.05
     }
 }
 
-@OptIn(ExperimentalForeignApi::class)
-private fun fitLayer(
-    layer: AVPlayerLayer,
-    view: UIView,
-) {
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    layer.frame = view.bounds
-    CATransaction.commit()
-}
-
-@OptIn(ExperimentalForeignApi::class)
 @Composable
 actual fun MediaPlayerView(
     url: String,
@@ -105,46 +121,34 @@ actual fun MediaPlayerView(
         latestFirstFrame.value()
     }
     UIKitView(
-        factory = {
-            UIView().also { container ->
-                container.backgroundColor = UIColor.blackColor
-                container.clipsToBounds = true
-                container.layer.addSublayer(clip.layer)
-            }
-        },
+        factory = { VideoContainer(clip.layer) },
         modifier = modifier,
-        update = { view ->
+        update = {
             clip.layer.videoGravity = if (cropToBounds) AVLayerVideoGravityResizeAspectFill else AVLayerVideoGravityResizeAspect
-            fitLayer(clip.layer, view)
-        },
-        onResize = { view, rect ->
-            view.setFrame(rect)
-            fitLayer(clip.layer, view)
         },
     )
 }
 
 /** Width over height of the video the main player has loaded, or null while there is none. */
-@OptIn(ExperimentalForeignApi::class)
 @Composable
 actual fun rememberVideoAspectRatio(playerName: String): Float? {
     val state =
         produceState<Float?>(initialValue = null) {
             while (true) {
-                val size = IosAvPlayerRegistry.player?.currentItem?.presentationSize
-                value =
-                    if (IosAvPlayerRegistry.isVideo.value && size != null) {
-                        size.useContents { if (width > 0.0 && height > 0.0) (width / height).toFloat() else null }
-                    } else {
-                        null
+                val item = IosAvPlayerRegistry.player?.currentItem
+                var ratio: Float? = null
+                if (IosAvPlayerRegistry.isVideo.value && item != null) {
+                    item.presentationSize.useContents {
+                        if (width > 0.0 && height > 0.0) ratio = (width / height).toFloat()
                     }
+                }
+                value = ratio
                 delay(500)
             }
         }
     return state.value
 }
 
-@OptIn(ExperimentalForeignApi::class)
 @Composable
 actual fun MediaPlayerViewWithSubtitle(
     modifier: Modifier,
@@ -163,21 +167,14 @@ actual fun MediaPlayerViewWithSubtitle(
     val player = IosAvPlayerRegistry.player
     Box(modifier.fillMaxSize()) {
         if (isVideo && player != null) {
-            val layer = remember(player) { AVPlayerLayer.playerLayerWithPlayer(player) }
+            val layer =
+                remember(player) {
+                    AVPlayerLayer.playerLayerWithPlayer(player).also { it.videoGravity = AVLayerVideoGravityResizeAspect }
+                }
             DisposableEffect(layer) { onDispose { layer.player = null } }
             UIKitView(
-                factory = {
-                    UIView().also { container ->
-                        container.backgroundColor = UIColor.blackColor
-                        layer.videoGravity = AVLayerVideoGravityResizeAspect
-                        container.layer.addSublayer(layer)
-                    }
-                },
+                factory = { VideoContainer(layer) },
                 modifier = Modifier.fillMaxSize(),
-                onResize = { view, rect ->
-                    view.setFrame(rect)
-                    fitLayer(layer, view)
-                },
             )
         }
         if (shouldShowSubtitle) {

@@ -8,7 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.delay
-import platform.AVFoundation.AVAudioSession
+import platform.AVFAudio.AVAudioSession
 import platform.CoreGraphics.CGRectMake
 import platform.MediaPlayer.MPVolumeView
 import platform.UIKit.UIApplication

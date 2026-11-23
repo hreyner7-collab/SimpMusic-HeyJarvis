@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalForeignApi::class)
+
 package com.maxrave.simpmusic.expect
 
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -6,19 +8,20 @@ import kotlinx.cinterop.usePinned
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
-import platform.Foundation.NSFileHandle
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSize
+import platform.Foundation.NSMakeRange
 import platform.Foundation.NSNumber
 import platform.Foundation.NSRecursiveLock
 import platform.Foundation.NSString
 import platform.Foundation.NSTimeZone
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.create
+import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.dateWithTimeIntervalSince1970
-import platform.Foundation.fileHandleForReadingAtPath
 import platform.Foundation.localTimeZone
 import platform.Foundation.stringWithContentsOfFile
+import platform.Foundation.subdataWithRange
 import platform.Foundation.writeToFile
 import platform.posix.memcpy
 import kotlin.time.Clock
@@ -72,29 +75,21 @@ actual fun platformFileLength(path: String): Long {
 actual fun platformReadText(path: String): String =
     NSString.stringWithContentsOfFile(path, encoding = NSUTF8StringEncoding, error = null) as String? ?: ""
 
-@OptIn(ExperimentalForeignApi::class)
 actual fun platformReadBytesRange(
     path: String,
     from: Long,
 ): ByteArray {
-    if (!NSFileManager.defaultManager.fileExistsAtPath(path)) return ByteArray(0)
-    val length = platformFileLength(path)
-    if (length <= from) return ByteArray(0)
-    val handle = NSFileHandle.fileHandleForReadingAtPath(path) ?: return ByteArray(0)
-    return try {
-        handle.seekToOffset(from.toULong(), error = null)
-        val data = handle.readDataToEndOfFile()
-        val bytes = ByteArray(data.length.toInt())
-        if (bytes.isNotEmpty()) {
-            bytes.usePinned { pinned -> memcpy(pinned.addressOf(0), data.bytes, data.length) }
-        }
-        bytes
-    } finally {
-        handle.closeFile()
+    val data = NSData.dataWithContentsOfFile(path) ?: return ByteArray(0)
+    val total = data.length.toLong()
+    if (total <= from) return ByteArray(0)
+    val slice = data.subdataWithRange(NSMakeRange(from.toULong(), (total - from).toULong()))
+    val bytes = ByteArray(slice.length.toInt())
+    if (bytes.isNotEmpty()) {
+        bytes.usePinned { pinned -> memcpy(pinned.addressOf(0), slice.bytes, slice.length) }
     }
+    return bytes
 }
 
-@OptIn(ExperimentalForeignApi::class)
 actual fun platformWriteBytes(
     path: String,
     bytes: ByteArray?,

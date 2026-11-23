@@ -131,7 +131,7 @@ jobs:
           path: dist/ios-kmp/**
 
       - name: Attach Real KMP iOS IPA to Latest GitHub Release
-        if: always()
+        if: always() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
