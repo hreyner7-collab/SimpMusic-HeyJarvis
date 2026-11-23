@@ -31,10 +31,10 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Select latest Xcode
+      - name: Select Xcode 16 (iOS 18 SDK for Appetize & iOS 17/18 compatibility)
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '16'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -59,17 +59,46 @@ jobs:
           SIM_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
           IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 
+          # Build AppIcon.appiconset from composeApp/icon/circle_app_icon.png
+          ICON_SRC="composeApp/icon/circle_app_icon.png"
+          if [ -f "$ICON_SRC" ]; then
+            mkdir -p build/Assets.xcassets/AppIcon.appiconset build/icon-out
+            sips -z 1024 1024 "$ICON_SRC" --out build/Assets.xcassets/AppIcon.appiconset/icon-1024.png >/dev/null
+            sips -z 180 180 "$ICON_SRC" --out build/Assets.xcassets/AppIcon.appiconset/icon-180.png >/dev/null
+            sips -z 120 120 "$ICON_SRC" --out build/Assets.xcassets/AppIcon.appiconset/icon-120.png >/dev/null
+            cat > build/Assets.xcassets/AppIcon.appiconset/Contents.json << 'EOF'
+          {
+            "images": [
+              {"filename": "icon-120.png", "idiom": "iphone", "scale": "2x", "size": "60x60"},
+              {"filename": "icon-180.png", "idiom": "iphone", "scale": "3x", "size": "60x60"},
+              {"filename": "icon-1024.png", "idiom": "ios-marketing", "scale": "1x", "size": "1024x1024"}
+            ],
+            "info": {"author": "xcode", "version": 1}
+          }
+          EOF
+            xcrun actool build/Assets.xcassets --compile build/icon-out \
+              --platform iphoneos --minimum-deployment-target 16.0 \
+              --app-icon AppIcon --output-partial-info-plist build/icon-out/partial.plist >/dev/null || true
+          fi
+
           # Build Simulator .app linking real ComposeApp.framework
           xcrun --sdk iphonesimulator swiftc -parse-as-library \
             -sdk "$SIM_SDK" \
             -target "arm64-apple-ios17.0-simulator" \
             -F "$SIM_FW" \
             -framework ComposeApp \
+            -framework AVFoundation -framework AVFAudio -framework MediaPlayer \
+            -framework Metal -framework CoreMedia -framework QuartzCore -framework UIKit \
             -Xlinker -lsqlite3 -Xlinker -lc++ \
             -Xlinker -rpath -Xlinker @executable_path/Frameworks \
             iosApp/KmpHost/SimpMusicKmpApp.swift \
             -o build/kmp-sim/SimpMusic.app/SimpMusic
           cp iosApp/Info.plist build/kmp-sim/SimpMusic.app/Info.plist
+          if [ -f build/icon-out/Assets.car ]; then
+            cp build/icon-out/Assets.car build/kmp-sim/SimpMusic.app/
+            cp build/icon-out/AppIcon*.png build/kmp-sim/SimpMusic.app/ 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Merge build/icon-out/partial.plist" build/kmp-sim/SimpMusic.app/Info.plist 2>/dev/null || true
+          fi
           cp -R composeApp/build/compose/ios/composeApp/compose-resources build/kmp-sim/SimpMusic.app/ 2>/dev/null || true
           codesign --force --sign - build/kmp-sim/SimpMusic.app
           (cd build/kmp-sim && zip -qry ../../dist/ios-kmp/SimpMusic-HeyJarvis-v2.6.13-iOS-Simulator.app.zip SimpMusic.app)
@@ -80,11 +109,18 @@ jobs:
             -target "arm64-apple-ios16.0" \
             -F "$DEV_FW" \
             -framework ComposeApp \
+            -framework AVFoundation -framework AVFAudio -framework MediaPlayer \
+            -framework Metal -framework CoreMedia -framework QuartzCore -framework UIKit \
             -Xlinker -lsqlite3 -Xlinker -lc++ \
             -Xlinker -rpath -Xlinker @executable_path/Frameworks \
             iosApp/KmpHost/SimpMusicKmpApp.swift \
             -o build/kmp-dev/Payload/SimpMusic.app/SimpMusic
           cp iosApp/Info-Device.plist build/kmp-dev/Payload/SimpMusic.app/Info.plist
+          if [ -f build/icon-out/Assets.car ]; then
+            cp build/icon-out/Assets.car build/kmp-dev/Payload/SimpMusic.app/
+            cp build/icon-out/AppIcon*.png build/kmp-dev/Payload/SimpMusic.app/ 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Merge build/icon-out/partial.plist" build/kmp-dev/Payload/SimpMusic.app/Info.plist 2>/dev/null || true
+          fi
           cp -R composeApp/build/compose/ios/composeApp/compose-resources build/kmp-dev/Payload/SimpMusic.app/ 2>/dev/null || true
           codesign --force --sign - --entitlements iosApp/Entitlements.plist build/kmp-dev/Payload/SimpMusic.app
           (cd build/kmp-dev && zip -qry ../../dist/ios-kmp/SimpMusic-HeyJarvis-v2.6.13-iOS.ipa Payload)
@@ -101,9 +137,14 @@ jobs:
           sleep 2
           terminal-phone sim simpmusic statusbar clean || true
           xcrun simctl install booted "$PWD/build/kmp-sim/SimpMusic.app"
-          xcrun simctl launch booted com.maxrave.simpmusic
-          sleep 8
+          xcrun simctl launch --console-pty booted com.maxrave.simpmusic > dist/ios-kmp/results/launch.log 2>&1 &
+          LAUNCH_PID=$!
+          sleep 10
           xcrun simctl io booted screenshot dist/ios-kmp/results/kmp-01-home.png
+          kill "$LAUNCH_PID" 2>/dev/null || true
+          echo "=== LAUNCH CONSOLE LOG ==="
+          cat dist/ios-kmp/results/launch.log || true
+          echo "=== END LAUNCH LOG ==="
           terminal-phone stop simpmusic || true
 
       - name: Upload Real KMP iOS IPA & Screenshots
