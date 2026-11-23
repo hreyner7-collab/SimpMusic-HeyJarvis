@@ -141,36 +141,6 @@ actual fun rememberLocalNetworkPermission(): LocalNetworkPermissionRequester =
 actual fun LoginSyncDialog(onDismiss: () -> Unit) {}
 
 @Composable
-actual fun MediaPlayerView(
-    url: String,
-    modifier: Modifier,
-    cropToBounds: Boolean,
-    onFirstFrame: () -> Unit,
-) {
-    Box(modifier)
-}
-
-@Composable
-actual fun MediaPlayerViewWithSubtitle(
-    modifier: Modifier,
-    playerName: String,
-    shouldPip: Boolean,
-    shouldShowSubtitle: Boolean,
-    shouldScaleDownSubtitle: Boolean,
-    isInPipMode: Boolean,
-    timelineState: TimeLine,
-    lyricsData: Lyrics?,
-    translatedLyricsData: Lyrics?,
-    mainTextStyle: TextStyle,
-    translatedTextStyle: TextStyle,
-) {
-    Box(modifier)
-}
-
-@Composable
-actual fun rememberVideoAspectRatio(playerName: String): Float? = null
-
-@Composable
 actual fun openEqResult(audioSessionId: Int): OpenEqLauncher =
     remember {
         object : OpenEqLauncher {

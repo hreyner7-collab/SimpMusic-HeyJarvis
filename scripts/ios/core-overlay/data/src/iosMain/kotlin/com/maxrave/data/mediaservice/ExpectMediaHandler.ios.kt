@@ -1,5 +1,6 @@
 package com.maxrave.data.mediaservice
 
+import com.maxrave.common.MERGING_DATA_TYPE
 import com.maxrave.domain.data.entities.NewFormatEntity
 import com.maxrave.domain.data.entities.SongEntity
 import com.maxrave.domain.data.model.browse.album.Track
@@ -12,6 +13,7 @@ import com.maxrave.domain.data.player.GenericPlaybackParameters
 import com.maxrave.domain.data.player.PlayerConstants
 import com.maxrave.domain.data.player.PlayerError
 import com.maxrave.domain.manager.DataStoreManager
+import com.maxrave.domain.manager.DataStoreManager.Values.TRUE
 import com.maxrave.domain.mediaservice.handler.ControlState
 import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
 import com.maxrave.domain.mediaservice.handler.NowPlayingTrackState
@@ -90,12 +92,23 @@ actual fun createMediaServiceHandler(
         coroutineScope = coroutineScope,
     )
 
+/**
+ * Hands the app's one AVPlayer to the UI so a video view can draw its frames. The UI (composeApp)
+ * cannot see [IosAvMediaPlayer], which is private to this file.
+ */
+object IosAvPlayerRegistry {
+    var player: AVPlayer? = null
+
+    /** True while the loaded item is a combined audio+video stream, false for audio only. */
+    val isVideo = MutableStateFlow(false)
+}
+
 @OptIn(ExperimentalForeignApi::class)
 private class IosAvMediaPlayer(
     private val onTrackEnded: () -> Unit,
     private val onResolveAndPlay: (GenericMediaItem, Boolean) -> Unit,
 ) : MediaPlayerInterface {
-    val avPlayer: AVPlayer = AVPlayer()
+    val avPlayer: AVPlayer = AVPlayer().also { IosAvPlayerRegistry.player = it }
     private val items: MutableList<GenericMediaItem> = mutableListOf()
     private val listeners: MutableList<MediaPlayerListener> = mutableListOf()
     private var endObserver: Any? = null
@@ -517,19 +530,52 @@ private class IosMediaPlayerHandlerImpl(
             coroutineScope.launch(Dispatchers.IO) {
                 val directUrl =
                     mediaItem.uri?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                // Same rule as Android: a queue entry tagged as video plays as video only while
+                // "watch video instead of playing audio" is on. AVPlayer cannot merge a separate
+                // audio and video URL, so video asks for the combined (muxed) stream instead.
+                val isVideoItem = mediaItem.mediaId.contains(MERGING_DATA_TYPE.VIDEO)
+                val watchVideo =
+                    runCatching { dataStoreManager.watchVideoInsteadOfPlayingAudio.firstOrNull() == TRUE }
+                        .getOrDefault(false)
+                val wantVideo = isVideoItem && watchVideo
+                val streamId = mediaItem.mediaId.removePrefix(MERGING_DATA_TYPE.VIDEO)
+                var playingVideo = false
                 val streamUrl =
-                    directUrl ?: runCatching {
-                        streamRepository
-                            .getStream(
-                                dataStoreManager = dataStoreManager,
-                                videoId = mediaItem.mediaId,
-                                isDownloading = false,
-                                isVideo = false,
-                                muxed = false,
-                            ).firstOrNull { !it.isNullOrBlank() }
-                    }.getOrNull()
+                    directUrl ?: run {
+                        val videoUrl =
+                            if (wantVideo) {
+                                runCatching {
+                                    streamRepository
+                                        .getStream(
+                                            dataStoreManager = dataStoreManager,
+                                            videoId = streamId,
+                                            isDownloading = false,
+                                            isVideo = true,
+                                            muxed = true,
+                                        ).firstOrNull { !it.isNullOrBlank() }
+                                }.getOrNull()
+                            } else {
+                                null
+                            }
+                        if (!videoUrl.isNullOrBlank()) {
+                            playingVideo = true
+                            videoUrl
+                        } else {
+                            runCatching {
+                                streamRepository
+                                    .getStream(
+                                        dataStoreManager = dataStoreManager,
+                                        videoId = streamId,
+                                        isDownloading = false,
+                                        isVideo = false,
+                                        muxed = false,
+                                    ).firstOrNull { !it.isNullOrBlank() }
+                            }.getOrNull()
+                        }
+                    }
 
                 withContext(Dispatchers.Main) {
+                    IosAvPlayerRegistry.isVideo.value = playingVideo
                     if (!streamUrl.isNullOrBlank()) {
                         iosPlayer.loadUrlAndPlay(streamUrl, autoPlay)
                         val dur = iosPlayer.duration
