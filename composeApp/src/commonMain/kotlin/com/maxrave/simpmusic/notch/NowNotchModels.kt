@@ -87,6 +87,9 @@ object NowNotchStateHolder {
     private val _state = MutableStateFlow(NowNotchLiveState())
     val state: StateFlow<NowNotchLiveState> = _state.asStateFlow()
 
+    @kotlin.concurrent.Volatile
+    var isOverlayServiceRunning: Boolean = false
+
     fun update(newState: NowNotchLiveState) {
         _state.value = newState
     }

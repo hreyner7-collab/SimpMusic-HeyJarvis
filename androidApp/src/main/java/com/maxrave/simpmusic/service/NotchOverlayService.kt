@@ -1,8 +1,12 @@
 package com.maxrave.simpmusic.service
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
@@ -20,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -42,10 +47,14 @@ import com.maxrave.simpmusic.viewModel.UIEvent
 import kotlinx.coroutines.launch
 import org.koin.mp.KoinPlatform.getKoinOrNull
 
+private const val OVERLAY_CHANNEL_ID = "simpmusic_notch_overlay_service"
+private const val OVERLAY_NOTIFICATION_ID = 44211
+
 /**
  * 1-to-1 Jetpack Compose Dynamic Island / Now Notch overlay service matching Nooki's
- * NotchOverlayService: renders [NookiNotchIsland] inside a hardware-accelerated ComposeView
- * positioned cleanly over the Samsung punch-hole camera cutout, with outside-tap auto-collapse.
+ * NotchOverlayService: runs as a specialUse foreground service so Android/One UI does not
+ * kill or hide it when swiping home, rendering [NookiNotchIsland] inside a hardware-accelerated
+ * ComposeView over the Samsung punch-hole camera cutout.
  */
 class NotchOverlayService :
     Service(),
@@ -84,18 +93,85 @@ class NotchOverlayService :
         flags: Int,
         startId: Int,
     ): Int {
+        // Call startForeground immediately when started via startForegroundService, even before checks.
+        enterForegroundSafe()
+
         if (intent?.action == ACTION_STOP) {
+            NowNotchStateHolder.isOverlayServiceRunning = false
+            runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
             stopSelf()
             return START_NOT_STICKY
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            NowNotchStateHolder.isOverlayServiceRunning = false
+            runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
             stopSelf()
             return START_NOT_STICKY
         }
+
+        if (lifecycleRegistry.currentState < Lifecycle.State.STARTED) {
+            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        }
+        if (lifecycleRegistry.currentState < Lifecycle.State.RESUMED) {
+            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        }
         attachComposeOverlayIfNeeded()
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        NowNotchStateHolder.isOverlayServiceRunning = true
         return START_STICKY
+    }
+
+    private fun enterForegroundSafe() {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm != null && nm.getNotificationChannel(OVERLAY_CHANNEL_ID) == null) {
+            val channel =
+                NotificationChannel(
+                    OVERLAY_CHANNEL_ID,
+                    "Now Notch Floating Overlay",
+                    NotificationManager.IMPORTANCE_MIN,
+                ).apply {
+                    description = "Keeps the floating Now Notch overlay active above other apps"
+                    setShowBadge(false)
+                    enableVibration(false)
+                    setSound(null, null)
+                }
+            nm.createNotificationChannel(channel)
+        }
+
+        val openIntent =
+            PendingIntent.getActivity(
+                this,
+                OVERLAY_NOTIFICATION_ID,
+                Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+
+        val notification =
+            NotificationCompat
+                .Builder(this, OVERLAY_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle("Now Notch Active")
+                .setContentText("Tap to open SimpMusic")
+                .setOngoing(true)
+                .setSilent(true)
+                .setOnlyAlertOnce(true)
+                .setPriority(NotificationCompat.PRIORITY_MIN)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setContentIntent(openIntent)
+                .build()
+
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    OVERLAY_NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                )
+            } else {
+                startForeground(OVERLAY_NOTIFICATION_ID, notification)
+            }
+        }
     }
 
     private fun attachComposeOverlayIfNeeded() {
@@ -111,10 +187,12 @@ class NotchOverlayService :
                     }
                     return super.onTouchEvent(event)
                 }
+            }.apply {
+                id = android.R.id.content
+                setViewTreeLifecycleOwner(this@NotchOverlayService)
+                setViewTreeViewModelStoreOwner(this@NotchOverlayService)
+                setViewTreeSavedStateRegistryOwner(this@NotchOverlayService)
             }
-        wrapper.setViewTreeLifecycleOwner(this)
-        wrapper.setViewTreeViewModelStoreOwner(this)
-        wrapper.setViewTreeSavedStateRegistryOwner(this)
 
         val cv =
             ComposeView(this).apply {
@@ -130,11 +208,7 @@ class NotchOverlayService :
                     LaunchedEffect(expanded) {
                         collapseCallback = { expanded = false }
                     }
-                    LaunchedEffect(state.settings.enabled, state.settings.topOffsetDp) {
-                        if (!state.settings.enabled) {
-                            stopSelf()
-                            return@LaunchedEffect
-                        }
+                    LaunchedEffect(state.settings.topOffsetDp) {
                         val targetOffset = state.settings.topOffsetDp
                         if (lastAppliedOffsetDp != targetOffset) {
                             lastAppliedOffsetDp = targetOffset
@@ -237,10 +311,18 @@ class NotchOverlayService :
     }
 
     override fun onDestroy() {
+        NowNotchStateHolder.isOverlayServiceRunning = false
         collapseCallback = null
-        runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE) }
-        runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP) }
-        runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY) }
+        if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE) }
+        }
+        if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP) }
+        }
+        if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.CREATED)) {
+            runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY) }
+        }
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         composeView?.disposeComposition()
         rootFrame?.let { runCatching { windowManager?.removeView(it) } }
         store.clear()

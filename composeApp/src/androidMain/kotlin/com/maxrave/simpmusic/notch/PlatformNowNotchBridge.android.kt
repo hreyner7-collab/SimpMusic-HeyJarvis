@@ -8,23 +8,26 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import org.koin.mp.KoinPlatform.getKoin
 
 private const val NOTCH_SERVICE_CLASS = "com.maxrave.simpmusic.service.NotchOverlayService"
 private const val MAIN_ACTIVITY_CLASS = "com.maxrave.simpmusic.MainActivity"
-private const val ACTION_STOP_NOTCH = "com.maxrave.simpmusic.action.STOP_NOTCH_OVERLAY"
 private const val LEGACY_LIVE_LYRICS_CHANNEL_ID = "simpmusic_live_lyrics"
-private const val LIVE_LYRICS_CHANNEL_ID = "simpmusic_live_lyrics_v2"
+private const val LEGACY_LIVE_LYRICS_CHANNEL_V2_ID = "simpmusic_live_lyrics_v2"
+private const val LIVE_LYRICS_CHANNEL_ID = "simpmusic_live_lyrics_v3"
 private const val LIVE_LYRICS_NOTIFICATION_ID = 44210
-
-// Android 16 status-bar / Now Bar chips allocate <= 96dp; >10 chars risk dropping text to icon-only.
-private const val NOW_BAR_SHORT_TEXT_MAX_LEN = 10
+private const val NOW_BAR_SHORT_TEXT_MAX_LEN = 8
+private const val OVERLAY_START_COOLDOWN_MS = 1_500L
+private const val PROGRESS_UPDATE_MIN_INTERVAL_MS = 1_500L
 
 actual object PlatformNowNotchBridge {
-    private var lastServiceRunning = false
-    private var lastNotifiedKey: String? = null
+    private var lastOverlayStartAttemptMs = 0L
+    private var lastLyricSignature: String? = null
+    private var lastNotifyTimeMs = 0L
     private var channelCreated = false
 
     actual fun canDrawOverlay(): Boolean {
@@ -77,31 +80,30 @@ actual object PlatformNowNotchBridge {
     actual fun sync(state: NowNotchLiveState) {
         val context = runCatching { getKoin().get<Context>() }.getOrNull() ?: return
 
-        // 1. 1-to-1 Nooki Dynamic Island / Now Notch overlay service.
+        // 1. 1-to-1 Nooki Dynamic Island / Now Notch specialUse foreground overlay service.
         val shouldRunOverlay = state.settings.enabled && canDrawOverlay()
+        val nowMs = SystemClock.elapsedRealtime()
         if (shouldRunOverlay) {
-            if (!lastServiceRunning) {
-                runCatching {
-                    val intent =
-                        Intent().setClassName(context.packageName, NOTCH_SERVICE_CLASS).apply {
-                            putExtra("extra_title", state.title.ifBlank { "SimpMusic" })
-                        }
-                    context.startService(intent)
-                    lastServiceRunning = true
-                }
-            }
-        } else if (lastServiceRunning) {
-            runCatching {
+            if (!NowNotchStateHolder.isOverlayServiceRunning && (nowMs - lastOverlayStartAttemptMs) >= OVERLAY_START_COOLDOWN_MS) {
+                lastOverlayStartAttemptMs = nowMs
                 val intent =
                     Intent().setClassName(context.packageName, NOTCH_SERVICE_CLASS).apply {
-                        action = ACTION_STOP_NOTCH
+                        putExtra("extra_title", state.title.ifBlank { "SimpMusic" })
                     }
-                context.startService(intent)
+                runCatching {
+                    ContextCompat.startForegroundService(context, intent)
+                }.onFailure {
+                    runCatching { context.startService(intent) }
+                }
             }
-            lastServiceRunning = false
+        } else if (NowNotchStateHolder.isOverlayServiceRunning || lastOverlayStartAttemptMs > 0L) {
+            lastOverlayStartAttemptMs = 0L
+            runCatching {
+                context.stopService(Intent().setClassName(context.packageName, NOTCH_SERVICE_CLASS))
+            }
         }
 
-        // 2. Native Android 16 / Samsung One UI Now Bar Live Update & Lock-Screen live lyrics notification.
+        // 2. Native Android 16 / Samsung One UI ProgressStyle Live Update & Lock-Screen live lyrics notification.
         syncLockScreenLiveLyricsNotification(context, state)
     }
 
@@ -116,9 +118,10 @@ actual object PlatformNowNotchBridge {
                 state.isPlaying
 
         if (!shouldShow) {
-            if (lastNotifiedKey != null) {
+            if (lastLyricSignature != null) {
                 nm.cancel(LIVE_LYRICS_NOTIFICATION_ID)
-                lastNotifiedKey = null
+                lastLyricSignature = null
+                lastNotifyTimeMs = 0L
             }
             return
         }
@@ -135,9 +138,13 @@ actual object PlatformNowNotchBridge {
         val shortChipText =
             activeLyric?.let(::formatNowBarShortText)
                 ?: if (trackTitle.trim().length <= NOW_BAR_SHORT_TEXT_MAX_LEN) trackTitle.trim() else "♪ Lyrics"
+        val progressPercent = (state.progressFraction * 100f).toInt().coerceIn(0, 100)
+        val barColor = state.accentColorArgb.toInt()
 
-        val key = "$primaryTitle|$secondaryLine|$shortChipText|$trackSummary"
-        if (key == lastNotifiedKey) return
+        val lyricSignature = "$primaryTitle|$secondaryLine|$shortChipText|$trackSummary|$barColor"
+        val nowMs = SystemClock.elapsedRealtime()
+        val contentChanged = lyricSignature != lastLyricSignature
+        if (!contentChanged && (nowMs - lastNotifyTimeMs) < PROGRESS_UPDATE_MIN_INTERVAL_MS) return
 
         ensureLiveUpdateChannel(nm)
 
@@ -153,24 +160,30 @@ actual object PlatformNowNotchBridge {
 
         val notification =
             if (Build.VERSION.SDK_INT >= 36) {
+                val segment = Notification.ProgressStyle.Segment(100).setColor(barColor)
+                val progressStyle =
+                    Notification
+                        .ProgressStyle()
+                        .setProgressSegments(listOf(segment))
+                        .setStyledByProgress(true)
+                        .setProgress(progressPercent)
+
                 Notification
                     .Builder(context, LIVE_LYRICS_CHANNEL_ID)
                     .setSmallIcon(android.R.drawable.ic_media_play)
+                    .setColor(barColor)
                     .setContentTitle(primaryTitle)
                     .setContentText(secondaryLine)
                     .apply {
                         if (activeLyric != null) {
                             setSubText(trackSummary)
                         }
-                    }.setStyle(
-                        Notification
-                            .BigTextStyle()
-                            .setBigContentTitle(primaryTitle)
-                            .bigText(bigTextBody),
-                    ).setOngoing(true)
+                    }.setStyle(progressStyle)
+                    .setOngoing(true)
                     .setOnlyAlertOnce(true)
                     .setShowWhen(false)
                     .setVisibility(Notification.VISIBILITY_PUBLIC)
+                    .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
                     .setRequestPromotedOngoing(true)
                     .setShortCriticalText(shortChipText)
                     .setContentIntent(contentIntent)
@@ -179,6 +192,7 @@ actual object PlatformNowNotchBridge {
                 NotificationCompat
                     .Builder(context, LIVE_LYRICS_CHANNEL_ID)
                     .setSmallIcon(android.R.drawable.ic_media_play)
+                    .setColor(barColor)
                     .setContentTitle(primaryTitle)
                     .setContentText(secondaryLine)
                     .apply {
@@ -190,7 +204,8 @@ actual object PlatformNowNotchBridge {
                             .BigTextStyle()
                             .setBigContentTitle(primaryTitle)
                             .bigText(bigTextBody),
-                    ).setOngoing(true)
+                    ).setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setOngoing(true)
                     .setSilent(true)
                     .setOnlyAlertOnce(true)
                     .setShowWhen(false)
@@ -201,20 +216,23 @@ actual object PlatformNowNotchBridge {
 
         runCatching {
             nm.notify(LIVE_LYRICS_NOTIFICATION_ID, notification)
-            lastNotifiedKey = key
+            lastLyricSignature = lyricSignature
+            lastNotifyTimeMs = nowMs
         }
     }
 
     private fun ensureLiveUpdateChannel(nm: NotificationManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || channelCreated) return
+        // Clean up legacy channels so One UI creates the silent IMPORTANCE_HIGH ProgressStyle channel fresh.
         runCatching { nm.deleteNotificationChannel(LEGACY_LIVE_LYRICS_CHANNEL_ID) }
+        runCatching { nm.deleteNotificationChannel(LEGACY_LIVE_LYRICS_CHANNEL_V2_ID) }
         val channel =
             NotificationChannel(
                 LIVE_LYRICS_CHANNEL_ID,
                 "Samsung Now Bar & Lock-Screen Live Lyrics",
-                NotificationManager.IMPORTANCE_DEFAULT,
+                NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "Promoted silent live-lyrics update for Samsung Now Bar and Lock Screen"
+                description = "Silent high-priority Android 16 ProgressStyle Live Updates for Samsung Now Bar"
                 setShowBadge(false)
                 enableVibration(false)
                 setSound(null, null)

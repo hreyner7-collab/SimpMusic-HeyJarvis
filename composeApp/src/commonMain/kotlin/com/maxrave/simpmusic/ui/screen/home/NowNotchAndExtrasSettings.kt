@@ -13,6 +13,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,7 @@ import com.maxrave.simpmusic.expect.ui.setMotionParallax
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.notch.NowNotchIdleMode
 import com.maxrave.simpmusic.notch.NowNotchSettings
+import com.maxrave.simpmusic.notch.NowNotchStateHolder
 import com.maxrave.simpmusic.notch.PlatformNowNotchBridge
 import com.maxrave.simpmusic.notch.nowNotchSettingsFlow
 import com.maxrave.simpmusic.notch.updateNowNotchSettings
@@ -74,6 +76,12 @@ fun NowNotchAndExtrasSettings(
     val canPromotedNotifications =
         remember(lifecycleState) { PlatformNowNotchBridge.canPostPromotedNotifications() }
 
+    LaunchedEffect(lifecycleState) {
+        if (isAndroid) {
+            PlatformNowNotchBridge.sync(NowNotchStateHolder.state.value)
+        }
+    }
+
     SettingItem(
         title = "Now Notch / Dynamic Island",
         subtitle =
@@ -107,7 +115,7 @@ fun NowNotchAndExtrasSettings(
     if (isAndroid) {
         SettingItem(
             title = "Lock-Screen & Samsung Now Bar Live Lyrics",
-            subtitle = "Shows real-time synced lyrics on the lock screen and Samsung One UI 8+ Now Bar (also updates while locked)",
+            subtitle = "Uses Android 16 ProgressStyle Live Updates for Samsung One UI 8+ Now Bar & lock-screen lyrics",
             smallSubtitle = true,
             switch = (
                 notchSettings.lockScreenLiveLyrics to { checked ->
@@ -117,13 +125,20 @@ fun NowNotchAndExtrasSettings(
                 }
             ),
         )
-        if (notchSettings.lockScreenLiveLyrics && !canPromotedNotifications) {
-            OutlinedButton(
-                onClick = { PlatformNowNotchBridge.openLiveNotificationsSettings() },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            ) {
-                Text("Enable Samsung Now Bar / Live Notifications")
+        if (notchSettings.lockScreenLiveLyrics) {
+            if (!canPromotedNotifications) {
+                OutlinedButton(
+                    onClick = { PlatformNowNotchBridge.openLiveNotificationsSettings() },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                ) {
+                    Text("Allow Notifications & Samsung Now Bar")
+                }
             }
+            Text(
+                text = "Samsung One UI 8: Unblock notifications above, and enable \"Live notifications for all apps\" in Phone Developer Options if SimpMusic is not listed in Now Bar.",
+                style = typo().bodySmall,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+            )
         }
     }
 
