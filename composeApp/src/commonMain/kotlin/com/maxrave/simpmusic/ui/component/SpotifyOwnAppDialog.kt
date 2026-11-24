@@ -23,8 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import com.maxrave.simpmusic.viewModel.SpotifyOwnAppViewModel
-import com.maxrave.spotify.auth.SpotifyOAuth
 import org.koin.compose.viewmodel.koinViewModel
+
+private const val DEFAULT_SPOTIFY_CLIENT_ID = "9e744a63aa5441139d9fad6d5f9ee4f7"
 
 private const val REDIRECT_URI = "simpmusic://spotify-auth"
 
@@ -43,7 +44,7 @@ fun SpotifyOwnAppDialog(onDismiss: () -> Unit) {
     var clientId by remember { mutableStateOf("") }
     var pasted by remember { mutableStateOf("") }
     LaunchedEffect(savedClientId) {
-        if (clientId.isEmpty()) clientId = savedClientId.ifBlank { SpotifyOAuth.DEFAULT_CLIENT_ID }
+        if (clientId.isEmpty()) clientId = savedClientId.ifBlank { DEFAULT_SPOTIFY_CLIENT_ID }
     }
 
     val close = {

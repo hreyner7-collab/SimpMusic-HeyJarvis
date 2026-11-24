@@ -14,6 +14,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.maxrave.simpmusic.expect.ui.motionParallaxTilt
+import com.maxrave.simpmusic.expect.ui.rememberMotionParallaxEnabled
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -407,10 +409,11 @@ private fun NowPlayingSoundCloudLayout(
         ) {
             if (getPlatform() == Platform.Android) {
                 LeftToRight {
+                    val parallaxEnabled = rememberMotionParallaxEnabled()
                     HorizontalPager(
                         state = state.artworkPagerState,
                         // Record the visible pager once, not each neighboring page, for the glass.
-                        modifier = artworkModifier.fillMaxSize(),
+                        modifier = artworkModifier.fillMaxSize().motionParallaxTilt(enabled = parallaxEnabled),
                         beyondViewportPageCount = 1,
                         userScrollEnabled = state.controllerState.repeatState !is RepeatState.One && state.artworkQueue.isNotEmpty(),
                         key = { page ->

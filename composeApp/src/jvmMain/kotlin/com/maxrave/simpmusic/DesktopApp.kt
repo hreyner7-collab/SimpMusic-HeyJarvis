@@ -10,7 +10,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import com.maxrave.simpmusic.expect.AppIconStyle
+import com.maxrave.simpmusic.expect.DesktopAppIconState
+import com.maxrave.simpmusic.expect.appIconStyleFlow
+import com.maxrave.simpmusic.expect.rememberAppIconPainter
+import com.maxrave.simpmusic.notch.DesktopNowNotchWindow
+import com.maxrave.simpmusic.notch.NowNotchSettings
+import com.maxrave.simpmusic.notch.nowNotchSettingsFlow
+import com.maxrave.simpmusic.notch.updateNowNotchSettings
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -218,8 +227,9 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
 
     val language =
         runBlocking {
-            getKoin()
-                .get<DataStoreManager>()
+            val ds = getKoin().get<DataStoreManager>()
+            DesktopAppIconState.setStyle(ds.appIconStyleFlow().first())
+            ds
                 .language
                 .first()
                 .substring(0..1)
@@ -319,6 +329,11 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
         val openMiniPlayer = stringResource(Res.string.open_miniplayer)
         val closeMiniPlayer = stringResource(Res.string.close_miniplayer)
         val appName = stringResource(Res.string.app_name)
+        val desktopDataStore = remember { getKoin().get<DataStoreManager>() }
+        val desktopScope = rememberCoroutineScope()
+        val notchSettings by desktopDataStore.nowNotchSettingsFlow().collectAsState(NowNotchSettings())
+        val iconStyle by desktopDataStore.appIconStyleFlow().collectAsState(AppIconStyle.DEFAULT)
+        val appIconPainter = rememberAppIconPainter(iconStyle)
         val nowPlayingData by sharedViewModel.nowPlayingScreenData.collectAsState()
         val nowPlayingTitle = nowPlayingData.nowPlayingTitle
         val nowPlayingArtist = nowPlayingData.artistName
@@ -326,7 +341,7 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
         // Tray menus are narrow, so long titles would stretch the popup.
         val trayLabel: (String) -> String = { if (it.length > 40) it.take(39).trimEnd() + "…" else it }
         Tray(
-            icon = painterResource(Res.drawable.circle_app_icon),
+            icon = appIconPainter,
             tooltip =
                 when {
                     hasTrack && nowPlayingArtist.isNotBlank() -> "$nowPlayingTitle — $nowPlayingArtist"
@@ -360,6 +375,11 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                     MiniPlayerManager.isOpen = true
                 }
             }
+            Item(if (notchSettings.enabled) "Hide Now Notch" else "Show Now Notch") {
+                desktopScope.launch {
+                    desktopDataStore.updateNowNotchSettings { it.copy(enabled = !it.enabled) }
+                }
+            }
             Divider()
             Item(quitAppString) {
                 mediaPlayerHandler.release()
@@ -380,7 +400,7 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                 isVisible = false
             },
             title = stringResource(Res.string.app_name),
-            icon = painterResource(Res.drawable.circle_app_icon),
+            icon = appIconPainter,
             undecorated = !nativeTitleBar,
             transparent = !nativeTitleBar,
             state = windowState,
@@ -549,6 +569,14 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                 },
             )
         }
+
+        // Dynamic Now Notch top-center floating pill window
+        DesktopNowNotchWindow(
+            sharedViewModel = sharedViewModel,
+            onRestoreApp = {
+                DesktopRestoreSignal.request()
+            },
+        )
     }
 }
 

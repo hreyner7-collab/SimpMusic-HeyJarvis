@@ -1042,6 +1042,7 @@ fun SettingScreen(
                         smallSubtitle = true,
                         switch = (enableLiquidGlass to { viewModel.setEnableLiquidGlass(it) }),
                     )
+                    NowNotchAndExtrasSettings()
                 }
             }
         }

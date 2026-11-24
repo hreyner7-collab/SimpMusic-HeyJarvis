@@ -63,6 +63,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import com.maxrave.simpmusic.ui.icon.Headphones
+import com.maxrave.simpmusic.ui.screen.player.content.applemusic.AudioOutputSheetHost
+import com.maxrave.simpmusic.viewModel.UIEvent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -1431,6 +1434,14 @@ fun NowPlayingBottomSheet(
     val crossfadeEnabled by dataStoreManager.crossfadeEnabled.collectAsState(DataStoreManager.FALSE)
     val blocklistFlow = remember(dataStoreManager) { dataStoreManager.playbackBlocklistFlow() }
     val blocklist by blocklistFlow.collectAsState(PlaybackBlocklistState())
+    val trackNotesFlow = remember(dataStoreManager) { dataStoreManager.trackNotesFlow() }
+    val trackNotes by trackNotesFlow.collectAsState(emptyMap())
+    var showTrackNotesDialog by remember { mutableStateOf(false) }
+    var showAudioOutputSheet by remember { mutableStateOf(false) }
+    val sharedViewModel = koinInject<SharedViewModel>()
+    val timelineState by sharedViewModel.timeline.collectAsStateWithLifecycle()
+    val castState by sharedViewModel.castState.collectAsStateWithLifecycle()
+    val currentPlayingVideoId = sharedViewModel.nowPlayingState.collectAsStateWithLifecycle().value?.mediaItem?.mediaId.orEmpty()
 
     LaunchedEffect(uiState) {
         if (uiState.songUIState.videoId.isNotEmpty() && !isBottomSheetVisible) {
@@ -1524,6 +1535,36 @@ fun NowPlayingBottomSheet(
             text = {
                 Text(text = stringResource(Res.string.sleep_timer_warning), style = typo().bodyMedium)
             },
+        )
+    }
+
+    if (showAudioOutputSheet) {
+        AudioOutputSheetHost(
+            castState = castState,
+            onDismiss = { showAudioOutputSheet = false },
+        )
+    }
+
+    if (showTrackNotesDialog) {
+        val currentId = uiState.songUIState.videoId
+        val artistLine = uiState.songUIState.listArtists.joinToString(", ") { it.name }
+        val isActiveTrack = currentId.isNotEmpty() && currentId == currentPlayingVideoId
+        TrackNoteEditorDialog(
+            videoId = currentId,
+            title = uiState.songUIState.title,
+            artist = artistLine,
+            existingNote = trackNotes[currentId],
+            currentPositionMs = timelineState.current.coerceAtLeast(0L),
+            canSeek = isActiveTrack && timelineState.total > 0L,
+            dataStoreManager = dataStoreManager,
+            onSeekToMs = { targetMs ->
+                if (isActiveTrack && timelineState.total > 0L) {
+                    sharedViewModel.onUIEvent(
+                        UIEvent.UpdateProgress(((targetMs.toFloat() * 100f) / timelineState.total.toFloat()).coerceIn(0f, 100f)),
+                    )
+                }
+            },
+            onDismiss = { showTrackNotesDialog = false },
         )
     }
 
@@ -2002,6 +2043,23 @@ fun NowPlayingBottomSheet(
                         text = Res.string.share,
                     ) {
                         viewModel.onUIEvent(NowPlayingBottomSheetUIEvent.Share)
+                    }
+                    val hasSavedNote = trackNotes.containsKey(uiState.songUIState.videoId)
+                    ActionButton(
+                        icon = SimpIcons.Edit,
+                        text = null,
+                        textString = if (hasSavedNote) "Track Notes (Saved)" else "Track Notes",
+                        textColor = if (hasSavedNote) seed else null,
+                        iconColor = if (hasSavedNote) seed else Color.Unspecified,
+                    ) {
+                        showTrackNotesDialog = true
+                    }
+                    ActionButton(
+                        icon = SimpIcons.Headphones,
+                        text = null,
+                        textString = "Audio Output / Device",
+                    ) {
+                        showAudioOutputSheet = true
                     }
                     EndOfModalBottomSheet()
                 }

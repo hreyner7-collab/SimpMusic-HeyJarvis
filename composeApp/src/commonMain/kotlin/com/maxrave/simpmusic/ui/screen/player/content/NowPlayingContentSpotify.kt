@@ -23,6 +23,8 @@ import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import com.maxrave.simpmusic.expect.ui.motionParallaxTilt
+import com.maxrave.simpmusic.expect.ui.rememberMotionParallaxEnabled
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -332,12 +334,14 @@ fun NowPlayingContentSpotify(
                 // so when the user swipes during canvas mode, they see the next track's
                 // thumbnail enter and the canvas exit in lockstep.
                 LeftToRight {
+                    val parallaxEnabled = rememberMotionParallaxEnabled()
                     HorizontalPager(
                         state = state.artworkPagerState,
                         modifier =
                             Modifier
                                 .height(screenInfo.hDP.dp)
-                                .fillMaxWidth(),
+                                .fillMaxWidth()
+                                .motionParallaxTilt(enabled = parallaxEnabled),
                         beyondViewportPageCount = 1,
                         userScrollEnabled = !isRepeatOne && state.artworkQueue.isNotEmpty(),
                         key = { idx ->

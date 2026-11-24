@@ -21,6 +21,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import com.maxrave.simpmusic.expect.ui.motionParallaxTilt
+import com.maxrave.simpmusic.expect.ui.rememberMotionParallaxEnabled
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -307,12 +309,14 @@ private fun NowPlayingM3ExpressiveLayout(
             Box(modifier = Modifier.fillMaxWidth()) {
                 // === 4. Artwork pager — same state/sync as Classic, card presentation ===
                 LeftToRight {
+                    val parallaxEnabled = rememberMotionParallaxEnabled()
                     HorizontalPager(
                         state = state.artworkPagerState,
                         modifier =
                             Modifier
                                 .height(screenInfo.hDP.dp)
-                                .fillMaxWidth(),
+                                .fillMaxWidth()
+                                .motionParallaxTilt(enabled = parallaxEnabled),
                         beyondViewportPageCount = 1,
                         userScrollEnabled = !isRepeatOne && state.artworkQueue.isNotEmpty(),
                         key = { idx ->

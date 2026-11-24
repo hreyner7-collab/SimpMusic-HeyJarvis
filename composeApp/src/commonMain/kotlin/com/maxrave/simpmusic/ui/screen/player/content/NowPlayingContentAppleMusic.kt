@@ -15,6 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import com.maxrave.simpmusic.expect.ui.motionParallaxTilt
+import com.maxrave.simpmusic.expect.ui.rememberMotionParallaxEnabled
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -451,9 +453,10 @@ private fun AppleMusicMainView(
         val topBand = if (topInset > 0.dp) statusBarHeight + TOP_BAND_STRIP else 0.dp
 
         LeftToRight {
+            val parallaxEnabled = rememberMotionParallaxEnabled()
             HorizontalPager(
                 state = state.artworkPagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().motionParallaxTilt(enabled = parallaxEnabled),
                 beyondViewportPageCount = 1,
                 userScrollEnabled = !isRepeatOne && state.artworkQueue.isNotEmpty(),
                 key = { idx ->
