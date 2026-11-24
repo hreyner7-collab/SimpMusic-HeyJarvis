@@ -232,7 +232,7 @@ private val DimRichPendingColor = Color.LightGray.copy(alpha = 0.6f)
  * translation lookup are all line INDICES, so a display-only list running alongside the real one
  * would leave four call sites quietly disagreeing about which line is which.
  */
-private data class DisplayLines(
+internal data class DisplayLines(
     val lines: List<Line>,
     val interludeIndices: Set<Int>,
 )
@@ -249,7 +249,7 @@ private data class DisplayLines(
  * Rich sync only. It is the one format that records where a line STOPS, so it is the one format
  * that can tell a real pause from a line whose end was simply never written down.
  */
-private fun buildDisplayLines(
+internal fun buildDisplayLines(
     lines: List<Line>?,
     syncType: String?,
 ): DisplayLines {

@@ -4,6 +4,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.maxrave.domain.data.model.metadata.Line
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.simpmusic.expect.ui.toReadableBitmap
+import com.maxrave.simpmusic.ui.component.TimedLineIndex
+import com.maxrave.simpmusic.ui.component.activeIndexAt
+import com.maxrave.simpmusic.ui.component.buildDisplayLines
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -95,8 +98,8 @@ object NowNotchStateHolder {
     }
 
     /**
-     * Resolves the active 0-based index in [lines] at [positionMs] adjusted by [offsetMs],
-     * or `-1` when unsynced or before the first timestamped line.
+     * Resolves the active 0-based index in the canonical display list at [positionMs] adjusted by
+     * [offsetMs], or `-1` when unsynced or before the first timestamped line.
      */
     fun resolveSyncedLyricIndex(
         lines: List<Line>?,
@@ -104,26 +107,11 @@ object NowNotchStateHolder {
         positionMs: Long,
         offsetMs: Int,
     ): Int {
-        if (lines.isNullOrEmpty() || syncType == "UNSYNCED") return -1
-        val timed =
-            lines.mapIndexedNotNull { idx, line ->
-                line.startTimeMs.toLongOrNull()?.let { idx to it }
-            }
-        if (timed.distinctBy { it.second }.size <= 1) return -1
+        val (_, ordered) = buildNotchTimedDisplayLines(lines, syncType)
+        if (ordered.isEmpty()) return -1
         val nowMs = positionMs - offsetMs
         if (nowMs < 0L) return -1
-        val sorted = timed.sortedBy { it.second }
-        if (nowMs < sorted.first().second) return -1
-
-        var activeIndex = -1
-        for ((idx, startMs) in sorted) {
-            if (startMs <= nowMs) {
-                activeIndex = idx
-            } else {
-                break
-            }
-        }
-        return activeIndex
+        return ordered.activeIndexAt(nowMs)
     }
 
     /**
@@ -135,9 +123,13 @@ object NowNotchStateHolder {
         positionMs: Long,
         offsetMs: Int,
     ): String? {
-        val idx = resolveSyncedLyricIndex(lines, syncType, positionMs, offsetMs)
-        if (idx < 0 || lines == null) return null
-        val words = lines.getOrNull(idx)?.words ?: return null
+        val (displayLines, ordered) = buildNotchTimedDisplayLines(lines, syncType)
+        if (ordered.isEmpty()) return null
+        val nowMs = positionMs - offsetMs
+        if (nowMs < 0L) return null
+        val idx = ordered.activeIndexAt(nowMs)
+        if (idx < 0) return null
+        val words = displayLines.getOrNull(idx)?.words ?: return null
         return cleanNotchLyricText(words).takeIf { it.isNotEmpty() }
     }
 
@@ -150,20 +142,37 @@ object NowNotchStateHolder {
         positionMs: Long,
         offsetMs: Int,
     ): String? {
-        if (lines.isNullOrEmpty() || syncType == "UNSYNCED") return null
-        val timed =
-            lines.mapIndexedNotNull { idx, line ->
-                line.startTimeMs.toLongOrNull()?.let { idx to it }
-            }
-        if (timed.distinctBy { it.second }.size <= 1) return null
-        val idx = resolveSyncedLyricIndex(lines, syncType, positionMs, offsetMs)
+        val (displayLines, ordered) = buildNotchTimedDisplayLines(lines, syncType)
+        if (ordered.isEmpty()) return null
+        val nowMs = positionMs - offsetMs
+        val idx = if (nowMs < 0L) -1 else ordered.activeIndexAt(nowMs)
         val startSearch = if (idx >= 0) idx + 1 else 0
-        for (i in startSearch until lines.size) {
-            val cleaned = cleanNotchLyricText(lines[i].words)
+        for (i in startSearch until displayLines.size) {
+            val cleaned = cleanNotchLyricText(displayLines[i].words)
             if (cleaned.isNotEmpty()) return cleaned
         }
         return null
     }
+}
+
+internal fun buildNotchTimedDisplayLines(
+    lines: List<Line>?,
+    syncType: String?,
+): Pair<List<Line>, List<TimedLineIndex>> {
+    val source = lines.orEmpty()
+    if (source.isEmpty() || syncType == "UNSYNCED") return source to emptyList()
+    val display = buildDisplayLines(source, syncType)
+    val timed =
+        display.lines.mapIndexedNotNull { index, line ->
+            line.startTimeMs.toLongOrNull()?.let { TimedLineIndex(index, it) }
+        }
+    val ordered =
+        if (timed.distinctBy { it.startTimeMs }.size <= 1) {
+            emptyList()
+        } else {
+            timed.sortedBy { it.startTimeMs }
+        }
+    return display.lines to ordered
 }
 
 /**
@@ -308,4 +317,6 @@ expect object PlatformNowNotchBridge {
     fun canPostPromotedNotifications(): Boolean
 
     fun openLiveNotificationsSettings()
+
+    fun resetDesktopPosition()
 }

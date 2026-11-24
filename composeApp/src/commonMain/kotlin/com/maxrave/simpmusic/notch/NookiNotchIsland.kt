@@ -14,6 +14,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -23,6 +24,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
@@ -53,9 +55,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,14 +79,19 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.maxrave.domain.data.model.metadata.Line
+import com.maxrave.simpmusic.extension.parseRichSyncWords
+import com.maxrave.simpmusic.ui.component.activeIndexAt
 import com.maxrave.simpmusic.ui.icon.Favorite
 import com.maxrave.simpmusic.ui.icon.FavoriteBorder
 import com.maxrave.simpmusic.ui.icon.Lyrics
@@ -99,8 +109,10 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.roundToLong
 import kotlin.math.sin
 
 /**
@@ -127,6 +139,31 @@ fun NookiNotchIsland(
 
     var lyricsPeekOpen by remember(state.videoId) { mutableStateOf(false) }
 
+    val playheadMs =
+        rememberNotchPlayheadMs(
+            rawMs = state.positionMs - state.lyricsOffsetMs,
+            running = state.isPlaying && state.hasTrack,
+        )
+    val (displayLines, timedIndexes) =
+        remember(state.lyricsLines, state.lyricsSyncType) {
+            buildNotchTimedDisplayLines(state.lyricsLines, state.lyricsSyncType)
+        }
+    val activeLyricIndex =
+        if (playheadMs < 0L || timedIndexes.isEmpty()) -1 else timedIndexes.activeIndexAt(playheadMs)
+    val activeDisplayLine =
+        if (state.settings.showLiveLyrics && activeLyricIndex >= 0) {
+            displayLines.getOrNull(activeLyricIndex)
+        } else {
+            null
+        }
+    val liveLyricText =
+        if (state.settings.showLiveLyrics) {
+            activeDisplayLine?.words?.let(::cleanNotchLyricText)?.takeIf { it.isNotEmpty() }
+                ?: state.currentLyricLine
+        } else {
+            null
+        }
+
     val targetWidth =
         when {
             !state.hasTrack -> if (state.settings.idleMode == NowNotchIdleMode.COMPACT_DOT) 46.dp else 104.dp
@@ -134,7 +171,7 @@ fun NookiNotchIsland(
             state.settings.compactSize -> 158.dp
             else -> 190.dp
         }
-    val showExpandedLyricPreview = expanded && !lyricsPeekOpen && !state.currentLyricLine.isNullOrBlank()
+    val showExpandedLyricPreview = expanded && !lyricsPeekOpen && !liveLyricText.isNullOrBlank()
     val targetHeight =
         when {
             !state.hasTrack -> 32.dp
@@ -162,15 +199,6 @@ fun NookiNotchIsland(
         label = "notchSecondary",
     )
     val shape = RoundedCornerShape(animatedCorner)
-    val activeLyricIndex =
-        remember(state.lyricsLines, state.lyricsSyncType, state.positionMs, state.lyricsOffsetMs) {
-            NowNotchStateHolder.resolveSyncedLyricIndex(
-                lines = state.lyricsLines,
-                syncType = state.lyricsSyncType,
-                positionMs = state.positionMs,
-                offsetMs = state.lyricsOffsetMs,
-            )
-        }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -213,6 +241,10 @@ fun NookiNotchIsland(
             } else {
                 NookiExpandedMusicCard(
                     state = state,
+                    displayLines = displayLines,
+                    activeDisplayLine = activeDisplayLine,
+                    liveLyricText = liveLyricText,
+                    playheadMs = playheadMs,
                     primaryColor = primaryColor,
                     secondaryColor = secondaryColor,
                     lyricsPeekOpen = lyricsPeekOpen,
@@ -235,27 +267,32 @@ fun NookiNotchIsland(
             when {
                 !state.hasTrack || expanded -> null
                 !state.popupBanner.isNullOrBlank() -> state.popupBanner
-                state.settings.showLiveLyrics && !state.currentLyricLine.isNullOrBlank() -> state.currentLyricLine
+                state.settings.showLiveLyrics && !liveLyricText.isNullOrBlank() -> liveLyricText
                 else -> null
             }
 
         AnimatedVisibility(
             visible = subBarText != null,
             enter =
-                fadeIn(tween(180)) +
+                fadeIn(tween(150)) +
                     expandVertically(
                         expandFrom = Alignment.Top,
                         animationSpec = spring(dampingRatio = 0.78f, stiffness = 420f),
                     ),
             exit =
-                fadeOut(tween(150)) +
-                    shrinkVertically(shrinkTowards = Alignment.Top, animationSpec = tween(160)),
+                fadeOut(tween(130)) +
+                    shrinkVertically(shrinkTowards = Alignment.Top, animationSpec = tween(140)),
         ) {
             subBarText?.let { line ->
+                val isPopup = !state.popupBanner.isNullOrBlank()
                 NookiCollapsedLyricsBar(
                     text = line,
+                    lineKey = if (isPopup) line else (activeLyricIndex to line),
+                    rawLine = if (isPopup) null else activeDisplayLine,
+                    syncType = state.lyricsSyncType,
+                    playheadMs = playheadMs,
                     accentColor = primaryColor,
-                    isPopup = !state.popupBanner.isNullOrBlank(),
+                    isPopup = isPopup,
                     maxWidth = if (state.settings.compactSize) 248.dp else 306.dp,
                     onClick = { onExpandedChange(true) },
                 )
@@ -342,6 +379,10 @@ private fun NookiCollapsedMusicPill(
 @Composable
 private fun NookiCollapsedLyricsBar(
     text: String,
+    lineKey: Any,
+    rawLine: Line?,
+    syncType: String?,
+    playheadMs: Long,
     accentColor: Color,
     isPopup: Boolean,
     maxWidth: Dp,
@@ -383,20 +424,22 @@ private fun NookiCollapsedLyricsBar(
                 modifier = Modifier.size(13.dp),
             )
             AnimatedContent(
-                targetState = text,
+                targetState = Triple(lineKey, text, rawLine),
                 transitionSpec = {
-                    (slideInVertically(tween(210)) { it / 2 } + fadeIn(tween(190)))
-                        .togetherWith(slideOutVertically(tween(150)) { -it / 2 } + fadeOut(tween(140)))
+                    (slideInVertically(tween(130)) { it / 2 } + fadeIn(tween(120)))
+                        .togetherWith(slideOutVertically(tween(100)) { -it / 2 } + fadeOut(tween(90)))
                 },
+                contentKey = { it.first },
                 label = "notchLyricLine",
-            ) { line ->
-                Text(
-                    text = line,
-                    color = if (isPopup) accentColor else Color.White.copy(alpha = 0.94f),
-                    fontSize = 12.sp,
-                    fontWeight = if (isPopup) FontWeight.SemiBold else FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            ) { (_, lineText, activeRaw) ->
+                NookiSyncedLyricLineText(
+                    rawLine = activeRaw,
+                    fallbackText = lineText,
+                    syncType = syncType,
+                    playheadMs = playheadMs,
+                    accentColor = accentColor,
+                    isPopup = isPopup,
+                    fontSizeSp = 12f,
                 )
             }
         }
@@ -406,6 +449,10 @@ private fun NookiCollapsedLyricsBar(
 @Composable
 private fun NookiExpandedMusicCard(
     state: NowNotchLiveState,
+    displayLines: List<Line>,
+    activeDisplayLine: Line?,
+    liveLyricText: String?,
+    playheadMs: Long,
     primaryColor: Color,
     secondaryColor: Color,
     lyricsPeekOpen: Boolean,
@@ -495,14 +542,14 @@ private fun NookiExpandedMusicCard(
             // Optional expandable inline Lyrics Peek (direct port of MusicLyricsPeek)
             if (lyricsPeekOpen) {
                 NookiLyricsPeek(
-                    lines = state.lyricsLines,
+                    lines = displayLines,
                     syncType = state.lyricsSyncType,
                     activeIndex = activeLyricIndex,
                     accentColor = primaryColor,
                     onSeekToMs = onSeekMs,
                     modifier = Modifier.fillMaxWidth().height(88.dp),
                 )
-            } else if (!state.currentLyricLine.isNullOrBlank()) {
+            } else if (!liveLyricText.isNullOrBlank()) {
                 Row(
                     modifier =
                         Modifier
@@ -520,13 +567,14 @@ private fun NookiExpandedMusicCard(
                         tint = primaryColor,
                         modifier = Modifier.size(13.dp),
                     )
-                    Text(
-                        text = state.currentLyricLine,
-                        color = Color.White.copy(alpha = 0.92f),
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    NookiSyncedLyricLineText(
+                        rawLine = activeDisplayLine,
+                        fallbackText = liveLyricText,
+                        syncType = state.lyricsSyncType,
+                        playheadMs = playheadMs,
+                        accentColor = primaryColor,
+                        isPopup = false,
+                        fontSizeSp = 11.5f,
                     )
                 }
             }
@@ -1072,4 +1120,128 @@ private fun formatRemainingMinSec(
     val m = rem / 60L
     val s = rem % 60L
     return "-$m:${s.toString().padStart(2, '0')}"
+}
+
+/**
+ * Mirrors AppleMusicLyricStrip.rememberSweepPlayhead: advances at display frame rate between
+ * 50ms position ticks (capped at +250ms extrapolation) and snaps on seeks > 500ms.
+ */
+@Composable
+private fun rememberNotchPlayheadMs(
+    rawMs: Long,
+    running: Boolean,
+): Long {
+    val playhead = remember { mutableLongStateOf(rawMs) }
+    val latestRaw by rememberUpdatedState(rawMs)
+    LaunchedEffect(running) {
+        if (!running) {
+            snapshotFlow { latestRaw }.collect { playhead.longValue = it }
+            return@LaunchedEffect
+        }
+        var reported = latestRaw
+        var reportedAt = -1L
+        var lastFrame = -1L
+        var position = playhead.longValue.toDouble()
+        while (true) {
+            withInfiniteAnimationFrameNanos { now ->
+                if (reportedAt < 0L || latestRaw != reported) {
+                    reported = latestRaw
+                    reportedAt = now
+                }
+                val target = reported + ((now - reportedAt) / 1_000_000.0).coerceAtMost(250.0)
+                val step = if (lastFrame < 0L) 0.0 else (now - lastFrame) / 1_000_000.0
+                lastFrame = now
+                position =
+                    if (abs(target - position) > 500.0) {
+                        target
+                    } else {
+                        val advanced = position + step
+                        max(position, advanced + (target - advanced) * (step / 150.0).coerceAtMost(1.0))
+                    }
+                playhead.longValue = position.roundToLong()
+            }
+        }
+    }
+    return playhead.longValue
+}
+
+@Composable
+private fun NookiSyncedLyricLineText(
+    rawLine: Line?,
+    fallbackText: String,
+    syncType: String?,
+    playheadMs: Long,
+    accentColor: Color,
+    isPopup: Boolean,
+    fontSizeSp: Float,
+) {
+    val marqueeModifier =
+        Modifier.basicMarquee(
+            iterations = Int.MAX_VALUE,
+            animationMode = MarqueeAnimationMode.Immediately,
+        )
+    val parsedRichSync =
+        remember(rawLine?.words, rawLine?.startTimeMs, rawLine?.endTimeMs, syncType, isPopup) {
+            if (!isPopup && syncType == "RICH_SYNCED" && rawLine != null) {
+                parseRichSyncWords(rawLine.words, rawLine.startTimeMs, rawLine.endTimeMs)
+            } else {
+                null
+            }
+        }
+    if (parsedRichSync != null) {
+        val annotated =
+            buildAnnotatedString {
+                val words = parsedRichSync.words
+                words.forEachIndexed { idx, word ->
+                    if (idx > 0) append(' ')
+                    val startMs = word.startTimeMs
+                    val endMs =
+                        words.getOrNull(idx + 1)?.startTimeMs
+                            ?: parsedRichSync.lineEndTimeMs.takeIf { it != Long.MAX_VALUE && it > startMs }
+                            ?: (startMs + 600L)
+                    when {
+                        playheadMs >= endMs -> {
+                            withStyle(SpanStyle(color = Color.White, fontWeight = FontWeight.SemiBold)) {
+                                append(word.text)
+                            }
+                        }
+                        playheadMs >= startMs -> {
+                            val frac = ((playheadMs - startMs).toFloat() / (endMs - startMs).coerceAtLeast(1L)).coerceIn(0f, 1f)
+                            withStyle(
+                                SpanStyle(
+                                    color = Color.White.copy(alpha = 0.55f + 0.45f * frac),
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            ) {
+                                append(word.text)
+                            }
+                        }
+                        else -> {
+                            withStyle(SpanStyle(color = Color.White.copy(alpha = 0.46f), fontWeight = FontWeight.Medium)) {
+                                append(word.text)
+                            }
+                        }
+                    }
+                }
+            }
+        Text(
+            text = annotated,
+            fontSize = fontSizeSp.sp,
+            maxLines = 1,
+            modifier = marqueeModifier,
+        )
+    } else {
+        val cleanedText =
+            remember(rawLine?.words, fallbackText) {
+                rawLine?.words?.let(::cleanNotchLyricText)?.ifBlank { fallbackText } ?: fallbackText
+            }
+        Text(
+            text = cleanedText,
+            color = if (isPopup) accentColor else Color.White.copy(alpha = 0.94f),
+            fontSize = fontSizeSp.sp,
+            fontWeight = if (isPopup) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            modifier = marqueeModifier,
+        )
+    }
 }

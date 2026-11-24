@@ -88,7 +88,7 @@ fun NowNotchAndExtrasSettings(
             if (isAndroid) {
                 "Floating top pill with now playing, live lyrics, and quick controls"
             } else {
-                "Floating top-center pill above all windows with live lyrics and controls"
+                "Draggable floating pill above all windows with synced karaoke lyrics and controls"
             },
         smallSubtitle = true,
         switch = (
@@ -102,6 +102,15 @@ fun NowNotchAndExtrasSettings(
             }
         ),
     )
+
+    if (!isAndroid && notchSettings.enabled) {
+        OutlinedButton(
+            onClick = { PlatformNowNotchBridge.resetDesktopPosition() },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        ) {
+            Text("Reset Now Notch Position to Top Center")
+        }
+    }
 
     if (isAndroid && notchSettings.enabled && !canOverlay) {
         OutlinedButton(

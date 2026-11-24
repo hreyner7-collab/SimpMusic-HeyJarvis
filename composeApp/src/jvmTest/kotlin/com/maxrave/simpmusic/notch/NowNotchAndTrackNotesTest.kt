@@ -130,4 +130,33 @@ class NowNotchAndTrackNotesTest {
             ),
         )
     }
+
+    @Test
+    fun `rich synced gaps insert three-dot interlude matching LyricsView and keep last line sticky`() {
+        val gappedRichLines =
+            listOf(
+                Line(startTimeMs = "1000", endTimeMs = "3000", words = "<00:01.00>First <00:02.00>phrase"),
+                Line(startTimeMs = "12000", endTimeMs = "15000", words = "<00:12.00>After <00:13.00>break"),
+            )
+        // 3,000ms after the last word (2000 + 3000 = 5000ms), before next line at 12000ms -> interlude dots
+        assertEquals(
+            "• • •",
+            NowNotchStateHolder.resolveSyncedLyricLine(
+                lines = gappedRichLines,
+                syncType = "RICH_SYNCED",
+                positionMs = 6_000L,
+                offsetMs = 0,
+            ),
+        )
+        // Last line remains sticky through the outro, matching LyricsView.activeIndexAt
+        assertEquals(
+            "After break",
+            NowNotchStateHolder.resolveSyncedLyricLine(
+                lines = gappedRichLines,
+                syncType = "RICH_SYNCED",
+                positionMs = 40_000L,
+                offsetMs = 0,
+            ),
+        )
+    }
 }

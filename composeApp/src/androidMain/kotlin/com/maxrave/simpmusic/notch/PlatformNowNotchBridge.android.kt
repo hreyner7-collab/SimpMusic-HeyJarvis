@@ -77,6 +77,8 @@ actual object PlatformNowNotchBridge {
         }
     }
 
+    actual fun resetDesktopPosition() {}
+
     actual fun sync(state: NowNotchLiveState) {
         val context = runCatching { getKoin().get<Context>() }.getOrNull() ?: return
 

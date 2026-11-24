@@ -493,6 +493,12 @@ class SharedViewModel(
                                         ?.playlistId
                                         ?.isEndlessQueueId() == true,
                             )
+                    } ?: run {
+                        _nowPlayingScreenData.value =
+                            NowPlayingScreenData.initial().copy(
+                                nowPlayingTitle = state.mediaItem.metadata.title?.toString().orEmpty(),
+                                artistName = state.mediaItem.metadata.artist?.toString().orEmpty(),
+                            )
                     }
                     state.mediaItem.let { now ->
                         _canvas.value = null
@@ -736,7 +742,7 @@ class SharedViewModel(
                     val mediaItem = p.track?.mediaItem
                     val hasTrack = mediaItem != null && mediaItem != GenericMediaItem.EMPTY
                     val settings = p.settings
-                    val lyrics = p.screenData.lyricsData?.lyrics
+                    val lyrics = p.screenData.lyricsData?.lyrics?.takeIf { !it.error }
                     val shouldResolveLyrics =
                         hasTrack && (settings.showLiveLyrics || settings.lockScreenLiveLyrics)
                     val currentLine =
