@@ -1,7 +1,9 @@
 package com.maxrave.simpmusic.notch
 
+import androidx.compose.ui.graphics.ImageBitmap
 import com.maxrave.domain.data.model.metadata.Line
 import com.maxrave.domain.manager.DataStoreManager
+import com.maxrave.simpmusic.expect.ui.toReadableBitmap
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,8 +14,15 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 private const val NOW_NOTCH_SETTINGS_KEY = "now_notch_settings_json"
+const val NOOKI_VISUALIZER_BLUE_ARGB: Long = 0xFF52B8FFL
+const val NOOKI_FALLBACK_PRIMARY_ARGB: Long = 0xFF2B2E48L
+const val NOOKI_FALLBACK_SECONDARY_ARGB: Long = 0xFF191B2CL
 
 private val nowNotchJson =
     Json {
@@ -22,7 +31,9 @@ private val nowNotchJson =
     }
 
 @Serializable
-enum class NowNotchIdleMode(val label: String) {
+enum class NowNotchIdleMode(
+    val label: String,
+) {
     COMPACT_CLOCK("Live Clock"),
     COMPACT_DOT("Compact Dot"),
     HIDDEN("Hidden"),
@@ -33,8 +44,9 @@ data class NowNotchSettings(
     val enabled: Boolean = false,
     val showLiveLyrics: Boolean = true,
     val showTrackChangePopup: Boolean = true,
+    val showSideWaves: Boolean = true,
     val idleMode: NowNotchIdleMode = NowNotchIdleMode.COMPACT_CLOCK,
-    val topOffsetDp: Int = 10,
+    val topOffsetDp: Int = 4,
     val compactSize: Boolean = false,
     val lockScreenLiveLyrics: Boolean = false,
 )
@@ -46,9 +58,19 @@ data class NowNotchLiveState(
     val videoId: String = "",
     val title: String = "",
     val artist: String = "",
+    val thumbnailUrl: String? = null,
+    val artworkBitmap: ImageBitmap? = null,
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val lyricsLines: List<Line> = emptyList(),
+    val lyricsSyncType: String? = null,
+    val lyricsOffsetMs: Int = 0,
     val currentLyricLine: String? = null,
     val popupBanner: String? = null,
     val progressFraction: Float = 0f,
+    val isLiked: Boolean = false,
+    val accentColorArgb: Long = NOOKI_VISUALIZER_BLUE_ARGB,
+    val secondaryColorArgb: Long = NOOKI_FALLBACK_SECONDARY_ARGB,
 )
 
 object NowNotchStateHolder {
@@ -60,23 +82,22 @@ object NowNotchStateHolder {
     }
 
     /**
-     * Resolves the currently active lyric line at [positionMs] adjusted by [offsetMs].
-     * Mirrors the player lyric timeline check: returns null when lyrics are unsynced or
-     * playback is before the first timestamped line.
+     * Resolves the active 0-based index in [lines] at [positionMs] adjusted by [offsetMs],
+     * or `-1` when unsynced or before the first timestamped line.
      */
-    fun resolveSyncedLyricLine(
+    fun resolveSyncedLyricIndex(
         lines: List<Line>?,
         syncType: String?,
         positionMs: Long,
         offsetMs: Int,
-    ): String? {
-        if (lines.isNullOrEmpty() || syncType == null || syncType == "UNSYNCED") return null
+    ): Int {
+        if (lines.isNullOrEmpty() || syncType == null || syncType == "UNSYNCED") return -1
         val nowMs = positionMs - offsetMs
-        if (nowMs <= 0L) return null
+        if (nowMs <= 0L) return -1
         val firstStart = lines.first().startTimeMs.toLongOrNull() ?: 0L
-        if (nowMs < firstStart) return null
+        if (nowMs < firstStart) return -1
 
-        var active: String? = null
+        var activeIndex = -1
         for (i in lines.indices) {
             val startMs = lines[i].startTimeMs.toLongOrNull() ?: 0L
             val endMs =
@@ -86,11 +107,140 @@ object NowNotchStateHolder {
                     startMs + 60_000L
                 }
             if (nowMs in startMs..endMs) {
-                active = lines[i].words.trim().takeIf { it.isNotEmpty() }
+                activeIndex = i
             }
         }
-        return active
+        return activeIndex
     }
+
+    /**
+     * Resolves the currently active lyric line at [positionMs] adjusted by [offsetMs].
+     */
+    fun resolveSyncedLyricLine(
+        lines: List<Line>?,
+        syncType: String?,
+        positionMs: Long,
+        offsetMs: Int,
+    ): String? {
+        val idx = resolveSyncedLyricIndex(lines, syncType, positionMs, offsetMs)
+        if (idx < 0 || lines == null) return null
+        return lines.getOrNull(idx)?.words?.trim()?.takeIf { it.isNotEmpty() }
+    }
+}
+
+/**
+ * Mirrors Nooki's `MusicVisualizerKt.extractPaletteColors` across Android & Desktop:
+ * downsamples artwork to 24x24, scores vibrant saturated pixels `(s * 1.8f) + (v * 0.9f)`,
+ * picks primary + hue-distinct (`> 25°`) secondary jewel tones, and safely falls back on error.
+ */
+fun extractNookiPaletteColors(bitmap: ImageBitmap?): Pair<Long, Long> {
+    if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0) {
+        return NOOKI_VISUALIZER_BLUE_ARGB to NOOKI_FALLBACK_SECONDARY_ARGB
+    }
+    return runCatching {
+        val readable = bitmap.toReadableBitmap(24, 24)
+        val pixels = IntArray(24 * 24)
+        readable.readPixels(pixels)
+
+        var bestScore = -1f
+        var primaryPixel = 0
+        var secondScore = -1f
+        var secondaryPixel = 0
+        val hsvPrimary = FloatArray(3)
+        val hsv = FloatArray(3)
+
+        for (px in pixels) {
+            val alpha = (px ushr 24) and 0xFF
+            if (alpha < 128) continue
+            argbToHsv(px, hsv)
+            val s = hsv[1]
+            val v = hsv[2]
+            if (v >= 0.16f && (v <= 0.94f || s >= 0.10f) && s >= 0.14f) {
+                val score = (s * 1.8f) + (v * 0.9f)
+                if (score > bestScore) {
+                    if (primaryPixel != 0) {
+                        argbToHsv(primaryPixel, hsvPrimary)
+                        if (abs(hsv[0] - hsvPrimary[0]) > 25f) {
+                            secondScore = bestScore
+                            secondaryPixel = primaryPixel
+                        }
+                    }
+                    bestScore = score
+                    primaryPixel = px
+                } else if (score > secondScore && primaryPixel != 0) {
+                    argbToHsv(primaryPixel, hsvPrimary)
+                    if (abs(hsv[0] - hsvPrimary[0]) > 25f) {
+                        secondScore = score
+                        secondaryPixel = px
+                    }
+                }
+            }
+        }
+
+        if (primaryPixel == 0) {
+            NOOKI_VISUALIZER_BLUE_ARGB to NOOKI_FALLBACK_SECONDARY_ARGB
+        } else {
+            argbToHsv(primaryPixel, hsv)
+            val p1 = hsvToArgb(hsv[0], hsv[1].coerceIn(0.55f, 0.95f), hsv[2].coerceIn(0.65f, 0.95f))
+            val p2 =
+                if (secondaryPixel != 0) {
+                    argbToHsv(secondaryPixel, hsv)
+                    hsvToArgb(hsv[0], hsv[1].coerceIn(0.45f, 0.85f), hsv[2].coerceIn(0.55f, 0.85f))
+                } else {
+                    hsvToArgb((hsv[0] + 50f) % 360f, (hsv[1] * 0.85f).coerceIn(0.40f, 0.80f), hsv[2].coerceIn(0.55f, 0.85f))
+                }
+            p1 to p2
+        }
+    }.getOrDefault(NOOKI_VISUALIZER_BLUE_ARGB to NOOKI_FALLBACK_SECONDARY_ARGB)
+}
+
+private fun argbToHsv(
+    argb: Int,
+    out: FloatArray,
+) {
+    val r = ((argb ushr 16) and 0xFF) / 255f
+    val g = ((argb ushr 8) and 0xFF) / 255f
+    val b = (argb and 0xFF) / 255f
+    val maxVal = max(r, max(g, b))
+    val minVal = min(r, min(g, b))
+    val delta = maxVal - minVal
+    var h = 0f
+    if (delta > 1e-6f) {
+        h =
+            when (maxVal) {
+                r -> ((g - b) / delta) % 6f
+                g -> ((b - r) / delta) + 2f
+                else -> ((r - g) / delta) + 4f
+            } * 60f
+        if (h < 0f) h += 360f
+    }
+    val s = if (maxVal > 1e-6f) delta / maxVal else 0f
+    out[0] = h
+    out[1] = s
+    out[2] = maxVal
+}
+
+private fun hsvToArgb(
+    hue: Float,
+    saturation: Float,
+    value: Float,
+): Long {
+    val c = value * saturation
+    val x = c * (1f - abs((hue / 60f) % 2f - 1f))
+    val m = value - c
+    val (r1, g1, b1) =
+        when {
+            hue < 60f -> Triple(c, x, 0f)
+            hue < 120f -> Triple(x, c, 0f)
+            hue < 180f -> Triple(0f, c, x)
+            hue < 240f -> Triple(0f, x, c)
+            hue < 300f -> Triple(x, 0f, c)
+            else -> Triple(c, 0f, x)
+        }
+    val r = ((r1 + m) * 255f).roundToInt().coerceIn(0, 255)
+    val g = ((g1 + m) * 255f).roundToInt().coerceIn(0, 255)
+    val b = ((b1 + m) * 255f).roundToInt().coerceIn(0, 255)
+    return 0xFF000000L or (r.toLong() shl 16) or (g.toLong() shl 8) or b.toLong()
 }
 
 fun DataStoreManager.nowNotchSettingsFlow(): Flow<NowNotchSettings> =

@@ -13,6 +13,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- Only Android 9 and older need this: there MediaStore still writes through shared
          storage. From Android 10 an app writing its own new image needs no permission, and
          SaveImagePermission grants without asking — so the declaration stops at 28 to match. -->

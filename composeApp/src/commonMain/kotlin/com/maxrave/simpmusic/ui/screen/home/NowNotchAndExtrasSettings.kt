@@ -99,6 +99,21 @@ fun NowNotchAndExtrasSettings(
         }
     }
 
+    if (isAndroid) {
+        SettingItem(
+            title = "Lock-Screen & Samsung Now Bar Live Lyrics",
+            subtitle = "Promoted Android 16 / One UI Now Bar live notification showing active synced lyrics",
+            smallSubtitle = true,
+            switch = (
+                notchSettings.lockScreenLiveLyrics to { checked ->
+                    scope.launch {
+                        dataStoreManager.updateNowNotchSettings { it.copy(lockScreenLiveLyrics = checked) }
+                    }
+                }
+            ),
+        )
+    }
+
     if (notchSettings.enabled) {
         SettingItem(
             title = "Live Synced Lyrics in Now Notch",
@@ -110,20 +125,16 @@ fun NowNotchAndExtrasSettings(
                 }
             ),
         )
-        if (isAndroid) {
-            SettingItem(
-                title = "Lock-Screen & Samsung Now Bar Live Lyrics",
-                subtitle = "Mirror active lyrics via silent lock-screen notification (Android / One UI Now Bar)",
-                smallSubtitle = true,
-                switch = (
-                    notchSettings.lockScreenLiveLyrics to { checked ->
-                        scope.launch {
-                            dataStoreManager.updateNowNotchSettings { it.copy(lockScreenLiveLyrics = checked) }
-                        }
-                    }
-                ),
-            )
-        }
+        SettingItem(
+            title = "Side Glow Waves on Notch",
+            subtitle = "Album-colored reactive glowing wave arcs beside the Dynamic Island pill",
+            smallSubtitle = true,
+            switch = (
+                notchSettings.showSideWaves to { checked ->
+                    scope.launch { dataStoreManager.updateNowNotchSettings { it.copy(showSideWaves = checked) } }
+                }
+            ),
+        )
         SettingItem(
             title = "Track-Change Notification Popups",
             subtitle = "Briefly announce song changes inside Now Notch",

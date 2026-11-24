@@ -124,10 +124,12 @@ import com.mikepenz.markdown.m3.markdownTypography
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.roundToInt
+import com.maxrave.domain.utils.YouTubeLikeStatus
 import com.maxrave.simpmusic.notch.NowNotchLiveState
 import com.maxrave.simpmusic.notch.NowNotchSettings
 import com.maxrave.simpmusic.notch.NowNotchStateHolder
 import com.maxrave.simpmusic.notch.PlatformNowNotchBridge
+import com.maxrave.simpmusic.notch.extractNookiPaletteColors
 import com.maxrave.simpmusic.notch.nowNotchSettingsFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -186,6 +188,11 @@ fun App(
     val timelineForNotch by viewModel.timeline.collectAsStateWithLifecycle()
     val controllerForNotch by viewModel.controllerState.collectAsStateWithLifecycle()
     val lyricsOffsetForNotch by viewModel.getLyricsOffsetMs().collectAsStateWithLifecycle(0)
+    val likeStatusForNotch by viewModel.likeStatus.collectAsStateWithLifecycle()
+    val notchPaletteColors =
+        remember(nowPlayingScreenDataForNotch.bitmap) {
+            extractNookiPaletteColors(nowPlayingScreenDataForNotch.bitmap)
+        }
 
     val activeNotchVideoId = nowPlayingData?.mediaItem?.mediaId.orEmpty()
     LaunchedEffect(activeNotchVideoId, notchSettings.showTrackChangePopup) {
@@ -215,12 +222,14 @@ fun App(
         timelineForNotch,
         controllerForNotch,
         lyricsOffsetForNotch,
+        likeStatusForNotch,
+        notchPaletteColors,
         notchPopupBanner,
     ) {
         val hasTrack = nowPlayingData?.mediaItem != null && nowPlayingData?.mediaItem != GenericMediaItem.EMPTY
+        val lyrics = nowPlayingScreenDataForNotch.lyricsData?.lyrics
         val lyricLine =
             if (hasTrack && notchSettings.showLiveLyrics) {
-                val lyrics = nowPlayingScreenDataForNotch.lyricsData?.lyrics
                 NowNotchStateHolder.resolveSyncedLyricLine(
                     lines = lyrics?.lines,
                     syncType = lyrics?.syncType,
@@ -230,9 +239,11 @@ fun App(
             } else {
                 null
             }
+        val durationMs = timelineForNotch.total.coerceAtLeast(0L)
+        val positionMs = timelineForNotch.current.coerceAtLeast(0L)
         val progress =
-            if (timelineForNotch.total > 0L && timelineForNotch.current >= 0L) {
-                (timelineForNotch.current.toFloat() / timelineForNotch.total.toFloat()).coerceIn(0f, 1f)
+            if (durationMs > 0L) {
+                (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
             } else {
                 0f
             }
@@ -242,13 +253,24 @@ fun App(
                 hasTrack = hasTrack,
                 isPlaying = controllerForNotch.isPlaying,
                 videoId = activeNotchVideoId,
-                title = nowPlayingScreenDataForNotch.nowPlayingTitle.ifBlank {
-                    nowPlayingData?.mediaItem?.metadata?.title?.toString().orEmpty()
-                },
+                title =
+                    nowPlayingScreenDataForNotch.nowPlayingTitle.ifBlank {
+                        nowPlayingData?.mediaItem?.metadata?.title?.toString().orEmpty()
+                    },
                 artist = nowPlayingScreenDataForNotch.artistName,
+                thumbnailUrl = nowPlayingData?.songEntity?.thumbnails ?: nowPlayingScreenDataForNotch.thumbnailURL,
+                artworkBitmap = nowPlayingScreenDataForNotch.bitmap,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                lyricsLines = lyrics?.lines.orEmpty(),
+                lyricsSyncType = lyrics?.syncType,
+                lyricsOffsetMs = lyricsOffsetForNotch,
                 currentLyricLine = lyricLine,
                 popupBanner = notchPopupBanner,
                 progressFraction = progress,
+                isLiked = likeStatusForNotch == YouTubeLikeStatus.LIKE,
+                accentColorArgb = notchPaletteColors.first,
+                secondaryColorArgb = notchPaletteColors.second,
             )
         NowNotchStateHolder.update(liveState)
         PlatformNowNotchBridge.sync(liveState)

@@ -65,6 +65,18 @@ class NowNotchAndTrackNotesTest {
         assertEquals("2:15", formatNoteTimestamp(135_000L))
         val parsed = extractNoteTimestampsMs("Drop starts at [1:05], outro at 3:45 (ignore 9:99)")
         assertEquals(listOf("1:05" to 65_000L, "3:45" to 225_000L), parsed)
-        assertTrue(NowNotchSettings().showLiveLyrics)
+        val defaults = NowNotchSettings()
+        assertTrue(defaults.showLiveLyrics)
+        assertTrue(defaults.showSideWaves)
+        assertEquals(4, defaults.topOffsetDp)
+        assertEquals(
+            1,
+            NowNotchStateHolder.resolveSyncedLyricIndex(
+                lines = sampleLines,
+                syncType = "LINE_SYNCED",
+                positionMs = 12_000L,
+                offsetMs = 0,
+            ),
+        )
     }
 }
