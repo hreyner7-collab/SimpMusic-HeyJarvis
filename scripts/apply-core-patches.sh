@@ -17,10 +17,10 @@ fi
 shopt -s nullglob
 for patch in "$ROOT"/patches/core/*.patch; do
   name="$(basename "$patch")"
-  if git -C "$CORE" apply --reverse --check "$patch" >/dev/null 2>&1; then
+  if git -C "$CORE" apply --reverse --ignore-whitespace --check "$patch" >/dev/null 2>&1; then
     echo "already applied: $name"
-  elif git -C "$CORE" apply --check "$patch" >/dev/null 2>&1; then
-    git -C "$CORE" apply "$patch"
+  elif git -C "$CORE" apply --ignore-whitespace --check "$patch" >/dev/null 2>&1; then
+    git -C "$CORE" apply --ignore-whitespace "$patch"
     echo "applied: $name"
   else
     echo "ERROR: $name does not apply to this version of core. Rebase the patch." >&2
