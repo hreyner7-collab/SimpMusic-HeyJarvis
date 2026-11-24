@@ -18,9 +18,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +50,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
 import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
@@ -115,8 +119,14 @@ import com.maxrave.domain.data.entities.DownloadState
 import com.maxrave.domain.data.entities.LocalPlaylistEntity
 import com.maxrave.domain.data.entities.PairSongLocalPlaylist
 import com.maxrave.domain.data.entities.SongEntity
+import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.utils.FilterState
 import com.maxrave.domain.utils.toTrack
+import com.maxrave.simpmusic.ui.component.PinnedLibraryItem
+import com.maxrave.simpmusic.ui.component.PinnedLibraryKind
+import com.maxrave.simpmusic.ui.component.isPinned
+import com.maxrave.simpmusic.ui.component.pinnedLibraryItemsFlow
+import com.maxrave.simpmusic.ui.component.togglePinLibraryItem
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.ui.layerBackdrop
@@ -213,6 +223,13 @@ import simpmusic.composeapp.generated.resources.search
 
 private const val TAG = "LocalPlaylistScreen"
 
+private enum class PlaylistQuickFilter(val label: String) {
+    ALL("All"),
+    RECENT("Recently Added"),
+    FORGOTTEN("Forgotten Gems"),
+    SHORT("Short (< 3m)"),
+}
+
 @ExperimentalFoundationApi
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -299,8 +316,24 @@ fun LocalPlaylistScreen(
     var changingOrder by remember {
         mutableStateOf(false)
     }
+    var quickFilter by rememberSaveable {
+        mutableStateOf(PlaylistQuickFilter.ALL)
+    }
+    val dataStoreManager: DataStoreManager = koinInject()
+    val pinnedItemsFlow = remember(dataStoreManager) { dataStoreManager.pinnedLibraryItemsFlow() }
+    val pinnedItems by pinnedItemsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
 
     val trackPagingItems: LazyPagingItems<Pair<SongEntity, PairSongLocalPlaylist>> = viewModel.tracksPagingState.collectAsLazyPagingItems()
+    val filteredPairs =
+        remember(trackPagingItems.itemSnapshotList.items, quickFilter) {
+            val loaded = trackPagingItems.itemSnapshotList.items
+            when (quickFilter) {
+                PlaylistQuickFilter.ALL -> emptyList()
+                PlaylistQuickFilter.RECENT -> loaded.sortedByDescending { it.second.inPlaylist }
+                PlaylistQuickFilter.FORGOTTEN -> loaded.sortedBy { it.first.totalPlayTime }
+                PlaylistQuickFilter.SHORT -> loaded.filter { it.first.durationSeconds in 1..179 }
+            }
+        }
     LaunchedEffect(Unit) {
         snapshotFlow {
             trackPagingItems.loadState
@@ -1292,26 +1325,58 @@ fun LocalPlaylistScreen(
                                             )
                                         }
                                         Spacer(Modifier.weight(1f))
-                                        AnimatedVisibility(
-                                            visible =
-                                                uiState.filterState == FilterState.CustomOrder,
-                                            enter = fadeIn(),
-                                            exit = fadeOut(),
-                                        ) {
-                                            TextButton(
-                                                onClick = {
-                                                    changingOrder = !changingOrder
-                                                },
+                                            AnimatedVisibility(
+                                                visible =
+                                                    uiState.filterState == FilterState.CustomOrder &&
+                                                        quickFilter == PlaylistQuickFilter.ALL,
+                                                enter = fadeIn(),
+                                                exit = fadeOut(),
                                             ) {
-                                                Text(
-                                                    text =
-                                                        if (changingOrder) {
-                                                            "Done"
-                                                        } else {
-                                                            "Change order"
-                                                        },
-                                                    style = typo().bodySmall,
-                                                    color = Color.White,
+                                                TextButton(
+                                                    onClick = {
+                                                        changingOrder = !changingOrder
+                                                    },
+                                                ) {
+                                                    Text(
+                                                        text =
+                                                            if (changingOrder) {
+                                                                "Done"
+                                                            } else {
+                                                                "Change order"
+                                                            },
+                                                        style = typo().bodySmall,
+                                                        color = Color.White,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Row(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState())
+                                                    .padding(top = 8.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            PlaylistQuickFilter.entries.forEach { qf ->
+                                                val selected = quickFilter == qf
+                                                FilterChip(
+                                                    selected = selected,
+                                                    onClick = {
+                                                        quickFilter = qf
+                                                        if (qf != PlaylistQuickFilter.ALL) {
+                                                            changingOrder = false
+                                                        }
+                                                    },
+                                                    label = { Text(qf.label, style = typo().labelMedium) },
+                                                    colors =
+                                                        FilterChipDefaults.filterChipColors(
+                                                            containerColor = Color.White.copy(alpha = 0.10f),
+                                                            labelColor = Color.White,
+                                                            selectedContainerColor = Color.White,
+                                                            selectedLabelColor = Color.Black,
+                                                        ),
+                                                    border = null,
                                                 )
                                             }
                                         }
@@ -1322,83 +1387,132 @@ fun LocalPlaylistScreen(
                     }
                 }
             }
-        }
-        items(
-            count = trackPagingItems.itemCount,
-            key = { index ->
-                val item = trackPagingItems.peek(index)
-                (item?.first?.videoId ?: "") + "item_$index" + item?.second?.inPlaylist + item?.second?.position
-            },
-            contentType = { "local_playlist_track" },
-        ) { index ->
-            val item = trackPagingItems[index]?.first
-            if (item != null) {
-                val content = @Composable { mod: Modifier ->
-                    if (playingTrack?.videoId == item.videoId && isPlaying) {
-                        SongFullWidthItems(
-                            forceDark = true,
-                            isPlaying = true,
-                            shouldShowDragHandle = changingOrder,
-                            songEntity = item,
-                            onMoreClickListener = { onItemMoreClick(it) },
-                            onClickListener = {
-                                Logger.w("PlaylistScreen", "index: $index")
-                                onPlaylistItemClick(it)
-                            },
-                            onAddToQueue = {
-                                sharedViewModel.addListToQueue(
-                                    arrayListOf(item.toTrack()),
-                                )
-                            },
-                            selectionMode = selectionState.isActive,
-                            isSelected = selectionState.isSelected(item.videoId),
-                            // No long press while reordering: that gesture already belongs to drag.
-                            onLongClick = if (changingOrder) null else ({ selectionState.start(it) }),
-                            onSelectToggle = { selectionState.toggle(it) },
-                            modifier = mod,
+        if (quickFilter != PlaylistQuickFilter.ALL) {
+            if (filteredPairs.isEmpty()) {
+                item(key = "quick_filter_empty", contentType = "empty_filter") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "No tracks match \"${quickFilter.label}\"",
+                            style = typo().bodyMedium,
+                            color = Color.White.copy(alpha = 0.75f),
                         )
-                    } else {
-                        SongFullWidthItems(
-                            forceDark = true,
-                            isPlaying = false,
-                            shouldShowDragHandle = changingOrder,
-                            songEntity = item,
-                            onMoreClickListener = { onItemMoreClick(it) },
-                            onClickListener = {
-                                Logger.w("PlaylistScreen", "index: $index")
-                                onPlaylistItemClick(it)
-                            },
-                            onAddToQueue = {
-                                sharedViewModel.addListToQueue(
-                                    arrayListOf(item.toTrack()),
-                                )
-                            },
-                            selectionMode = selectionState.isActive,
-                            isSelected = selectionState.isSelected(item.videoId),
-                            // No long press while reordering: that gesture already belongs to drag.
-                            onLongClick = if (changingOrder) null else ({ selectionState.start(it) }),
-                            onSelectToggle = { selectionState.toggle(it) },
-                            modifier = mod,
-                        )
+                        TextButton(onClick = { quickFilter = PlaylistQuickFilter.ALL }) {
+                            Text("Show all tracks", color = Color.White)
+                        }
                     }
                 }
-                if (changingOrder) {
-                    DraggableItem(
-                        dragDropState,
-                        index + 1,
-                        Modifier.animateItem(),
-                    ) {
-                        content(Modifier)
-                    }
-                } else {
-                    Column(modifier = Modifier.animateItem()) {
-                        content(Modifier)
-                        if (index < trackPagingItems.itemCount - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(start = 72.dp, end = 16.dp),
-                                thickness = 0.5.dp,
-                                color = Color.White.copy(alpha = 0.12f),
+            } else {
+                items(
+                    items = filteredPairs,
+                    key = { pair -> "qf_${quickFilter.name}_${pair.first.videoId}_${pair.second.position}" },
+                    contentType = { "local_playlist_track_filtered" },
+                ) { pair ->
+                    val item = pair.first
+                    SongFullWidthItems(
+                        forceDark = true,
+                        isPlaying = playingTrack?.videoId == item.videoId && isPlaying,
+                        shouldShowDragHandle = false,
+                        songEntity = item,
+                        onMoreClickListener = { onItemMoreClick(it) },
+                        onClickListener = { onPlaylistItemClick(it) },
+                        onAddToQueue = {
+                            sharedViewModel.addListToQueue(arrayListOf(item.toTrack()))
+                        },
+                        selectionMode = selectionState.isActive,
+                        isSelected = selectionState.isSelected(item.videoId),
+                        onLongClick = { selectionState.start(it) },
+                        onSelectToggle = { selectionState.toggle(it) },
+                        modifier = Modifier.animateItem(),
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 72.dp, end = 16.dp),
+                        thickness = 0.5.dp,
+                        color = Color.White.copy(alpha = 0.12f),
+                    )
+                }
+            }
+        } else {
+            items(
+                count = trackPagingItems.itemCount,
+                key = { index ->
+                    val item = trackPagingItems.peek(index)
+                    (item?.first?.videoId ?: "") + "item_$index" + item?.second?.inPlaylist + item?.second?.position
+                },
+                contentType = { "local_playlist_track" },
+            ) { index ->
+                val item = trackPagingItems[index]?.first
+                if (item != null) {
+                    val content = @Composable { mod: Modifier ->
+                        if (playingTrack?.videoId == item.videoId && isPlaying) {
+                            SongFullWidthItems(
+                                forceDark = true,
+                                isPlaying = true,
+                                shouldShowDragHandle = changingOrder,
+                                songEntity = item,
+                                onMoreClickListener = { onItemMoreClick(it) },
+                                onClickListener = {
+                                    Logger.w("PlaylistScreen", "index: $index")
+                                    onPlaylistItemClick(it)
+                                },
+                                onAddToQueue = {
+                                    sharedViewModel.addListToQueue(
+                                        arrayListOf(item.toTrack()),
+                                    )
+                                },
+                                selectionMode = selectionState.isActive,
+                                isSelected = selectionState.isSelected(item.videoId),
+                                // No long press while reordering: that gesture already belongs to drag.
+                                onLongClick = if (changingOrder) null else ({ selectionState.start(it) }),
+                                onSelectToggle = { selectionState.toggle(it) },
+                                modifier = mod,
                             )
+                        } else {
+                            SongFullWidthItems(
+                                forceDark = true,
+                                isPlaying = false,
+                                shouldShowDragHandle = changingOrder,
+                                songEntity = item,
+                                onMoreClickListener = { onItemMoreClick(it) },
+                                onClickListener = {
+                                    Logger.w("PlaylistScreen", "index: $index")
+                                    onPlaylistItemClick(it)
+                                },
+                                onAddToQueue = {
+                                    sharedViewModel.addListToQueue(
+                                        arrayListOf(item.toTrack()),
+                                    )
+                                },
+                                selectionMode = selectionState.isActive,
+                                isSelected = selectionState.isSelected(item.videoId),
+                                // No long press while reordering: that gesture already belongs to drag.
+                                onLongClick = if (changingOrder) null else ({ selectionState.start(it) }),
+                                onSelectToggle = { selectionState.toggle(it) },
+                                modifier = mod,
+                            )
+                        }
+                    }
+                    if (changingOrder) {
+                        DraggableItem(
+                            dragDropState,
+                            index + 1,
+                            Modifier.animateItem(),
+                        ) {
+                            content(Modifier)
+                        }
+                    } else {
+                        Column(modifier = Modifier.animateItem()) {
+                            content(Modifier)
+                            if (index < trackPagingItems.itemCount - 1) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 72.dp, end = 16.dp),
+                                    thickness = 0.5.dp,
+                                    color = Color.White.copy(alpha = 0.12f),
+                                )
+                            }
                         }
                     }
                 }
@@ -1538,6 +1652,22 @@ fun LocalPlaylistScreen(
             onDelete = {
                 viewModel.deletePlaylist(uiState.id)
                 navController.navigateUp()
+            },
+            isPinned = pinnedItems.isPinned(PinnedLibraryKind.LOCAL_PLAYLIST, uiState.id.toString()),
+            onTogglePin = {
+                coroutineScope.launch {
+                    val pinnedNow =
+                        dataStoreManager.togglePinLibraryItem(
+                            PinnedLibraryItem(
+                                id = uiState.id.toString(),
+                                title = uiState.title,
+                                subtitle = "${uiState.trackCount} tracks",
+                                thumbnailUrl = uiState.thumbnail,
+                                kind = PinnedLibraryKind.LOCAL_PLAYLIST,
+                            ),
+                        )
+                    viewModel.makeToast(if (pinnedNow) "Pinned \"${uiState.title}\" to Library" else "Unpinned from Library")
+                }
             },
         )
     }

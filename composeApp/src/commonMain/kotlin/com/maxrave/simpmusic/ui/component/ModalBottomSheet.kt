@@ -134,7 +134,9 @@ import com.maxrave.domain.mediaservice.handler.QueueData
 import com.maxrave.domain.mediaservice.handler.addToQueueBlock
 import com.maxrave.domain.repository.LocalPlaylistRepository
 import com.maxrave.domain.utils.FilterState
+import com.maxrave.domain.utils.PlaybackBlocklistState
 import com.maxrave.domain.utils.connectArtists
+import com.maxrave.domain.utils.playbackBlocklistFlow
 import com.maxrave.domain.utils.toListName
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.expect.copyToClipboard
@@ -164,14 +166,17 @@ import com.maxrave.simpmusic.ui.icon.KeyboardDoubleArrowDown
 import com.maxrave.simpmusic.ui.icon.KeyboardDoubleArrowUp
 import com.maxrave.simpmusic.ui.icon.SkipNext
 import com.maxrave.simpmusic.ui.icon.Lyrics
+import com.maxrave.simpmusic.ui.icon.MusicOff
 import com.maxrave.simpmusic.ui.icon.PeopleAlt
 import com.maxrave.simpmusic.ui.icon.PlayCircle
 import com.maxrave.simpmusic.ui.icon.PlaylistAdd
+import com.maxrave.simpmusic.ui.icon.PushPin
 import com.maxrave.simpmusic.ui.icon.QueueMusic
 import com.maxrave.simpmusic.ui.icon.Remove
 import com.maxrave.simpmusic.ui.icon.Search
 import com.maxrave.simpmusic.ui.icon.Sensors
 import com.maxrave.simpmusic.ui.icon.Share
+import com.maxrave.simpmusic.ui.icon.Shuffle
 import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.icon.Speed
 import com.maxrave.simpmusic.ui.icon.Sync
@@ -312,6 +317,8 @@ import simpmusic.composeapp.generated.resources.youtube_url
 //   if (minutes == END_OF_SONG_SENTINEL) → stop after current track finishes
 // ─────────────────────────────────────────────────────────────────────────────
 const val END_OF_SONG_SENTINEL = Int.MAX_VALUE
+const val END_OF_3_SONGS_SENTINEL = Int.MAX_VALUE - 3
+const val END_OF_5_SONGS_SENTINEL = Int.MAX_VALUE - 5
 
 @ExperimentalMaterial3Api
 @Composable
@@ -1150,9 +1157,26 @@ fun QueueBottomSheet(
                         style = typo().titleMedium,
                         modifier =
                             Modifier
-                                .padding(horizontal = 20.dp)
+                                .padding(start = 20.dp, end = 8.dp)
                                 .weight(1f),
                     )
+                    if (queue.size > 2) {
+                        TextButton(
+                            onClick = { musicServiceHandler.reshuffleRemainingQueue() },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Icon(
+                                imageVector = SimpIcons.Shuffle,
+                                contentDescription = "Reshuffle remaining queue",
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Reshuffle",
+                                style = typo().bodySmall,
+                            )
+                        }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = stringResource(Res.string.endless_queue),
@@ -1405,6 +1429,8 @@ fun NowPlayingBottomSheet(
     var isBottomSheetVisible by rememberSaveable { mutableStateOf(false) }
     var changePlaybackSpeedPitch by remember { mutableStateOf(false) }
     val crossfadeEnabled by dataStoreManager.crossfadeEnabled.collectAsState(DataStoreManager.FALSE)
+    val blocklistFlow = remember(dataStoreManager) { dataStoreManager.playbackBlocklistFlow() }
+    val blocklist by blocklistFlow.collectAsState(PlaybackBlocklistState())
 
     LaunchedEffect(uiState) {
         if (uiState.songUIState.videoId.isNotEmpty() && !isBottomSheetVisible) {
@@ -1868,6 +1894,41 @@ fun NowPlayingBottomSheet(
                         )
                         hideModalBottomSheet()
                     }
+                    val isSongBlocked = blocklist.isSongIdBlocked(uiState.songUIState.videoId)
+                    ActionButton(
+                        icon = SimpIcons.MusicOff,
+                        text = null,
+                        textString = if (isSongBlocked) "Allow \"${uiState.songUIState.title}\" again" else "Don't play this song",
+                        textColor = if (isSongBlocked) seed else null,
+                        iconColor = if (isSongBlocked) seed else Color.Unspecified,
+                    ) {
+                        viewModel.onUIEvent(NowPlayingBottomSheetUIEvent.ToggleBlockSong)
+                        hideModalBottomSheet()
+                    }
+                    val primaryArtist = uiState.songUIState.listArtists.firstOrNull { it.name.isNotBlank() }
+                    if (primaryArtist != null) {
+                        val isArtistBlocked = blocklist.isArtistBlocked(primaryArtist.id, primaryArtist.name)
+                        ActionButton(
+                            icon = SimpIcons.Close,
+                            text = null,
+                            textString =
+                                if (isArtistBlocked) {
+                                    "Allow ${primaryArtist.name} again"
+                                } else {
+                                    "Don't play ${primaryArtist.name}"
+                                },
+                            textColor = if (isArtistBlocked) seed else null,
+                            iconColor = if (isArtistBlocked) seed else Color.Unspecified,
+                        ) {
+                            viewModel.onUIEvent(
+                                NowPlayingBottomSheetUIEvent.ToggleBlockArtist(
+                                    artistId = primaryArtist.id,
+                                    artistName = primaryArtist.name,
+                                ),
+                            )
+                            hideModalBottomSheet()
+                        }
+                    }
                     Crossfade(targetState = changeMainLyricsProviderEnable) {
                         if (it) {
                             ActionButton(
@@ -1890,18 +1951,18 @@ fun NowPlayingBottomSheet(
                     Crossfade(targetState = setSleepTimerEnable) {
                         val sleepTimerState = uiState.sleepTimer
                         if (it) {
-                            // timeRemaining > 0 → countdown mode, -1 → end-of-song mode, 0 → off
-                            val isEndOfSong = sleepTimerState.timeRemaining == -1
-                            val isRunning = sleepTimerState.timeRemaining > 0 || isEndOfSong
+                            val isSongsTimer = sleepTimerState.songsRemaining > 1
+                            val isEndOfSong = sleepTimerState.timeRemaining == -1 && !isSongsTimer
+                            val isRunning = sleepTimerState.timeRemaining > 0 || isEndOfSong || isSongsTimer
                             Crossfade(targetState = isRunning) { running ->
                                 if (running) {
                                     ActionButton(
                                         icon = SimpIcons.AccessAlarm,
                                         textString =
-                                            if (isEndOfSong) {
-                                                stringResource(Res.string.sleep_timer_end_of_song)
-                                            } else {
-                                                stringResource(Res.string.sleep_timer, sleepTimerState.timeRemaining.toString())
+                                            when {
+                                                isSongsTimer -> "Sleep after ${sleepTimerState.songsRemaining} songs"
+                                                isEndOfSong -> stringResource(Res.string.sleep_timer_end_of_song)
+                                                else -> stringResource(Res.string.sleep_timer, sleepTimerState.timeRemaining.toString())
                                             },
                                         text = null,
                                         textColor = seed,
@@ -2311,7 +2372,9 @@ fun SleepTimerBottomSheet(
     // Whether the Set button should be enabled
     val isSetEnabled =
         when {
-            selectedPreset == END_OF_SONG_SENTINEL -> true
+            selectedPreset == END_OF_SONG_SENTINEL ||
+                selectedPreset == END_OF_3_SONGS_SENTINEL ||
+                selectedPreset == END_OF_5_SONGS_SENTINEL -> true
             selectedPreset > 0 && !showCustomInput -> true
             showCustomInput && (customMinutes.toIntOrNull() ?: 0) > 0 -> true
             else -> false
@@ -2406,6 +2469,47 @@ fun SleepTimerBottomSheet(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
+
+                // ── After 3 songs / After 5 songs ─────────────────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(
+                        "After 3 songs" to END_OF_3_SONGS_SENTINEL,
+                        "After 5 songs" to END_OF_5_SONGS_SENTINEL,
+                    ).forEach { (label, sentinel) ->
+                        val isSongCountSelected = selectedPreset == sentinel && !showCustomInput
+                        OutlinedButton(
+                            onClick = {
+                                selectedPreset = sentinel
+                                showCustomInput = false
+                                customMinutes = ""
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors =
+                                ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (isSongCountSelected) seed.copy(alpha = 0.15f) else Color.Transparent,
+                                ),
+                            border =
+                                BorderStroke(
+                                    width = if (isSongCountSelected) 1.5.dp else 1.dp,
+                                    color = if (isSongCountSelected) seed else rememberSurfaceDarkColors().disabled,
+                                ),
+                            contentPadding = PaddingValues(vertical = 10.dp, horizontal = 4.dp),
+                        ) {
+                            Text(
+                                text = label,
+                                style = typo().bodySmall,
+                                color = if (isSongCountSelected) seed else rememberSurfaceDarkColors().subtitle,
+                                fontWeight = if (isSongCountSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // ── End of Song + Custom row ─────────────────────────────
                 Row(
@@ -2508,8 +2612,10 @@ fun SleepTimerBottomSheet(
                 Button(
                     onClick = {
                         when {
-                            selectedPreset == END_OF_SONG_SENTINEL -> {
-                                onSetTimer(END_OF_SONG_SENTINEL)
+                            selectedPreset == END_OF_SONG_SENTINEL ||
+                                selectedPreset == END_OF_3_SONGS_SENTINEL ||
+                                selectedPreset == END_OF_5_SONGS_SENTINEL -> {
+                                onSetTimer(selectedPreset)
                                 coroutineScope.launch {
                                     modelBottomSheetState.hide()
                                     onDismiss()
@@ -3073,6 +3179,8 @@ fun LocalPlaylistBottomSheet(
     onSync: () -> Unit,
     onUpdatePlaylist: () -> Unit,
     onDelete: () -> Unit,
+    isPinned: Boolean = false,
+    onTogglePin: (() -> Unit)? = null,
 ) {
     val coroutineScope = rememberCoroutineScope()
     var showEditTitle by remember { mutableStateOf(false) }
@@ -3201,6 +3309,18 @@ fun LocalPlaylistBottomSheet(
                         shape = RoundedCornerShape(50),
                     ) {}
                     Spacer(modifier = Modifier.height(5.dp))
+                    if (onTogglePin != null) {
+                        ActionButton(
+                            icon = SimpIcons.PushPin,
+                            text = null,
+                            textString = if (isPinned) "Unpin from Library" else "Pin to Library",
+                            textColor = if (isPinned) seed else null,
+                            iconColor = if (isPinned) seed else Color.Unspecified,
+                        ) {
+                            onTogglePin()
+                            hideModalBottomSheet()
+                        }
+                    }
                     ActionButton(icon = SimpIcons.Edit, text = Res.string.edit_title) {
                         showEditTitle = true
                     }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.repository.SpotifyLibraryRepository
+import com.maxrave.spotify.auth.SpotifyOAuth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +18,11 @@ class SpotifyOwnAppViewModel(
     dataStoreManager: DataStoreManager,
 ) : ViewModel() {
     val clientId: StateFlow<String> =
-        dataStoreManager.spotifyOAuthClientId.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+        dataStoreManager.spotifyOAuthClientId.stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            SpotifyOAuth.DEFAULT_CLIENT_ID,
+        )
 
     val loggedIn: StateFlow<Boolean> =
         repository.hasOwnAppSession().stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -26,12 +31,13 @@ class SpotifyOwnAppViewModel(
     val message: StateFlow<String?> = _message.asStateFlow()
 
     fun start(
-        clientId: String,
+        clientId: String = SpotifyOAuth.DEFAULT_CLIENT_ID,
         openUrl: (String) -> Unit,
     ) {
+        val resolvedClientId = clientId.trim().ifEmpty { SpotifyOAuth.DEFAULT_CLIENT_ID }
         viewModelScope.launch {
             repository
-                .startOwnAppLogin(clientId)
+                .startOwnAppLogin(resolvedClientId)
                 .onSuccess {
                     _message.value =
                         "Approve SimpMusic in the browser. If the app does not come back by itself, " +

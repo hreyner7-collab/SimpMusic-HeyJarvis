@@ -1,15 +1,21 @@
 package com.maxrave.simpmusic.ui.screen.home
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.maxrave.domain.manager.DataStoreManager
@@ -19,8 +25,8 @@ import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
 /**
- * Settings for the AI DJ: between songs a short spoken intro, written by the user's own AI provider
- * and read by the system voice. It stays silent until an AI provider is set up in Settings.
+ * Settings for the AI DJ: hosts a session from the listener's own favourites, forgotten tracks,
+ * and fresh recommendations with spoken Ace DJ intros.
  */
 @Composable
 fun AiDjSettings() {
@@ -28,34 +34,45 @@ fun AiDjSettings() {
     val dataStore = koinInject<DataStoreManager>()
     val scope = rememberCoroutineScope()
     val enabledRaw by dataStore.djEnabled.collectAsState(initial = DataStoreManager.FALSE)
-    val every by dataStore.djEvery.collectAsState(initial = 3)
     val aiKey by dataStore.aiApiKey.collectAsState(initial = "")
+    val tasteProfile by dataStore.tasteProfile.collectAsState(initial = null)
+    var tasteResetDone by remember { mutableStateOf(false) }
     val enabled = enabledRaw == DataStoreManager.TRUE
 
     SettingItem(
         title = "AI DJ",
         subtitle =
             if (aiKey.isBlank()) {
-                "Speaks a short intro between songs. Needs an AI provider key (Settings > AI)."
+                "Session-based mix of your favorites and fresh picks. Optional AI API key personalizes intros."
             } else {
-                "Speaks a short intro between songs, written by your AI and read by the system voice"
+                "Session-based mix with Ace DJ intros written by your AI provider"
             },
         smallSubtitle = true,
         switch = (enabled to { on: Boolean -> scope.launch { dataStore.setDjEnabled(on) }; Unit }),
     )
-    if (enabled) {
-        Column(Modifier.padding(horizontal = 16.dp)) {
-            Text("Speak before")
+    if (tasteProfile != null || tasteResetDone) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Row {
-                listOf(1 to "every song", 3 to "every 3rd", 5 to "every 5th").forEach { (value, label) ->
-                    FilterChip(
-                        selected = every == value,
-                        onClick = { scope.launch { dataStore.setDjEvery(value) } },
-                        label = { Text(label) },
-                    )
-                    Row(Modifier.width(8.dp)) {}
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            dataStore.setTasteProfile(null)
+                            tasteResetDone = true
+                        }
+                    },
+                ) {
+                    Text(if (tasteResetDone && tasteProfile == null) "Taste profile cleared" else "Reset AI Taste Profile")
                 }
             }
+            Text(
+                text = "Clears cached listening persona so shared listening doesn't skew recommendations.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
         }
     }
 }

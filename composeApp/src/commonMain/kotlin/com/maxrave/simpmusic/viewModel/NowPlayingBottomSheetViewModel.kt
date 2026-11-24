@@ -15,17 +15,25 @@ import com.maxrave.domain.manager.DataStoreManager.Values.LRCLIB
 import com.maxrave.domain.manager.DataStoreManager.Values.SIMPMUSIC
 import com.maxrave.domain.manager.DataStoreManager.Values.YOUTUBE
 import com.maxrave.domain.mediaservice.handler.DownloadHandler
+import com.maxrave.domain.mediaservice.handler.PlayerEvent
 import com.maxrave.domain.mediaservice.handler.PlaylistType
 import com.maxrave.domain.mediaservice.handler.QueueData
 import com.maxrave.domain.mediaservice.handler.SleepTimerState
 import com.maxrave.domain.repository.LocalPlaylistRepository
 import com.maxrave.domain.repository.PlaylistRepository
 import com.maxrave.domain.repository.SongRepository
+import com.maxrave.domain.utils.BlockedKind
+import com.maxrave.domain.utils.PlaybackBlocklistCodec
 import com.maxrave.domain.utils.Resource
+import com.maxrave.domain.utils.blockArtist
+import com.maxrave.domain.utils.blockSong
 import com.maxrave.domain.utils.collectLatestResource
 import com.maxrave.domain.utils.collectResource
+import com.maxrave.domain.utils.connectArtists
+import com.maxrave.domain.utils.getPlaybackBlocklist
 import com.maxrave.domain.utils.isLive
 import com.maxrave.domain.utils.toTrack
+import com.maxrave.domain.utils.unblockItem
 import com.maxrave.logger.LogLevel
 import com.maxrave.simpmusic.expect.shareUrl
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
@@ -377,6 +385,59 @@ class NowPlayingBottomSheetViewModel(
                     )
                 }
 
+                is NowPlayingBottomSheetUIEvent.ToggleBlockSong -> {
+                    val videoId = songUIState.videoId
+                    if (videoId.isBlank()) return@launch
+                    val blocklist = dataStoreManager.getPlaybackBlocklist()
+                    if (blocklist.isSongIdBlocked(videoId)) {
+                        dataStoreManager.unblockItem(BlockedKind.SONG, videoId)
+                        makeToast("Allowed \"${songUIState.title}\" again")
+                    } else {
+                        val artistSummary = songUIState.listArtists.map { it.name }.connectArtists()
+                        dataStoreManager.blockSong(
+                            videoId = videoId,
+                            title = songUIState.title,
+                            artistSummary = artistSummary,
+                        )
+                        makeToast("Won't play \"${songUIState.title}\"")
+                        if (mediaPlayerHandler.nowPlaying.value?.mediaId == videoId &&
+                            mediaPlayerHandler.controlState.value.isNextAvailable
+                        ) {
+                            mediaPlayerHandler.onPlayerEvent(PlayerEvent.Next)
+                        }
+                    }
+                }
+
+                is NowPlayingBottomSheetUIEvent.ToggleBlockArtist -> {
+                    val name = ev.artistName.trim()
+                    if (name.isBlank() && ev.artistId.isNullOrBlank()) return@launch
+                    val blocklist = dataStoreManager.getPlaybackBlocklist()
+                    if (blocklist.isArtistBlocked(ev.artistId, name)) {
+                        val matching =
+                            blocklist.items.firstOrNull {
+                                it.kind == BlockedKind.ARTIST &&
+                                    (
+                                        (!ev.artistId.isNullOrBlank() && it.id == ev.artistId.trim()) ||
+                                            it.name.equals(name, ignoreCase = true)
+                                    )
+                            }
+                        val unblockId = matching?.id ?: PlaybackBlocklistCodec.normalizeArtistId(ev.artistId, name)
+                        dataStoreManager.unblockItem(BlockedKind.ARTIST, unblockId)
+                        makeToast("Allowed $name again")
+                    } else {
+                        dataStoreManager.blockArtist(ev.artistId, name)
+                        makeToast("Won't play $name")
+                        val updatedBlocklist = dataStoreManager.getPlaybackBlocklist()
+                        val currentSong = mediaPlayerHandler.nowPlayingState.value.songEntity
+                        if (currentSong != null &&
+                            updatedBlocklist.isSongBlocked(currentSong) &&
+                            mediaPlayerHandler.controlState.value.isNextAvailable
+                        ) {
+                            mediaPlayerHandler.onPlayerEvent(PlayerEvent.Next)
+                        }
+                    }
+                }
+
                 is NowPlayingBottomSheetUIEvent.StartRadio -> {
                     songRepository
                         .getRadioFromEndpoint(
@@ -478,4 +539,11 @@ sealed class NowPlayingBottomSheetUIEvent {
     ) : NowPlayingBottomSheetUIEvent()
 
     data object Share : NowPlayingBottomSheetUIEvent()
+
+    data object ToggleBlockSong : NowPlayingBottomSheetUIEvent()
+
+    data class ToggleBlockArtist(
+        val artistId: String?,
+        val artistName: String,
+    ) : NowPlayingBottomSheetUIEvent()
 }

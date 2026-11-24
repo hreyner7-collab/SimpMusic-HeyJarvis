@@ -343,6 +343,7 @@ actual fun LiquidGlassAppBottomNavigationBar(
                     .layoutId("miniPlayer"),
                 backdrop = backdrop,
                 isVisible = isShowMiniPlayer,
+                navController = navController,
                 onClick = {
                     onOpenNowPlaying()
                 },

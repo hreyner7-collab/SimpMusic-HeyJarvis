@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -31,6 +34,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +59,7 @@ import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.icon.Sync
 import com.maxrave.simpmusic.ui.theme.typo
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SpotifyLibraryTab(
     connected: Boolean,
@@ -59,6 +67,7 @@ fun SpotifyLibraryTab(
     importProgress: SpotifyImportProgress?,
     contentPadding: PaddingValues,
     onConnectSpotify: () -> Unit,
+    onOpenOwnAppDialog: () -> Unit = {},
     onOpenLinkImport: () -> Unit,
     onRefresh: () -> Unit,
     onSyncAll: () -> Unit,
@@ -92,15 +101,19 @@ fun SpotifyLibraryTab(
                     )
                     Text(
                         text =
-                            "Connect your Spotify account to view and sync all of your playlists, Liked Songs, and saved albums into SimpMusic playlists — or import any public Spotify / YouTube link right now without signing in.",
+                            "Connect your own Spotify app (recommended — avoids shared rate limits) or sign in via Spotify Web, or import any public Spotify / YouTube link right now without signing in.",
                         style = typo().bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Button(onClick = onConnectSpotify) {
-                            Text("Connect Spotify")
+                        Button(onClick = onOpenOwnAppDialog) {
+                            Text("Use Own Spotify App")
+                        }
+                        FilledTonalButton(onClick = onConnectSpotify) {
+                            Text("Connect Spotify Web")
                         }
                         OutlinedButton(onClick = onOpenLinkImport) {
                             Icon(
@@ -119,8 +132,15 @@ fun SpotifyLibraryTab(
     }
 
     val items = libraryState.data.orEmpty()
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 20 }
+            .distinctUntilChanged()
+            .collect { onTop -> onScrolling(onTop) }
+    }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding =
             PaddingValues(
@@ -131,7 +151,7 @@ fun SpotifyLibraryTab(
             ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item(key = "spotify_header_actions") {
+        item(key = "spotify_header_actions", contentType = "spotify_header") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -161,6 +181,12 @@ fun SpotifyLibraryTab(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Import Link")
                 }
+                TextButton(
+                    onClick = onOpenOwnAppDialog,
+                    enabled = !isBusy,
+                ) {
+                    Text("Own App")
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = onRefresh, enabled = !isBusy) {
                     Icon(
@@ -172,7 +198,7 @@ fun SpotifyLibraryTab(
         }
 
         if (importProgress != null) {
-            item(key = "spotify_import_progress") {
+            item(key = "spotify_import_progress", contentType = "spotify_progress") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors =
@@ -205,7 +231,14 @@ fun SpotifyLibraryTab(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            if (importProgress.isFinished) {
+                            if (!importProgress.isFinished && importProgress.total > 0) {
+                                val pct = ((importProgress.processed.toFloat() / importProgress.total.toFloat()) * 100f).roundToInt().coerceIn(0, 100)
+                                Text(
+                                    text = "$pct% · ${importProgress.matched} matched",
+                                    style = typo().labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            } else if (importProgress.isFinished) {
                                 IconButton(
                                     onClick = onDismissProgress,
                                     modifier = Modifier.size(28.dp),
@@ -273,7 +306,7 @@ fun SpotifyLibraryTab(
             }
 
             libraryState is LocalResource.Error && items.isEmpty() -> {
-                item(key = "spotify_error") {
+                item(key = "spotify_error", contentType = "spotify_error") {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp, horizontal = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -285,14 +318,17 @@ fun SpotifyLibraryTab(
                             color = MaterialTheme.colorScheme.error,
                             textAlign = TextAlign.Center,
                         )
-                        Row(
+                        FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            Button(onClick = onOpenOwnAppDialog) {
+                                Text("Use Own Spotify App")
+                            }
                             OutlinedButton(onClick = onRefresh) {
                                 Text("Retry")
                             }
-                            Button(onClick = onConnectSpotify) {
+                            FilledTonalButton(onClick = onConnectSpotify) {
                                 Text("Reconnect Spotify")
                             }
                             OutlinedButton(onClick = onOpenLinkImport) {
@@ -304,7 +340,7 @@ fun SpotifyLibraryTab(
             }
 
             items.isEmpty() -> {
-                item(key = "spotify_empty") {
+                item(key = "spotify_empty", contentType = "spotify_empty") {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
                         contentAlignment = Alignment.Center,
@@ -319,8 +355,11 @@ fun SpotifyLibraryTab(
             }
 
             else -> {
-                items(items, key = { "${it.kind.name}:${it.id}" }) { item ->
-                    onScrolling(false)
+                items(
+                    items = items,
+                    key = { "${it.kind.name}:${it.id}" },
+                    contentType = { "spotify_row" },
+                ) { item ->
                     SpotifyLibraryRow(
                         item = item,
                         isBusy = isBusy,

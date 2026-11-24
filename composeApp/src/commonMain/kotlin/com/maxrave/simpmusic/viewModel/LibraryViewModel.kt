@@ -81,6 +81,14 @@ class LibraryViewModel(
 
     // A chip was picked (a tap, or a deep link) before the one saved last time finished loading.
     private var screenChosen = false
+    private var recentlyAddedJob: Job? = null
+    private var youTubePlaylistJob: Job? = null
+    private var youTubeMixForYouJob: Job? = null
+    private var favoritePlaylistJob: Job? = null
+    private var favoritePodcastsJob: Job? = null
+    private var canvasSongJob: Job? = null
+    private var localPlaylistJob: Job? = null
+    private var downloadedPlaylistJob: Job? = null
     private val _recentlyAdded: MutableStateFlow<LocalResource<List<RecentlyType>>> =
         MutableStateFlow(LocalResource.Loading())
     val recentlyAdded: StateFlow<LocalResource<List<RecentlyType>>> get() = _recentlyAdded.asStateFlow()
@@ -198,129 +206,146 @@ class LibraryViewModel(
     }
 
     fun getRecentlyAdded() {
-        viewModelScope.launch {
-            commonRepository.getAllRecentData().collectLatest { data ->
-                val temp: MutableList<RecentlyType> = mutableListOf()
-                temp.addAll(data)
-                temp
-                    .find {
-                        it is PlaylistEntity && it.id.isRadioPlaylistId()
-                    }.let {
-                        temp.remove(it)
+        recentlyAddedJob?.cancel()
+        recentlyAddedJob =
+            viewModelScope.launch {
+                val isYtLoggedIn = dataStoreManager.loggedIn.first() == DataStoreManager.TRUE
+                val likedMusicTitle = getString(Res.string.youtube_liked_music)
+                commonRepository.getAllRecentData().collectLatest { data ->
+                    val temp: MutableList<RecentlyType> = mutableListOf()
+                    temp.addAll(data)
+                    temp
+                        .find {
+                            it is PlaylistEntity && it.id.isRadioPlaylistId()
+                        }.let {
+                            temp.remove(it)
+                        }
+                    temp.removeAll { it is SongEntity && it.inLibrary == Config.REMOVED_SONG_DATE_TIME }
+                    if (isYtLoggedIn) {
+                        temp.removeAll { it is PlaylistEntity && it.id == "LM" }
+                        temp.add(
+                            PlaylistEntity(
+                                title = likedMusicTitle,
+                                author = "YouTube Music",
+                                id = "LM",
+                                description = "PIN",
+                                thumbnails = "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked-songs-delhi-1200.png",
+                            ),
+                        )
                     }
-                temp.removeAll { it is SongEntity && it.inLibrary == Config.REMOVED_SONG_DATE_TIME }
-                if (dataStoreManager.loggedIn.first() == DataStoreManager.TRUE) {
-                    temp.removeAll { it is PlaylistEntity && it.id == "LM" }
-                    temp.add(
-                        PlaylistEntity(
-                            title = getString(Res.string.youtube_liked_music),
-                            author = "YouTube Music",
-                            id = "LM",
-                            description = "PIN",
-                            thumbnails = "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked-songs-delhi-1200.png",
-                        ),
-                    )
+                    temp.reverse()
+                    _recentlyAdded.value = LocalResource.Success(temp.toImmutableList())
                 }
-                temp.reverse()
-                _recentlyAdded.value = LocalResource.Success(temp.toImmutableList())
             }
-        }
     }
 
     fun getYouTubePlaylist() {
+        youTubePlaylistJob?.cancel()
         _youTubePlaylist.value = LocalResource.Loading()
-        viewModelScope.launch {
-            playlistRepository.getLibraryPlaylist().collect { data ->
-                _youTubePlaylist.value = LocalResource.Success(data ?: emptyList())
+        youTubePlaylistJob =
+            viewModelScope.launch {
+                playlistRepository.getLibraryPlaylist().collectLatest { data ->
+                    _youTubePlaylist.value = LocalResource.Success(data ?: emptyList())
+                }
             }
-        }
     }
 
     fun getYouTubeMixedForYou() {
+        youTubeMixForYouJob?.cancel()
         _youTubeMixForYou.value = LocalResource.Loading()
-        viewModelScope.launch {
-            playlistRepository.getMixedForYou().collect { data ->
-                _youTubeMixForYou.value = LocalResource.Success(data ?: emptyList())
+        youTubeMixForYouJob =
+            viewModelScope.launch {
+                playlistRepository.getMixedForYou().collectLatest { data ->
+                    _youTubeMixForYou.value = LocalResource.Success(data ?: emptyList())
+                }
             }
-        }
     }
 
     fun getYouTubeLoggedIn(): Boolean = runBlocking { dataStoreManager.loggedIn.first() } == DataStoreManager.TRUE
 
     fun getPlaylistFavorite() {
-        viewModelScope.launch {
-            albumRepository.getLikedAlbums().collect { album ->
-                val temp: MutableList<PlaylistType> = mutableListOf()
-                temp.addAll(album)
-                playlistRepository.getLikedPlaylists().collect { playlist ->
-                    temp.addAll(playlist)
-                    val sortedList =
-                        temp.sortedWith<PlaylistType>(
-                            Comparator { p0, p1 ->
-                                val timeP0: LocalDateTime? =
-                                    when (p0) {
-                                        is AlbumEntity -> p0.favoriteAt ?: p0.inLibrary
-                                        is PlaylistEntity -> p0.favoriteAt ?: p0.inLibrary
-                                        else -> null
+        favoritePlaylistJob?.cancel()
+        favoritePlaylistJob =
+            viewModelScope.launch {
+                albumRepository.getLikedAlbums().collectLatest { album ->
+                    val temp: MutableList<PlaylistType> = mutableListOf()
+                    temp.addAll(album)
+                    playlistRepository.getLikedPlaylists().collectLatest { playlist ->
+                        val merged = temp + playlist
+                        val sortedList =
+                            merged.sortedWith<PlaylistType>(
+                                Comparator { p0, p1 ->
+                                    val timeP0: LocalDateTime? =
+                                        when (p0) {
+                                            is AlbumEntity -> p0.favoriteAt ?: p0.inLibrary
+                                            is PlaylistEntity -> p0.favoriteAt ?: p0.inLibrary
+                                            else -> null
+                                        }
+                                    val timeP1: LocalDateTime? =
+                                        when (p1) {
+                                            is AlbumEntity -> p1.favoriteAt ?: p1.inLibrary
+                                            is PlaylistEntity -> p1.favoriteAt ?: p1.inLibrary
+                                            else -> null
+                                        }
+                                    if (timeP0 == null || timeP1 == null) {
+                                        return@Comparator if (timeP0 == null && timeP1 == null) {
+                                            0
+                                        } else if (timeP0 == null) {
+                                            -1
+                                        } else {
+                                            1
+                                        }
                                     }
-                                val timeP1: LocalDateTime? =
-                                    when (p1) {
-                                        is AlbumEntity -> p1.favoriteAt ?: p1.inLibrary
-                                        is PlaylistEntity -> p1.favoriteAt ?: p1.inLibrary
-                                        else -> null
-                                    }
-                                if (timeP0 == null || timeP1 == null) {
-                                    return@Comparator if (timeP0 == null && timeP1 == null) {
-                                        0
-                                    } else if (timeP0 == null) {
-                                        -1
-                                    } else {
-                                        1
-                                    }
-                                }
-                                timeP0.compareTo(timeP1) // Sort in descending order by inLibrary time
-                            },
-                        )
-                    _favoritePlaylist.value = LocalResource.Success(sortedList)
+                                    timeP0.compareTo(timeP1) // Sort in descending order by inLibrary time
+                                },
+                            )
+                        _favoritePlaylist.value = LocalResource.Success(sortedList)
+                    }
                 }
             }
-        }
     }
 
     fun getFavoritePodcasts() {
-        viewModelScope.launch {
-            podcastRepository.getFavoritePodcasts().collectLatest { podcasts ->
-                val sortedList = podcasts.sortedByDescending { it.favoriteTime }
-                _favoritePodcasts.value = LocalResource.Success(sortedList)
+        favoritePodcastsJob?.cancel()
+        favoritePodcastsJob =
+            viewModelScope.launch {
+                podcastRepository.getFavoritePodcasts().collectLatest { podcasts ->
+                    val sortedList = podcasts.sortedByDescending { it.favoriteTime }
+                    _favoritePodcasts.value = LocalResource.Success(sortedList)
+                }
             }
-        }
     }
 
     fun getCanvasSong() {
+        canvasSongJob?.cancel()
         _listCanvasSong.value = LocalResource.Loading()
-        viewModelScope.launch {
-            songRepository.getCanvasSong(max = 5).collect { data ->
-                _listCanvasSong.value = LocalResource.Success(data)
+        canvasSongJob =
+            viewModelScope.launch {
+                songRepository.getCanvasSong(max = 5).collectLatest { data ->
+                    _listCanvasSong.value = LocalResource.Success(data)
+                }
             }
-        }
     }
 
     fun getLocalPlaylist() {
+        localPlaylistJob?.cancel()
         _yourLocalPlaylist.value = LocalResource.Loading()
-        viewModelScope.launch {
-            localPlaylistRepository.getAllLocalPlaylists().collect { values ->
-//                    _listLocalPlaylist.postValue(values)
-                _yourLocalPlaylist.value = LocalResource.Success(values.reversed())
+        localPlaylistJob =
+            viewModelScope.launch {
+                localPlaylistRepository.getAllLocalPlaylists().collectLatest { values ->
+                    _yourLocalPlaylist.value = LocalResource.Success(values.reversed())
+                }
             }
-        }
     }
 
     fun getDownloadedPlaylist() {
-        viewModelScope.launch {
-            playlistRepository.getAllDownloadedPlaylist().collect { values ->
-                _downloadedPlaylist.value = LocalResource.Success(values)
+        downloadedPlaylistJob?.cancel()
+        downloadedPlaylistJob =
+            viewModelScope.launch {
+                playlistRepository.getAllDownloadedPlaylist().collectLatest { values ->
+                    _downloadedPlaylist.value = LocalResource.Success(values)
+                }
             }
-        }
     }
 
     /**

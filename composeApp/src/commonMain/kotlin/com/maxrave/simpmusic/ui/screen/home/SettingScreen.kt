@@ -1905,6 +1905,7 @@ fun SettingScreen(
                 }
                 StereoWidenerSettings(enabledByCast = !castState.isRemote)
                 AiDjSettings()
+                MusicOnlyAndBlocklistSettings()
                 SettingItem(
                     title = stringResource(Res.string.save_playback_state),
                     subtitle = stringResource(Res.string.save_shuffle_and_repeat_mode),

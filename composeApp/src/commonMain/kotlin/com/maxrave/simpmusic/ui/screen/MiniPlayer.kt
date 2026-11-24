@@ -517,7 +517,27 @@ fun MiniPlayer(
                     // Flat: 40dp in the 56dp pill leaves an even 8dp ring.
                     val controlSize = if (isFlat) 40.dp else 48.dp
                     val playColor = if (isFlat) MaterialTheme.colorScheme.onPrimary else textColor
-                    Spacer(modifier = Modifier.width(if (isFlat) 8.dp else 15.dp))
+                    val djActive by com.maxrave.simpmusic.dj.DjSessionState.active
+                        .collectAsState()
+                    if (navController != null && djActive) {
+                        val djSpeaking by com.maxrave.simpmusic.dj.DjSessionState.speaking
+                            .collectAsState()
+                        Spacer(modifier = Modifier.width(if (isFlat) 4.dp else 8.dp))
+                        IconButton(
+                            onClick = {
+                                navController.navigate(
+                                    com.maxrave.simpmusic.ui.navigation.destination.dj.DjDestination,
+                                ) { launchSingleTop = true }
+                            },
+                            modifier = Modifier.size(controlSize),
+                        ) {
+                            com.maxrave.simpmusic.ui.component.DjRing(
+                                modifier = Modifier.size(if (isFlat) 22.dp else 24.dp),
+                                speaking = djSpeaking,
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(if (isFlat) 6.dp else 12.dp))
                     // background(shape), not clip: the heart's like-burst draws outside its bounds.
                     Box(
                         modifier =

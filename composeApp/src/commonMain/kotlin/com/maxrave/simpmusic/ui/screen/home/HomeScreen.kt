@@ -112,9 +112,11 @@ import com.maxrave.domain.data.model.home.chart.Chart
 import com.maxrave.domain.data.model.intent.GenericIntent
 import com.maxrave.domain.data.model.mood.Mood
 import com.maxrave.domain.extension.now
+import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.manager.DataStoreManager.Values.TRUE
 import com.maxrave.domain.mediaservice.handler.PlaylistType
 import com.maxrave.domain.mediaservice.handler.QueueData
+import com.maxrave.domain.utils.musicOnlyModeFlow
 import com.maxrave.domain.utils.toSongEntity
 import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.Logger
@@ -287,16 +289,26 @@ fun HomeScreen(
     // Any shelf YouTube heads with the listener's own avatar over its title (Listen again is one of
     // several). Home's header already shows the avatar, so those shelves drop it and keep their name
     // and title. Matched on the name rather than on any shelf title, the way the old Welcome back row did.
+    val dataStoreManager: DataStoreManager = koinInject()
+    val musicOnlyFlow = remember(dataStoreManager) { dataStoreManager.musicOnlyModeFlow() }
+    val musicOnlyMode by musicOnlyFlow.collectAsStateWithLifecycle(initialValue = false)
     val homeShelves =
-        remember(homeData, accountInfo) {
+        remember(homeData, accountInfo, musicOnlyMode) {
             val accountName = accountInfo?.first
-            if (accountName.isNullOrBlank()) {
-                homeData
-            } else {
-                homeData.map {
-                    if (it.subtitle.equals(accountName, ignoreCase = true)) it.copy(thumbnail = null) else it
+            homeData
+                .filterNot { shelf ->
+                    musicOnlyMode &&
+                        (
+                            shelf.title.contains("podcast", ignoreCase = true) ||
+                                shelf.title.contains("episode", ignoreCase = true)
+                        )
+                }.map { shelf ->
+                    if (!accountName.isNullOrBlank() && shelf.subtitle.equals(accountName, ignoreCase = true)) {
+                        shelf.copy(thumbnail = null)
+                    } else {
+                        shelf
+                    }
                 }
-            }
         }
     val newRelease by viewModel.newRelease.collectAsStateWithLifecycle()
     val chart by viewModel.chart.collectAsStateWithLifecycle()
@@ -972,54 +984,56 @@ fun HomeScreen(
                                     }
                                 }
                             }
-                            item {
-                                Column(
-                                    Modifier
-                                        .padding(vertical = 10.dp)
-                                        .padding(horizontal = 15.dp),
-                                    verticalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    ChartTitle()
-                                    Spacer(modifier = Modifier.height(5.dp))
-                                    Crossfade(targetState = regionChart) {
-                                        if (it != null) {
-                                            DropdownButton(
-                                                items = CHART_SUPPORTED_COUNTRY.itemsData.toList(),
-                                                defaultSelected =
-                                                    CHART_SUPPORTED_COUNTRY.itemsData.getOrNull(
-                                                        CHART_SUPPORTED_COUNTRY.items.indexOf(it),
+                            if (!musicOnlyMode) {
+                                item(key = "home_charts", contentType = "charts") {
+                                    Column(
+                                        Modifier
+                                            .padding(vertical = 10.dp)
+                                            .padding(horizontal = 15.dp),
+                                        verticalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        ChartTitle()
+                                        Spacer(modifier = Modifier.height(5.dp))
+                                        Crossfade(targetState = regionChart) {
+                                            if (it != null) {
+                                                DropdownButton(
+                                                    items = CHART_SUPPORTED_COUNTRY.itemsData.toList(),
+                                                    defaultSelected =
+                                                        CHART_SUPPORTED_COUNTRY.itemsData.getOrNull(
+                                                            CHART_SUPPORTED_COUNTRY.items.indexOf(it),
+                                                        )
+                                                            ?: CHART_SUPPORTED_COUNTRY.itemsData[1],
+                                                ) {
+                                                    viewModel.exploreChart(
+                                                        CHART_SUPPORTED_COUNTRY.items[
+                                                            CHART_SUPPORTED_COUNTRY.itemsData.indexOf(
+                                                                it,
+                                                            ),
+                                                        ],
                                                     )
-                                                        ?: CHART_SUPPORTED_COUNTRY.itemsData[1],
-                                            ) {
-                                                viewModel.exploreChart(
-                                                    CHART_SUPPORTED_COUNTRY.items[
-                                                        CHART_SUPPORTED_COUNTRY.itemsData.indexOf(
-                                                            it,
-                                                        ),
-                                                    ],
-                                                )
+                                                }
                                             }
                                         }
-                                    }
-                                    Spacer(modifier = Modifier.height(5.dp))
-                                    Crossfade(
-                                        targetState = chartLoading,
-                                        label = "Chart",
-                                    ) { loading ->
-                                        if (!loading) {
-                                            chart?.let {
-                                                ChartData(
-                                                    chart = it,
-                                                    navController = navController,
+                                        Spacer(modifier = Modifier.height(5.dp))
+                                        Crossfade(
+                                            targetState = chartLoading,
+                                            label = "Chart",
+                                        ) { loading ->
+                                            if (!loading) {
+                                                chart?.let {
+                                                    ChartData(
+                                                        chart = it,
+                                                        navController = navController,
+                                                    )
+                                                }
+                                            } else {
+                                                CenterLoadingBox(
+                                                    modifier =
+                                                        Modifier
+                                                            .fillMaxWidth()
+                                                            .height(400.dp),
                                                 )
                                             }
-                                        } else {
-                                            CenterLoadingBox(
-                                                modifier =
-                                                    Modifier
-                                                        .fillMaxWidth()
-                                                        .height(400.dp),
-                                            )
                                         }
                                     }
                                 }
@@ -1594,10 +1608,14 @@ fun ChartData(
                 state = lazyListState,
                 flingBehavior = snapperFlingBehavior,
             ) {
-                items(item.playlists.size, key = { index ->
-                    val data = item.playlists[index]
-                    data.id + data.title + index
-                }) {
+                items(
+                    count = item.playlists.size,
+                    key = { index ->
+                        val data = item.playlists[index]
+                        data.id + data.title + index
+                    },
+                    contentType = { "chart_playlist" },
+                ) {
                     HomeItemContentPlaylist(
                         onClick = {
                             navController.navigate(

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -165,6 +166,7 @@ internal fun AppleMusicQueueView(
         AppleMusicContinuePlayingHeader(
             state = state,
             dataStoreManager = dataStoreManager,
+            musicServiceHandler = musicServiceHandler,
             typography = typography,
             activePillContainer = activePillContainer,
             activePillContent = activePillContent,
@@ -394,6 +396,7 @@ private fun AppleMusicQueuePill(
 private fun AppleMusicContinuePlayingHeader(
     state: NowPlayingContentState,
     dataStoreManager: DataStoreManager,
+    musicServiceHandler: MediaPlayerHandler,
     typography: AppleMusicTypography,
     activePillContainer: Color,
     activePillContent: Color,
@@ -425,6 +428,26 @@ private fun AppleMusicContinuePlayingHeader(
                         style = typography.queueSectionHeader,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (state.artworkQueue.size - (state.currentOrderIndex + 1) >= 2) {
+                Box(
+                    modifier =
+                        Modifier
+                            .padding(end = 10.dp)
+                            .appleMusicPressInflate(pressedScale = 1.08f)
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(AppleMusicPillInactive)
+                            .clickable { musicServiceHandler.reshuffleRemainingQueue() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = SimpIcons.Shuffle,
+                        contentDescription = "Reshuffle queue",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp),
                     )
                 }
             }

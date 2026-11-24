@@ -10,6 +10,7 @@ import com.maxrave.domain.repository.DjRepository
 import com.maxrave.domain.repository.SearchRepository
 import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.repository.StreamRepository
+import com.maxrave.domain.utils.getPlaybackBlocklist
 import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.Logger
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +36,8 @@ class DjSessionStarter(
     suspend fun start(): Result<Int> =
         runCatching {
             DjSessionState.setStatus("Putting a mix together...")
-            val picks = builder.build()
+            val blocklist = dataStoreManager.getPlaybackBlocklist()
+            val picks = builder.build().filterNot { blocklist.isTrackBlocked(it.track) }
             if (picks.size < MIN_SESSION) {
                 error("The DJ needs a few more songs to work with. Play and like some music first.")
             }
@@ -46,6 +48,7 @@ class DjSessionStarter(
     suspend fun request(text: String): Result<Int> =
         runCatching {
             DjSessionState.setStatus("Finding songs for \"$text\"...")
+            val blocklist = dataStoreManager.getPlaybackBlocklist()
             val taste =
                 songRepository
                     .getMostPlayedSongs()
@@ -57,8 +60,8 @@ class DjSessionStarter(
             val queries = djRepository.suggest(text, taste).getOrThrow()
             val tracks = mutableListOf<Track>()
             for (query in queries) {
-                val found = runCatching { searchRepository.getSearchDataSong(query).first().data?.firstOrNull() }.getOrNull()
-                val track = found?.toTrack()
+                val results = runCatching { searchRepository.getSearchDataSong(query).first().data.orEmpty() }.getOrDefault(emptyList())
+                val track = results.map { it.toTrack() }.firstOrNull { !blocklist.isTrackBlocked(it) }
                 if (track != null && tracks.none { it.videoId == track.videoId }) tracks += track
                 if (tracks.size >= MAX_REQUEST) break
             }

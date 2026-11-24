@@ -37,9 +37,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -58,7 +60,9 @@ import coil3.request.crossfade
 import com.maxrave.common.LibraryChipType
 import com.maxrave.domain.data.entities.SongEntity
 import com.maxrave.domain.data.model.taste.TasteProfile
+import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.utils.LocalResource
+import com.maxrave.domain.utils.musicOnlyModeFlow
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
@@ -79,7 +83,12 @@ import com.maxrave.simpmusic.ui.component.LibraryItem
 import com.maxrave.simpmusic.ui.component.LibraryItemState
 import com.maxrave.simpmusic.ui.component.LibraryItemType
 import com.maxrave.simpmusic.ui.component.LibraryTilingBox
+import com.maxrave.simpmusic.ui.component.PinnedLibraryKind
+import com.maxrave.simpmusic.ui.component.PinnedLibrarySection
 import com.maxrave.simpmusic.ui.component.SpotifyLibraryTab
+import com.maxrave.simpmusic.ui.component.SpotifyOwnAppDialog
+import com.maxrave.simpmusic.ui.component.pinnedLibraryItemsFlow
+import com.maxrave.simpmusic.ui.component.togglePinLibraryItem
 import com.maxrave.simpmusic.ui.component.taste.ShareTasteSheet
 import com.maxrave.simpmusic.ui.component.taste.TasteCard
 import com.maxrave.simpmusic.ui.component.ListenTogetherIconButton
@@ -91,8 +100,10 @@ import com.maxrave.simpmusic.ui.icon.Groups
 import com.maxrave.simpmusic.ui.icon.PeopleAlt
 import com.maxrave.simpmusic.ui.icon.PlaylistAdd
 import com.maxrave.simpmusic.ui.icon.SimpIcons
+import com.maxrave.simpmusic.ui.navigation.destination.dj.DjDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.ListenTogetherDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.SettingsDestination
+import com.maxrave.simpmusic.ui.navigation.destination.library.LibraryDynamicPlaylistDestination
 import com.maxrave.simpmusic.ui.navigation.destination.list.LocalPlaylistDestination
 import com.maxrave.simpmusic.ui.navigation.destination.login.SpotifyLoginDestination
 import com.maxrave.simpmusic.ui.theme.LocalLiquidGlassEnabled
@@ -157,6 +168,13 @@ fun LibraryScreen(
     val spotifyLibrary by viewModel.spotifyLibrary.collectAsStateWithLifecycle()
     val spotifyImportProgress by viewModel.spotifyImportProgress.collectAsStateWithLifecycle()
     var showImportLinkDialog by rememberSaveable { mutableStateOf(false) }
+    var showSpotifyOwnAppDialog by rememberSaveable { mutableStateOf(false) }
+    val dataStoreManager: DataStoreManager = koinInject()
+    val libScope = rememberCoroutineScope()
+    val pinnedItemsFlow = remember(dataStoreManager) { dataStoreManager.pinnedLibraryItemsFlow() }
+    val pinnedItems by pinnedItemsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val musicOnlyFlow = remember(dataStoreManager) { dataStoreManager.musicOnlyModeFlow() }
+    val musicOnlyMode by musicOnlyFlow.collectAsStateWithLifecycle(initialValue = false)
     val recentlyAdded by viewModel.recentlyAdded.collectAsStateWithLifecycle()
     val libraryOverview by viewModel.libraryOverview.collectAsStateWithLifecycle()
     val cachedPreview by viewModel.cachedPreview.collectAsStateWithLifecycle()
@@ -199,7 +217,11 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(currentFilter) {
+    LaunchedEffect(currentFilter, musicOnlyMode) {
+        if (musicOnlyMode && (currentFilter == LibraryChipType.FAVORITE_PODCAST || currentFilter == LibraryChipType.CHART)) {
+            viewModel.setCurrentScreen(LibraryChipType.YOUR_LIBRARY)
+            return@LaunchedEffect
+        }
         when (currentFilter) {
             LibraryChipType.YOUTUBE_MUSIC_PLAYLIST -> {
                 if (youTubePlaylist.data.isNullOrEmpty()) {
@@ -217,6 +239,9 @@ fun LibraryScreen(
             LibraryChipType.YOUR_LIBRARY -> {
                 viewModel.getCanvasSong()
                 viewModel.getRecentlyAdded()
+                if (yourLocalPlaylist.data == null) {
+                    viewModel.getLocalPlaylist()
+                }
             }
 
             LibraryChipType.LOCAL_PLAYLIST -> {
@@ -297,7 +322,7 @@ fun LibraryScreen(
                             ),
                         state = state,
                     ) {
-                        item(key = "dj") {
+                        item(key = "dj", contentType = "dj_card") {
                             com.maxrave.simpmusic.ui.component.DjCard(
                                 Modifier.padding(start = 10.dp, end = 10.dp, bottom = 8.dp),
                                 onClick = {
@@ -306,14 +331,42 @@ fun LibraryScreen(
                             )
                         }
 
-                        item {
+                        item(key = "pinned_section", contentType = "pinned_section") {
+                            PinnedLibrarySection(
+                                pinnedItems = pinnedItems,
+                                localPlaylists = yourLocalPlaylist.data.orEmpty(),
+                                onOpenItem = { pinned ->
+                                    when (pinned.kind) {
+                                        PinnedLibraryKind.AI_DJ -> navController.navigate(DjDestination)
+                                        PinnedLibraryKind.LIKED_SONGS ->
+                                            navController.navigate(
+                                                LibraryDynamicPlaylistDestination(LibraryDynamicPlaylistType.Favorite.toStringParams()),
+                                            )
+                                        PinnedLibraryKind.DOWNLOADED ->
+                                            navController.navigate(
+                                                LibraryDynamicPlaylistDestination(LibraryDynamicPlaylistType.Downloaded.toStringParams()),
+                                            )
+                                        PinnedLibraryKind.SPOTIFY_TAB -> viewModel.setCurrentScreen(LibraryChipType.SPOTIFY_PLAYLIST)
+                                        PinnedLibraryKind.LOCAL_PLAYLIST ->
+                                            pinned.id.toLongOrNull()?.let { id ->
+                                                navController.navigate(LocalPlaylistDestination(id))
+                                            }
+                                    }
+                                },
+                                onTogglePin = { item ->
+                                    libScope.launch { dataStoreManager.togglePinLibraryItem(item) }
+                                },
+                            )
+                        }
+
+                        item(key = "tiling_box", contentType = "library_tiling") {
                             LibraryTilingBox(navController, libraryOverview, cachedPreview)
                         }
 
                         // The reading is drawn from playback_event, so the card follows the same
                         // setting the Wrapped chip and the Analytics tab do.
                         if (localTrackingEnabled) {
-                            item(key = "taste") {
+                            item(key = "taste", contentType = "taste_card") {
                                 val tasteState by tasteViewModel.uiState.collectAsStateWithLifecycle()
                                 if (tasteState != TasteUiState.Hidden) {
                                     TasteCard(
@@ -328,7 +381,7 @@ fun LibraryScreen(
                         }
 
                         if (!listCanvasSong.data.isNullOrEmpty()) {
-                            item {
+                            item(key = "canvas_songs", contentType = "canvas_shelf") {
                                 LibraryItem(
                                     state =
                                         LibraryItemState(
@@ -341,7 +394,7 @@ fun LibraryScreen(
                             }
                         }
 
-                        item {
+                        item(key = "recently_added", contentType = "recently_added_shelf") {
                             LibraryItem(
                                 state =
                                     LibraryItemState(
@@ -356,7 +409,7 @@ fun LibraryScreen(
                                 selectionState = selectionState,
                             )
                         }
-                        item {
+                        item(key = "end_of_page", contentType = "end_of_page") {
                             EndOfPage()
                         }
                     }
@@ -464,6 +517,7 @@ fun LibraryScreen(
                     importProgress = spotifyImportProgress,
                     contentPadding = innerPadding.copy(top = topAppBarHeight),
                     onConnectSpotify = { navController.navigate(SpotifyLoginDestination) },
+                    onOpenOwnAppDialog = { showSpotifyOwnAppDialog = true },
                     onOpenLinkImport = { showImportLinkDialog = true },
                     onRefresh = { viewModel.loadSpotifyLibrary(forceRefresh = true) },
                     onSyncAll = viewModel::syncAllSpotifyLibrary,
@@ -582,6 +636,9 @@ fun LibraryScreen(
                 if (type == LibraryChipType.WRAPPED && !localTrackingEnabled) {
                     return@forEach
                 }
+                if (musicOnlyMode && (type == LibraryChipType.FAVORITE_PODCAST || type == LibraryChipType.CHART)) {
+                    return@forEach
+                }
                 Chip(
                     isAnimated = false,
                     isSelected = type == currentFilter,
@@ -653,6 +710,16 @@ fun LibraryScreen(
                 },
                 onOpenPlaylist = { id ->
                     navController.navigate(LocalPlaylistDestination(id))
+                },
+            )
+        }
+        if (showSpotifyOwnAppDialog) {
+            SpotifyOwnAppDialog(
+                onDismiss = {
+                    showSpotifyOwnAppDialog = false
+                    if (spotifyConnected) {
+                        viewModel.loadSpotifyLibrary(forceRefresh = true)
+                    }
                 },
             )
         }
