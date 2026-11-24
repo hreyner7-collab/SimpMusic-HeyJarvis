@@ -2464,7 +2464,7 @@ fun SettingScreen(
                                 confirmLabel = runBlocking { getString(Res.string.log_out_from_spotify) },
                             ) { viewModel.setSpotifyLogIn(false) }
                         } else {
-                            navController.navigate(SpotifyLoginDestination)
+                            showSpotifyOwnApp = true
                         }
                     },
                 )
