@@ -2468,11 +2468,6 @@ fun SettingScreen(
                         }
                     },
                 )
-                SettingItem(
-                    title = "Use your own Spotify app",
-                    subtitle = "Fixes the rate-limit error when syncing your Spotify library",
-                    onClick = { showSpotifyOwnApp = true },
-                )
                 if (showSpotifyOwnApp) {
                     SpotifyOwnAppDialog { showSpotifyOwnApp = false }
                 }
