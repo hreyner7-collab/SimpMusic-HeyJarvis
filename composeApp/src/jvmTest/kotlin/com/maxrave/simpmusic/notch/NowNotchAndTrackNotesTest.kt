@@ -79,4 +79,55 @@ class NowNotchAndTrackNotesTest {
             ),
         )
     }
+
+    @Test
+    fun `resolveSyncedLyricLine strips rich-sync tags and supports zero-start null-syncType and long tails`() {
+        val richLines =
+            listOf(
+                Line(startTimeMs = "0", endTimeMs = "5000", words = "<00:00.00>Intro <00:02.10>line"),
+                Line(startTimeMs = "5000", endTimeMs = "12000", words = "<00:05.00>Second <00:06.50>verse"),
+            )
+        assertEquals("Hello world", cleanNotchLyricText("<00:10.00>Hello <00:10.50>world"))
+        assertEquals(
+            "Intro line",
+            NowNotchStateHolder.resolveSyncedLyricLine(
+                lines = richLines,
+                syncType = null,
+                positionMs = 0L,
+                offsetMs = 0,
+            ),
+        )
+        assertEquals(
+            "Second verse",
+            NowNotchStateHolder.resolveSyncedLyricLine(
+                lines = richLines,
+                syncType = "RICH_SYNCED",
+                positionMs = 120_000L,
+                offsetMs = 0,
+            ),
+        )
+        assertEquals(
+            "Second verse",
+            NowNotchStateHolder.resolveNextSyncedLyricLine(
+                lines = richLines,
+                syncType = "RICH_SYNCED",
+                positionMs = 0L,
+                offsetMs = 0,
+            ),
+        )
+
+        val allZeroUnsynced =
+            listOf(
+                Line(startTimeMs = "0", endTimeMs = "0", words = "Row 1"),
+                Line(startTimeMs = "0", endTimeMs = "0", words = "Row 2"),
+            )
+        assertNull(
+            NowNotchStateHolder.resolveSyncedLyricLine(
+                lines = allZeroUnsynced,
+                syncType = null,
+                positionMs = 10_000L,
+                offsetMs = 0,
+            ),
+        )
+    }
 }

@@ -14,6 +14,10 @@ actual object PlatformNowNotchBridge {
 
     actual fun requestOverlayPermission() {}
 
+    actual fun canPostPromotedNotifications(): Boolean = true
+
+    actual fun openLiveNotificationsSettings() {}
+
     actual fun sync(state: NowNotchLiveState) {
         DesktopNowNotchManager.isVisible = state.settings.enabled
     }

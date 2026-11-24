@@ -19,6 +19,15 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+private val NOTCH_RICH_SYNC_TIMESTAMP_REGEX = Regex("""<\d{2}:\d{2}\.\d{2,3}>\s*""")
+private val NOTCH_WHITESPACE_REGEX = Regex("""\s+""")
+
+fun cleanNotchLyricText(raw: String): String =
+    raw
+        .replace(NOTCH_RICH_SYNC_TIMESTAMP_REGEX, " ")
+        .replace(NOTCH_WHITESPACE_REGEX, " ")
+        .trim()
+
 private const val NOW_NOTCH_SETTINGS_KEY = "now_notch_settings_json"
 const val NOOKI_VISUALIZER_BLUE_ARGB: Long = 0xFF52B8FFL
 const val NOOKI_FALLBACK_PRIMARY_ARGB: Long = 0xFF2B2E48L
@@ -66,6 +75,7 @@ data class NowNotchLiveState(
     val lyricsSyncType: String? = null,
     val lyricsOffsetMs: Int = 0,
     val currentLyricLine: String? = null,
+    val nextLyricLine: String? = null,
     val popupBanner: String? = null,
     val progressFraction: Float = 0f,
     val isLiked: Boolean = false,
@@ -91,23 +101,23 @@ object NowNotchStateHolder {
         positionMs: Long,
         offsetMs: Int,
     ): Int {
-        if (lines.isNullOrEmpty() || syncType == null || syncType == "UNSYNCED") return -1
+        if (lines.isNullOrEmpty() || syncType == "UNSYNCED") return -1
+        val timed =
+            lines.mapIndexedNotNull { idx, line ->
+                line.startTimeMs.toLongOrNull()?.let { idx to it }
+            }
+        if (timed.distinctBy { it.second }.size <= 1) return -1
         val nowMs = positionMs - offsetMs
-        if (nowMs <= 0L) return -1
-        val firstStart = lines.first().startTimeMs.toLongOrNull() ?: 0L
-        if (nowMs < firstStart) return -1
+        if (nowMs < 0L) return -1
+        val sorted = timed.sortedBy { it.second }
+        if (nowMs < sorted.first().second) return -1
 
         var activeIndex = -1
-        for (i in lines.indices) {
-            val startMs = lines[i].startTimeMs.toLongOrNull() ?: 0L
-            val endMs =
-                if (i < lines.lastIndex) {
-                    lines[i + 1].startTimeMs.toLongOrNull() ?: (startMs + 60_000L)
-                } else {
-                    startMs + 60_000L
-                }
-            if (nowMs in startMs..endMs) {
-                activeIndex = i
+        for ((idx, startMs) in sorted) {
+            if (startMs <= nowMs) {
+                activeIndex = idx
+            } else {
+                break
             }
         }
         return activeIndex
@@ -124,7 +134,32 @@ object NowNotchStateHolder {
     ): String? {
         val idx = resolveSyncedLyricIndex(lines, syncType, positionMs, offsetMs)
         if (idx < 0 || lines == null) return null
-        return lines.getOrNull(idx)?.words?.trim()?.takeIf { it.isNotEmpty() }
+        val words = lines.getOrNull(idx)?.words ?: return null
+        return cleanNotchLyricText(words).takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Resolves the next non-empty upcoming lyric line for lock-screen / Now Bar preview.
+     */
+    fun resolveNextSyncedLyricLine(
+        lines: List<Line>?,
+        syncType: String?,
+        positionMs: Long,
+        offsetMs: Int,
+    ): String? {
+        if (lines.isNullOrEmpty() || syncType == "UNSYNCED") return null
+        val timed =
+            lines.mapIndexedNotNull { idx, line ->
+                line.startTimeMs.toLongOrNull()?.let { idx to it }
+            }
+        if (timed.distinctBy { it.second }.size <= 1) return null
+        val idx = resolveSyncedLyricIndex(lines, syncType, positionMs, offsetMs)
+        val startSearch = if (idx >= 0) idx + 1 else 0
+        for (i in startSearch until lines.size) {
+            val cleaned = cleanNotchLyricText(lines[i].words)
+            if (cleaned.isNotEmpty()) return cleaned
+        }
+        return null
     }
 }
 
@@ -266,4 +301,8 @@ expect object PlatformNowNotchBridge {
     fun canDrawOverlay(): Boolean
 
     fun requestOverlayPermission()
+
+    fun canPostPromotedNotifications(): Boolean
+
+    fun openLiveNotificationsSettings()
 }

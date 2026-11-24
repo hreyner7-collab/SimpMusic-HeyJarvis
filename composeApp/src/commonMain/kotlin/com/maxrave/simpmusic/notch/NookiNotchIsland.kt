@@ -134,10 +134,12 @@ fun NookiNotchIsland(
             state.settings.compactSize -> 158.dp
             else -> 190.dp
         }
+    val showExpandedLyricPreview = expanded && !lyricsPeekOpen && !state.currentLyricLine.isNullOrBlank()
     val targetHeight =
         when {
             !state.hasTrack -> 32.dp
             expanded && lyricsPeekOpen -> 284.dp
+            showExpandedLyricPreview -> 208.dp
             expanded -> 194.dp
             state.settings.compactSize -> 32.dp
             else -> 36.dp
@@ -224,7 +226,6 @@ fun NookiNotchIsland(
                     onSeekFraction = onSeekFraction,
                     onSeekMs = onSeekMs,
                     onOpenApp = onOpenApp,
-                    onHide = onHide,
                 )
             }
         }
@@ -418,7 +419,6 @@ private fun NookiExpandedMusicCard(
     onSeekFraction: (Float) -> Unit,
     onSeekMs: (Long) -> Unit,
     onOpenApp: () -> Unit,
-    onHide: (() -> Unit)?,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. Nooki AnimatedCoverArtGradientBackground (black top cutout veil + orbiting pastel gradient orbs)
@@ -502,6 +502,33 @@ private fun NookiExpandedMusicCard(
                     onSeekToMs = onSeekMs,
                     modifier = Modifier.fillMaxWidth().height(88.dp),
                 )
+            } else if (!state.currentLyricLine.isNullOrBlank()) {
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .clickable(onClick = onToggleLyricsPeek)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Icon(
+                        imageVector = SimpIcons.Lyrics,
+                        contentDescription = null,
+                        tint = primaryColor,
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Text(
+                        text = state.currentLyricLine,
+                        color = Color.White.copy(alpha = 0.92f),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
             // Middle Seek Bar & Timestamps
@@ -589,7 +616,7 @@ private fun NookiExpandedMusicCard(
                             Modifier
                                 .size(32.dp)
                                 .clip(CircleShape)
-                                .clickable { onHide?.invoke() ?: onCollapse() },
+                                .clickable(onClick = onCollapse),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -911,6 +938,9 @@ private fun NookiLyricsPeek(
                 .padding(horizontal = 10.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
+        val isUnsynced =
+            syncType == "UNSYNCED" ||
+                (activeIndex < 0 && lines.mapNotNull { it.startTimeMs.toLongOrNull() }.distinct().size <= 1)
         when {
             lines.isEmpty() -> {
                 Text(
@@ -921,15 +951,18 @@ private fun NookiLyricsPeek(
                 )
             }
 
-            syncType == null || syncType == "UNSYNCED" -> {
+            isUnsynced -> {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     itemsIndexed(lines) { idx, line ->
-                        Text(
-                            text = line.words,
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(vertical = 2.dp),
-                        )
+                        val cleaned = cleanNotchLyricText(line.words)
+                        if (cleaned.isNotEmpty()) {
+                            Text(
+                                text = cleaned,
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(vertical = 2.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -943,19 +976,22 @@ private fun NookiLyricsPeek(
                     itemsIndexed(lines) { index, line ->
                         val isActive = index == activeIndex
                         val startMs = line.startTimeMs.toLongOrNull() ?: 0L
-                        Text(
-                            text = line.words,
-                            color = if (isActive) Color.White else accentColor.copy(alpha = 0.58f),
-                            fontSize = if (isActive) 13.sp else 11.5.sp,
-                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable { if (startMs > 0L) onSeekToMs(startMs) }
-                                    .padding(vertical = 1.dp),
-                        )
+                        val cleaned = cleanNotchLyricText(line.words)
+                        if (cleaned.isNotEmpty()) {
+                            Text(
+                                text = cleaned,
+                                color = if (isActive) Color.White else accentColor.copy(alpha = 0.58f),
+                                fontSize = if (isActive) 13.sp else 11.5.sp,
+                                fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { if (startMs > 0L) onSeekToMs(startMs) }
+                                        .padding(vertical = 1.dp),
+                            )
+                        }
                     }
                 }
             }

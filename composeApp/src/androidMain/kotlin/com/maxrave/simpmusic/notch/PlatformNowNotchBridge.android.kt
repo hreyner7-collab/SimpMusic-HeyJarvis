@@ -18,7 +18,9 @@ private const val ACTION_STOP_NOTCH = "com.maxrave.simpmusic.action.STOP_NOTCH_O
 private const val LEGACY_LIVE_LYRICS_CHANNEL_ID = "simpmusic_live_lyrics"
 private const val LIVE_LYRICS_CHANNEL_ID = "simpmusic_live_lyrics_v2"
 private const val LIVE_LYRICS_NOTIFICATION_ID = 44210
-private const val NOW_BAR_SHORT_TEXT_MAX_LEN = 22
+
+// Android 16 status-bar / Now Bar chips allocate <= 96dp; >10 chars risk dropping text to icon-only.
+private const val NOW_BAR_SHORT_TEXT_MAX_LEN = 10
 
 actual object PlatformNowNotchBridge {
     private var lastServiceRunning = false
@@ -41,6 +43,34 @@ actual object PlatformNowNotchBridge {
                     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(intent)
             }
+        }
+    }
+
+    actual fun canPostPromotedNotifications(): Boolean {
+        val context = runCatching { getKoin().get<Context>() }.getOrNull() ?: return false
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
+        return if (Build.VERSION.SDK_INT >= 36) {
+            runCatching { nm.canPostPromotedNotifications() }.getOrElse { nm.areNotificationsEnabled() }
+        } else {
+            nm.areNotificationsEnabled()
+        }
+    }
+
+    actual fun openLiveNotificationsSettings() {
+        val context = runCatching { getKoin().get<Context>() }.getOrNull() ?: return
+        if (Build.VERSION.SDK_INT >= 36) {
+            val promoIntent =
+                Intent(Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (runCatching { context.startActivity(promoIntent) }.isSuccess) return
+        }
+        runCatching {
+            val intent =
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         }
     }
 
@@ -94,21 +124,19 @@ actual object PlatformNowNotchBridge {
         }
 
         val activeLyric = state.currentLyricLine?.takeIf { it.isNotBlank() }
+        val nextLine = if (activeLyric != null) state.nextLyricLine?.takeIf { it.isNotBlank() } else null
         val trackTitle = state.title.ifBlank { "SimpMusic" }
         val trackSummary =
             if (state.artist.isNotBlank()) "$trackTitle • ${state.artist}" else trackTitle
 
         val primaryTitle = activeLyric ?: trackTitle
-        val secondaryBody =
-            if (activeLyric != null) {
-                trackSummary
-            } else if (state.artist.isNotBlank()) {
-                "${state.artist} • Live Lyrics"
-            } else {
-                "Now Playing • Live Lyrics"
-            }
-        val shortChipText = formatNowBarShortText(activeLyric ?: trackTitle)
-        val key = "$primaryTitle|$secondaryBody|$shortChipText"
+        val secondaryLine = nextLine ?: trackSummary
+        val bigTextBody = if (nextLine != null) "$nextLine\n$trackSummary" else trackSummary
+        val shortChipText =
+            activeLyric?.let(::formatNowBarShortText)
+                ?: if (trackTitle.trim().length <= NOW_BAR_SHORT_TEXT_MAX_LEN) trackTitle.trim() else "♪ Lyrics"
+
+        val key = "$primaryTitle|$secondaryLine|$shortChipText|$trackSummary"
         if (key == lastNotifiedKey) return
 
         ensureLiveUpdateChannel(nm)
@@ -129,12 +157,16 @@ actual object PlatformNowNotchBridge {
                     .Builder(context, LIVE_LYRICS_CHANNEL_ID)
                     .setSmallIcon(android.R.drawable.ic_media_play)
                     .setContentTitle(primaryTitle)
-                    .setContentText(secondaryBody)
-                    .setStyle(
+                    .setContentText(secondaryLine)
+                    .apply {
+                        if (activeLyric != null) {
+                            setSubText(trackSummary)
+                        }
+                    }.setStyle(
                         Notification
                             .BigTextStyle()
                             .setBigContentTitle(primaryTitle)
-                            .bigText(secondaryBody),
+                            .bigText(bigTextBody),
                     ).setOngoing(true)
                     .setOnlyAlertOnce(true)
                     .setShowWhen(false)
@@ -148,12 +180,16 @@ actual object PlatformNowNotchBridge {
                     .Builder(context, LIVE_LYRICS_CHANNEL_ID)
                     .setSmallIcon(android.R.drawable.ic_media_play)
                     .setContentTitle(primaryTitle)
-                    .setContentText(secondaryBody)
-                    .setStyle(
+                    .setContentText(secondaryLine)
+                    .apply {
+                        if (activeLyric != null) {
+                            setSubText(trackSummary)
+                        }
+                    }.setStyle(
                         NotificationCompat
                             .BigTextStyle()
                             .setBigContentTitle(primaryTitle)
-                            .bigText(secondaryBody),
+                            .bigText(bigTextBody),
                     ).setOngoing(true)
                     .setSilent(true)
                     .setOnlyAlertOnce(true)
@@ -171,7 +207,6 @@ actual object PlatformNowNotchBridge {
 
     private fun ensureLiveUpdateChannel(nm: NotificationManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || channelCreated) return
-        // Clean up legacy IMPORTANCE_LOW channel so Android 16 / One UI Live Update promotion can activate.
         runCatching { nm.deleteNotificationChannel(LEGACY_LIVE_LYRICS_CHANNEL_ID) }
         val channel =
             NotificationChannel(
@@ -195,7 +230,7 @@ actual object PlatformNowNotchBridge {
         val slice = cleaned.take(NOW_BAR_SHORT_TEXT_MAX_LEN - 1)
         val lastSpace = slice.lastIndexOf(' ')
         val trimmed =
-            if (lastSpace >= NOW_BAR_SHORT_TEXT_MAX_LEN / 2) {
+            if (lastSpace >= 3) {
                 slice.substring(0, lastSpace)
             } else {
                 slice

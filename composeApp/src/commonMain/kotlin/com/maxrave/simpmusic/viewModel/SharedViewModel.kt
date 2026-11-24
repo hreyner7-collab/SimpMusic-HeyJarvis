@@ -34,6 +34,7 @@ import com.maxrave.domain.data.model.promo.Promo
 import com.maxrave.domain.data.model.streams.TimeLine
 import com.maxrave.domain.data.model.update.UpdateData
 import com.maxrave.domain.data.player.GenericCastState
+import com.maxrave.domain.data.player.GenericMediaItem
 import com.maxrave.domain.data.player.LiveStreamRegistry
 import com.maxrave.domain.extension.decodeHtmlEntities
 import com.maxrave.domain.extension.isSong
@@ -78,6 +79,14 @@ import com.maxrave.simpmusic.expect.getDownloadFolderPath
 import com.maxrave.simpmusic.expect.isOnUnmeteredNetwork
 import com.maxrave.simpmusic.expect.ui.toByteArray
 import com.maxrave.simpmusic.getPlatform
+import com.maxrave.simpmusic.notch.NOOKI_FALLBACK_SECONDARY_ARGB
+import com.maxrave.simpmusic.notch.NOOKI_VISUALIZER_BLUE_ARGB
+import com.maxrave.simpmusic.notch.NowNotchLiveState
+import com.maxrave.simpmusic.notch.NowNotchSettings
+import com.maxrave.simpmusic.notch.NowNotchStateHolder
+import com.maxrave.simpmusic.notch.PlatformNowNotchBridge
+import com.maxrave.simpmusic.notch.extractNookiPaletteColors
+import com.maxrave.simpmusic.notch.nowNotchSettingsFlow
 import com.maxrave.simpmusic.utils.LyricsPromo
 import com.maxrave.simpmusic.utils.VersionManager
 import com.maxrave.simpmusic.utils.decodeLyricsPromos
@@ -88,6 +97,7 @@ import com.maxrave.simpmusic.viewModel.base.BaseViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -649,6 +659,146 @@ class SharedViewModel(
         checkAllDownloadingSongs()
         checkAllDownloadingPlaylists()
         checkAllDownloadingLocalPlaylists()
+        launchNowNotchSyncJob()
+    }
+
+    private fun launchNowNotchSyncJob() {
+        val notchSettingsFlow = dataStoreManager.nowNotchSettingsFlow()
+        val popupBannerFlow = MutableStateFlow<String?>(null)
+
+        viewModelScope.launch {
+            var lastVideoId = ""
+            var bannerJob: Job? = null
+            combine(nowPlayingState, notchSettingsFlow) { track, settings ->
+                track to settings
+            }.distinctUntilChangedBy { (track, settings) ->
+                Triple(track?.mediaItem?.mediaId.orEmpty(), settings.enabled, settings.showTrackChangePopup)
+            }.collectLatest { (track, settings) ->
+                val videoId = track?.mediaItem?.mediaId.orEmpty()
+                if (videoId.isNotBlank() && videoId != lastVideoId) {
+                    val previousWasSet = lastVideoId.isNotBlank()
+                    lastVideoId = videoId
+                    bannerJob?.cancel()
+                    if (previousWasSet && settings.enabled && settings.showTrackChangePopup) {
+                        val trackTitle =
+                            nowPlayingScreenData.value.nowPlayingTitle
+                                .ifBlank { track?.mediaItem?.metadata?.title?.toString().orEmpty() }
+                        if (trackTitle.isNotBlank()) {
+                            bannerJob =
+                                launch {
+                                    popupBannerFlow.value = "Now Playing: $trackTitle"
+                                    delay(3500L)
+                                    popupBannerFlow.value = null
+                                }
+                        }
+                    } else {
+                        popupBannerFlow.value = null
+                    }
+                } else if (videoId.isBlank()) {
+                    lastVideoId = ""
+                    bannerJob?.cancel()
+                    popupBannerFlow.value = null
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            var lastPaletteBitmap: ImageBitmap? = null
+            var cachedPalette = NOOKI_VISUALIZER_BLUE_ARGB to NOOKI_FALLBACK_SECONDARY_ARGB
+            val primaryFlows =
+                combine(
+                    notchSettingsFlow,
+                    nowPlayingState,
+                    nowPlayingScreenData,
+                    timeline,
+                ) { settings, track, screenData, tl ->
+                    NotchPrimarySnapshot(settings, track, screenData, tl)
+                }
+            val secondaryFlows =
+                combine(
+                    controllerState,
+                    getLyricsOffsetMs(),
+                    likeStatus,
+                    popupBannerFlow,
+                ) { controller, offsetMs, liked, popup ->
+                    NotchSecondarySnapshot(controller, offsetMs, liked, popup)
+                }
+            combine(primaryFlows, secondaryFlows) { p, s -> p to s }
+                .collect { (p, s) ->
+                    val bmp = p.screenData.bitmap
+                    if (bmp !== lastPaletteBitmap) {
+                        cachedPalette =
+                            withContext(Dispatchers.Default) {
+                                extractNookiPaletteColors(bmp)
+                            }
+                        lastPaletteBitmap = bmp
+                    }
+                    val mediaItem = p.track?.mediaItem
+                    val hasTrack = mediaItem != null && mediaItem != GenericMediaItem.EMPTY
+                    val settings = p.settings
+                    val lyrics = p.screenData.lyricsData?.lyrics
+                    val shouldResolveLyrics =
+                        hasTrack && (settings.showLiveLyrics || settings.lockScreenLiveLyrics)
+                    val currentLine =
+                        if (shouldResolveLyrics) {
+                            NowNotchStateHolder.resolveSyncedLyricLine(
+                                lines = lyrics?.lines,
+                                syncType = lyrics?.syncType,
+                                positionMs = p.tl.current,
+                                offsetMs = s.offsetMs,
+                            )
+                        } else {
+                            null
+                        }
+                    val nextLine =
+                        if (shouldResolveLyrics) {
+                            NowNotchStateHolder.resolveNextSyncedLyricLine(
+                                lines = lyrics?.lines,
+                                syncType = lyrics?.syncType,
+                                positionMs = p.tl.current,
+                                offsetMs = s.offsetMs,
+                            )
+                        } else {
+                            null
+                        }
+                    val durationMs = p.tl.total.coerceAtLeast(0L)
+                    val positionMs = p.tl.current.coerceAtLeast(0L)
+                    val progress =
+                        if (durationMs > 0L) {
+                            (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        }
+                    val liveState =
+                        NowNotchLiveState(
+                            settings = settings,
+                            hasTrack = hasTrack,
+                            isPlaying = s.controller.isPlaying,
+                            videoId = mediaItem?.mediaId.orEmpty(),
+                            title =
+                                p.screenData.nowPlayingTitle.ifBlank {
+                                    mediaItem?.metadata?.title?.toString().orEmpty()
+                                },
+                            artist = p.screenData.artistName,
+                            thumbnailUrl = p.track?.songEntity?.thumbnails ?: p.screenData.thumbnailURL,
+                            artworkBitmap = bmp,
+                            positionMs = positionMs,
+                            durationMs = durationMs,
+                            lyricsLines = lyrics?.lines.orEmpty(),
+                            lyricsSyncType = lyrics?.syncType,
+                            lyricsOffsetMs = s.offsetMs,
+                            currentLyricLine = currentLine,
+                            nextLyricLine = nextLine,
+                            popupBanner = s.popupBanner,
+                            progressFraction = progress,
+                            isLiked = s.likeStatus == YouTubeLikeStatus.LIKE,
+                            accentColorArgb = cachedPalette.first,
+                            secondaryColorArgb = cachedPalette.second,
+                        )
+                    NowNotchStateHolder.update(liveState)
+                    PlatformNowNotchBridge.sync(liveState)
+                }
+        }
     }
 
     fun setIntent(intent: GenericIntent?) {
@@ -2530,4 +2680,18 @@ sealed class VoteState {
  * reads this is the one that restores a *cached* url, the failure only appears from the second play
  * of a track onwards.
  */
+private data class NotchPrimarySnapshot(
+    val settings: NowNotchSettings,
+    val track: NowPlayingTrackState?,
+    val screenData: NowPlayingScreenData,
+    val tl: TimeLine,
+)
+
+private data class NotchSecondarySnapshot(
+    val controller: ControlState,
+    val offsetMs: Int,
+    val likeStatus: YouTubeLikeStatus,
+    val popupBanner: String?,
+)
+
 private fun String.isCanvasVideoUrl(): Boolean = contains(".mp4") || contains(".m3u8")

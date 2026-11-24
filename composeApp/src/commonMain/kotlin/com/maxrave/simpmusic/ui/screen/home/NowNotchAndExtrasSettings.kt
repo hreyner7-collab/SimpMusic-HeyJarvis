@@ -21,6 +21,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.AppIconStyle
@@ -67,7 +69,10 @@ fun NowNotchAndExtrasSettings(
     }
 
     val isAndroid = getPlatform() == Platform.Android
-    val canOverlay = PlatformNowNotchBridge.canDrawOverlay()
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val canOverlay = remember(lifecycleState) { PlatformNowNotchBridge.canDrawOverlay() }
+    val canPromotedNotifications =
+        remember(lifecycleState) { PlatformNowNotchBridge.canPostPromotedNotifications() }
 
     SettingItem(
         title = "Now Notch / Dynamic Island",
@@ -102,7 +107,7 @@ fun NowNotchAndExtrasSettings(
     if (isAndroid) {
         SettingItem(
             title = "Lock-Screen & Samsung Now Bar Live Lyrics",
-            subtitle = "Promoted Android 16 / One UI Now Bar live notification showing active synced lyrics",
+            subtitle = "Shows real-time synced lyrics on the lock screen and Samsung One UI 8+ Now Bar (also updates while locked)",
             smallSubtitle = true,
             switch = (
                 notchSettings.lockScreenLiveLyrics to { checked ->
@@ -112,6 +117,14 @@ fun NowNotchAndExtrasSettings(
                 }
             ),
         )
+        if (notchSettings.lockScreenLiveLyrics && !canPromotedNotifications) {
+            OutlinedButton(
+                onClick = { PlatformNowNotchBridge.openLiveNotificationsSettings() },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            ) {
+                Text("Enable Samsung Now Bar / Live Notifications")
+            }
+        }
     }
 
     if (notchSettings.enabled) {
