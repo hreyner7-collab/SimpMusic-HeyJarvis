@@ -198,6 +198,9 @@ class SharedViewModel(
     val canvas: StateFlow<CanvasResult?> = _canvas
 
     private var canvasJob: Job? = null
+    private var activeCanvasVideoId: String? = null
+    private var lyricsFetchJob: Job? = null
+    private var activeLyricsVideoId: String? = null
 
     private val _intent: MutableStateFlow<GenericIntent?> = MutableStateFlow(null)
     val intent: StateFlow<GenericIntent?> = _intent
@@ -349,25 +352,25 @@ class SharedViewModel(
                             // every new segment — not a new length, so it must not re-run what a new
                             // length triggers (this fired every few seconds for as long as one played).
                             val sameLiveStream = old.first.isLive && new.first.isLive
-                            (old.first.total.toString() + old.second.songEntity?.videoId).hashCode() ==
-                                (new.first.total.toString() + new.second.songEntity?.videoId).hashCode() ||
-                                (sameLiveStream && old.second.songEntity?.videoId == new.second.songEntity?.videoId)
+                            val sameVideoId = old.second.songEntity?.videoId == new.second.songEntity?.videoId
+                            (sameVideoId && (old.first.total / 1000L) == (new.first.total / 1000L)) ||
+                                (sameLiveStream && sameVideoId)
                         }.collectLatest {
                             val nowPlaying = it.second
                             val timeline = it.first
                             // Lyrics and canvas both key off the track's length, which a live stream has none of.
                             if (timeline.isLive) return@collectLatest
-                            log("Timeline job ${(it.first.total.toString() + it.second.songEntity?.videoId).hashCode()}")
+                            log("Timeline job ${it.second.songEntity?.videoId}:${it.first.total / 1000L}")
                             if (timeline.total > 0 && nowPlaying.songEntity != null) {
+                                val durationSec = (timeline.total / 1000L).toInt()
                                 if (nowPlaying.mediaItem.isSong() && nowPlayingScreenData.value.canvasData == null) {
-                                    Logger.w(tag, "Duration is ${timeline.total}")
-                                    Logger.w(tag, "MediaId is ${nowPlaying.mediaItem.mediaId}")
-                                    getCanvas(nowPlaying.mediaItem.mediaId, (timeline.total / 1000).toInt())
+                                    Logger.d(tag, "Duration is ${timeline.total}, MediaId is ${nowPlaying.mediaItem.mediaId}")
+                                    getCanvas(nowPlaying.mediaItem.mediaId, durationSec)
                                 }
                                 nowPlaying.songEntity?.let { song ->
                                     if (nowPlayingScreenData.value.lyricsData == null) {
-                                        Logger.w(tag, "Get lyrics from format")
-                                        getLyricsFromFormat(nowPlaying.mediaItem.isVideo(), song, (timeline.total / 1000).toInt())
+                                        Logger.d(tag, "Get lyrics from format")
+                                        getLyricsFromFormat(nowPlaying.mediaItem.isVideo(), song, durationSec)
                                     }
                                 }
                             }
@@ -444,6 +447,9 @@ class SharedViewModel(
                     it.songEntity?.videoId
                 }.collectLatest { state ->
                     canvasJob?.cancel()
+                    lyricsFetchJob?.cancel()
+                    activeCanvasVideoId = null
+                    activeLyricsVideoId = null
                     _nowPlayingState.value = state
                     _abLoopState.value = com.maxrave.simpmusic.utils.AbLoopState()
 
@@ -893,9 +899,14 @@ class SharedViewModel(
         videoId: String,
         duration: Int,
     ) {
-        Logger.w(tag, "Start getCanvas: $videoId $duration")
-//        canvasJob?.cancel()
-        viewModelScope.launch {
+        if (activeCanvasVideoId == videoId && (canvasJob?.isActive == true || _nowPlayingScreenData.value.canvasData != null)) {
+            return
+        }
+        Logger.d(tag, "Start getCanvas: $videoId $duration")
+        canvasJob?.cancel()
+        activeCanvasVideoId = videoId
+        canvasJob =
+            viewModelScope.launch {
             // Both sources fill the same slot, so they are tried in order rather than raced:
             // animated artwork first, and a Spotify canvas only if that found nothing AND the user
             // has that switch on too. Neither switch touches the other — a track with no animated
@@ -1792,12 +1803,18 @@ class SharedViewModel(
         // A live broadcast has nothing to sync lyrics to — the "duration" mpv reports for it is only
         // its seek window — so no provider is asked. Every caller comes through here.
         if (LiveStreamRegistry.isLive(song.videoId)) return
+        if (activeLyricsVideoId == song.videoId && (lyricsFetchJob?.isActive == true || _nowPlayingScreenData.value.lyricsData != null)) {
+            return
+        }
         // A fetch in flight is not "no lyrics": switching the provider re-fetches the same song, and
         // Add lyrics offered meanwhile could be saved over the lyrics the new provider finds.
         _nowPlayingScreenData.update { it.copy(lyricsNotFound = false) }
-        viewModelScope.launch {
-            val videoId = song.videoId
-            log("Get Lyrics From Format for $videoId", LogLevel.WARN)
+        lyricsFetchJob?.cancel()
+        activeLyricsVideoId = song.videoId
+        lyricsFetchJob =
+            viewModelScope.launch {
+                val videoId = song.videoId
+                log("Get Lyrics From Format for $videoId", LogLevel.DEBUG)
             val artistName = song.artistName
             val artist =
                 if (artistName?.firstOrNull() != null &&
@@ -2209,7 +2226,10 @@ class SharedViewModel(
         viewModelScope.launch {
             val songEntity = nowPlayingState.value?.songEntity ?: return@launch
             val isVideo = nowPlayingState.value?.mediaItem?.isVideo() ?: false
-            getLyricsFromFormat(isVideo, songEntity, timeline.value.total.toInt() / 1000)
+            lyricsFetchJob?.cancel()
+            activeLyricsVideoId = null
+            _nowPlayingScreenData.update { it.copy(lyricsData = null) }
+            getLyricsFromFormat(isVideo, songEntity, (timeline.value.total / 1000L).toInt().coerceAtLeast(0))
         }
     }
 

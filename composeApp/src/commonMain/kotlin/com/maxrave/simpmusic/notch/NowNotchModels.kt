@@ -267,7 +267,7 @@ private fun argbToHsv(
     out[2] = maxVal
 }
 
-private fun hsvToArgb(
+internal fun hsvToArgb(
     hue: Float,
     saturation: Float,
     value: Float,
@@ -284,9 +284,9 @@ private fun hsvToArgb(
             hue < 300f -> Triple(x, 0f, c)
             else -> Triple(c, 0f, x)
         }
-    val r = ((r1 + m) * 255f).roundToInt().coerceIn(0, 255)
-    val g = ((g1 + m) * 255f).roundToInt().coerceIn(0, 255)
-    val b = ((b1 + m) * 255f).roundToInt().coerceIn(0, 255)
+    val r = (((r1 + m) * 255f).takeIf { it.isFinite() } ?: 0f).roundToInt().coerceIn(0, 255)
+    val g = (((g1 + m) * 255f).takeIf { it.isFinite() } ?: 0f).roundToInt().coerceIn(0, 255)
+    val b = (((b1 + m) * 255f).takeIf { it.isFinite() } ?: 0f).roundToInt().coerceIn(0, 255)
     return 0xFF000000L or (r.toLong() shl 16) or (g.toLong() shl 8) or b.toLong()
 }
 

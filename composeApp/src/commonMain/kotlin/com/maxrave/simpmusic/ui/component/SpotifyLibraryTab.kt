@@ -232,7 +232,12 @@ fun SpotifyLibraryTab(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             if (!importProgress.isFinished && importProgress.total > 0) {
-                                val pct = ((importProgress.processed.toFloat() / importProgress.total.toFloat()) * 100f).roundToInt().coerceIn(0, 100)
+                                val pct =
+                                    ((importProgress.processed.toFloat() / importProgress.total.toFloat()) * 100f)
+                                        .takeIf { it.isFinite() }
+                                        ?.roundToInt()
+                                        ?.coerceIn(0, 100)
+                                        ?: 0
                                 Text(
                                     text = "$pct% · ${importProgress.matched} matched",
                                     style = typo().labelSmall,

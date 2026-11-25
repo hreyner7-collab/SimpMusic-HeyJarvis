@@ -636,7 +636,8 @@ class JerryVoiceService : Service(), KoinComponent {
                 val lo = pcm[i].toInt() and 0xFF
                 val hi = pcm[i + 1].toInt()
                 val x = ((hi shl 8) or lo).toFloat()
-                val y = b0 * (x - prevX) + a1 * prevY
+                val rawY = b0 * (x - prevX) + a1 * prevY
+                val y = if (rawY.isFinite()) rawY else 0f
                 prevX = x
                 prevY = y
                 val clamped = y.roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())

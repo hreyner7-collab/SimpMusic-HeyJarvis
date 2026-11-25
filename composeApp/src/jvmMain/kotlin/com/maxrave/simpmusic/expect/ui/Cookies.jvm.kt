@@ -82,7 +82,7 @@ actual fun PlatformWebView(
 actual fun DiscordWebView(
     state: MutableState<WebViewState>,
     aboveContent: @Composable (BoxScope.() -> Unit),
-    onLoginDone: (String) -> Unit
+    onLoginDone: (token: String) -> Unit
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),

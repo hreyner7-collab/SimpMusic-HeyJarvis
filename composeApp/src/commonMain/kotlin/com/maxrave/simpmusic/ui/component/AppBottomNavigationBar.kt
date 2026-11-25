@@ -183,7 +183,12 @@ internal fun FlatTabBar(
         label = "flatBarIndicator",
     )
     // The tab under the indicator lights up as it is dragged across.
-    val activePosition = dragPosition?.roundToInt() ?: selectedPosition
+    val activePosition =
+        dragPosition
+            ?.takeIf { it.isFinite() }
+            ?.roundToInt()
+            ?.coerceIn(0, (tabs.size - 1).coerceAtLeast(0))
+            ?: selectedPosition
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     Box(
         modifier =
@@ -206,13 +211,20 @@ internal fun FlatTabBar(
                         // tab it rests on. Once the drag starts it cancels the tab's own click.
                         .pointerInput(tabs, tabWidth, isLtr) {
                             fun positionAt(x: Float): Float {
+                                val tabPx = tabWidth.toPx()
+                                if (tabs.isEmpty() || tabPx <= 0f || !tabPx.isFinite() || !x.isFinite()) return 0f
                                 val fromStart = if (isLtr) x else size.width - x
-                                return (fromStart / tabWidth.toPx() - 0.5f).coerceIn(0f, tabs.lastIndex.toFloat())
+                                return (fromStart / tabPx - 0.5f).coerceIn(0f, tabs.lastIndex.toFloat())
                             }
                             detectHorizontalDragGestures(
                                 onDragStart = { dragPosition = positionAt(it.x) },
                                 onDragEnd = {
-                                    val target = dragPosition?.roundToInt()?.let(tabs::get)
+                                    val target =
+                                        dragPosition
+                                            ?.takeIf { it.isFinite() }
+                                            ?.roundToInt()
+                                            ?.coerceIn(0, (tabs.size - 1).coerceAtLeast(0))
+                                            ?.let(tabs::getOrNull)
                                     dragPosition = null
                                     if (target != null && target.ordinal != selectedIndex) onTabSelected(target)
                                 },

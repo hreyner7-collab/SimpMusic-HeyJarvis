@@ -573,64 +573,73 @@ suspend fun LazyListState.animateScrollAndCentralizeItem(index: Int) {
 @Composable
 expect fun KeepScreenOn()
 
+private class ScrollTracker(
+    var index: Int,
+    var offset: Int,
+)
+
 @Composable
 fun LazyListState.isScrollingUp(): State<Boolean> {
-    var previousIndex by remember(this) { mutableIntStateOf(firstVisibleItemIndex) }
-    var previousScrollOffset by remember(this) { mutableIntStateOf(firstVisibleItemScrollOffset) }
+    val tracker = remember(this) { ScrollTracker(firstVisibleItemIndex, firstVisibleItemScrollOffset) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(this) {
         snapshotFlow { layoutInfo.totalItemsCount }.collect {
-            Logger.w("isScrollingUp", "firstVisibleItemIndex: $firstVisibleItemIndex")
-            previousIndex = firstVisibleItemIndex
-            previousScrollOffset = firstVisibleItemScrollOffset
+            Logger.d("isScrollingUp", "firstVisibleItemIndex: $firstVisibleItemIndex")
+            tracker.index = firstVisibleItemIndex
+            tracker.offset = firstVisibleItemScrollOffset
         }
     }
 
     return remember(this) {
         derivedStateOf {
-            if (firstVisibleItemIndex > 0) {
-                if (previousIndex != firstVisibleItemIndex) {
-                    previousIndex > firstVisibleItemIndex
+            val curIndex = firstVisibleItemIndex
+            val curOffset = firstVisibleItemScrollOffset
+            val up =
+                if (curIndex > 0) {
+                    if (tracker.index != curIndex) {
+                        tracker.index > curIndex
+                    } else {
+                        tracker.offset >= curOffset
+                    }
                 } else {
-                    previousScrollOffset >= firstVisibleItemScrollOffset
-                }.also {
-                    previousIndex = firstVisibleItemIndex
-                    previousScrollOffset = firstVisibleItemScrollOffset
+                    true
                 }
-            } else {
-                true
-            }
+            tracker.index = curIndex
+            tracker.offset = curOffset
+            up
         }
     }
 }
 
 @Composable
 fun LazyGridState.isScrollingUp(): State<Boolean> {
-    var previousIndex by remember(this) { mutableIntStateOf(firstVisibleItemIndex) }
-    var previousScrollOffset by remember(this) { mutableIntStateOf(firstVisibleItemScrollOffset) }
+    val tracker = remember(this) { ScrollTracker(firstVisibleItemIndex, firstVisibleItemScrollOffset) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(this) {
         snapshotFlow { layoutInfo.totalItemsCount }.collect {
-            Logger.w("isScrollingUp", "firstVisibleItemIndex: $firstVisibleItemIndex")
-            previousIndex = firstVisibleItemIndex
-            previousScrollOffset = firstVisibleItemScrollOffset
+            Logger.d("isScrollingUp", "firstVisibleItemIndex: $firstVisibleItemIndex")
+            tracker.index = firstVisibleItemIndex
+            tracker.offset = firstVisibleItemScrollOffset
         }
     }
 
     return remember(this) {
         derivedStateOf {
-            if (firstVisibleItemIndex > 0) {
-                if (previousIndex != firstVisibleItemIndex) {
-                    previousIndex > firstVisibleItemIndex
+            val curIndex = firstVisibleItemIndex
+            val curOffset = firstVisibleItemScrollOffset
+            val up =
+                if (curIndex > 0) {
+                    if (tracker.index != curIndex) {
+                        tracker.index > curIndex
+                    } else {
+                        tracker.offset >= curOffset
+                    }
                 } else {
-                    previousScrollOffset >= firstVisibleItemScrollOffset
-                }.also {
-                    previousIndex = firstVisibleItemIndex
-                    previousScrollOffset = firstVisibleItemScrollOffset
+                    true
                 }
-            } else {
-                true
-            }
+            tracker.index = curIndex
+            tracker.offset = curOffset
+            up
         }
     }
 }

@@ -91,10 +91,15 @@ internal object LibraryGridCells : GridCells {
         availableSize: Int,
         spacing: Int,
     ): List<Int> {
-        val target = TargetCellWidth.roundToPx() + spacing
-        val count = ((availableSize + spacing).toFloat() / target).roundToInt().coerceAtLeast(3)
+        val target = (TargetCellWidth.roundToPx() + spacing).coerceAtLeast(1)
+        val count =
+            ((availableSize + spacing).toFloat() / target)
+                .takeIf { it.isFinite() }
+                ?.roundToInt()
+                ?.coerceAtLeast(3)
+                ?: 3
         // The same split GridCells.Fixed makes: leftover pixels go one each to the first columns.
-        val usable = availableSize - spacing * (count - 1)
+        val usable = (availableSize - spacing * (count - 1)).coerceAtLeast(0)
         return List(count) { usable / count + if (it < usable % count) 1 else 0 }
     }
 }

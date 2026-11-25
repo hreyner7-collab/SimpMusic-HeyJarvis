@@ -160,13 +160,16 @@ fun ImageCropperDialog(
                             },
                 ) {
                     Canvas(modifier = Modifier.fillMaxWidth().aspectRatio(STAGE_ASPECT)) {
+                        val safeScale = scale.takeIf { it.isFinite() && it > 0f } ?: 1f
+                        val safeOffsetX = offset.x.takeIf { it.isFinite() } ?: 0f
+                        val safeOffsetY = offset.y.takeIf { it.isFinite() } ?: 0f
                         drawImage(
                             image = source,
-                            dstOffset = IntOffset(offset.x.roundToInt(), offset.y.roundToInt()),
+                            dstOffset = IntOffset(safeOffsetX.roundToInt(), safeOffsetY.roundToInt()),
                             dstSize =
                                 IntSize(
-                                    (source.width * scale).roundToInt(),
-                                    (source.height * scale).roundToInt(),
+                                    (source.width * safeScale).roundToInt().coerceAtLeast(1),
+                                    (source.height * safeScale).roundToInt().coerceAtLeast(1),
                                 ),
                             filterQuality = FilterQuality.High,
                         )
@@ -222,7 +225,9 @@ private fun cropToSquare(
     scale: Float,
     offset: Offset,
 ): ImageBitmap? {
-    if (frameSizePx <= 0 || scale <= 0f) return null
+    if (frameSizePx <= 0 || scale <= 0f || !scale.isFinite() || source.width <= 0 || source.height <= 0 || !offset.x.isFinite() || !offset.y.isFinite()) {
+        return null
+    }
     // The square sits in the middle of a taller stage, so the offset has to be measured from the
     // frame's own top edge rather than the stage's.
     val frameTop = (stageHeightPx - frameSizePx) / 2f

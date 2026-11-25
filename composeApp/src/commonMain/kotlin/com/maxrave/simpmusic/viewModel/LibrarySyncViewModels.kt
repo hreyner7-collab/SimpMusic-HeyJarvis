@@ -59,9 +59,11 @@ class LibrarySyncHostViewModel(
         viewModelScope.launch { repository.dismissPendingSettings() }
     }
 
-    // The dialog can close with the ViewModel: the QR must still be withdrawn.
+    // The dialog can close with the ViewModel: the QR must still be withdrawn even after viewModelScope cancels.
     fun close() {
-        viewModelScope.launch(NonCancellable) { repository.stopPairing() }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default).launch {
+            repository.stopPairing()
+        }
     }
 
     override fun onCleared() {
