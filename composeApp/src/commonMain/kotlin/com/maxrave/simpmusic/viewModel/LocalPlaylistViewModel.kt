@@ -863,7 +863,11 @@ class LocalPlaylistViewModel(
                         return
                     }
 
-                val firstPlayTrack = loadedList.firstOrNull()?.first?.toTrack()
+                val firstPlayTrack =
+                    loadedList.firstOrNull()?.first?.toTrack() ?: run {
+                        makeToast(getString(Res.string.playlist_is_empty))
+                        return
+                    }
                 setQueueData(
                     QueueData.Data(
                         listTracks = loadedList.mapNotNull { it?.first }.toArrayListTrack(),
