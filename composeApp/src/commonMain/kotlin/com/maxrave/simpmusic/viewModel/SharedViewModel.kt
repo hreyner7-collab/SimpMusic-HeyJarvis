@@ -470,12 +470,16 @@ class SharedViewModel(
                     // the container is parsed, because those rows have no durationSeconds stored.
                     // Asking the player before giving up covers exactly that case: on a normal
                     // track change it usually already knows.
-                    val metadataDurationMs = (state.songEntity?.durationSeconds ?: 0).toLong() * 1000L
+                    val metadataDurationSeconds =
+                        state.songEntity?.durationSeconds?.takeIf { it > 0 }
+                            ?: state.track?.durationSeconds?.takeIf { it > 0 }
+                            ?: 0
+                    val metadataDurationMs = metadataDurationSeconds.toLong() * 1000L
                     val seededTotal =
                         metadataDurationMs.takeIf { it > 0L }
                             ?: mediaPlayerHandler.getPlayerDuration().takeIf { it > 0L }
-                            ?: -1L
-                    _timeline.update { it.copy(total = seededTotal) }
+                            ?: 0L
+                    _timeline.update { it.copy(current = 0L, total = seededTotal) }
                     state.songEntity?.let { track ->
                         _nowPlayingScreenData.value =
                             NowPlayingScreenData(
