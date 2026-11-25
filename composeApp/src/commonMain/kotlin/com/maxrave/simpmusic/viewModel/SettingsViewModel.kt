@@ -1580,23 +1580,24 @@ class SettingsViewModel(
     suspend fun addAccount(
         cookie: String,
         netscapeCookie: String? = null,
-    ): Boolean {
-        val currentCookie = dataStoreManager.cookie.first()
-        val currentPageId = dataStoreManager.pageId.first()
-        val currentAuthUser = dataStoreManager.authUser.first()
-        val currentLoggedIn = dataStoreManager.loggedIn.first() == DataStoreManager.TRUE
-        try {
-            runBlocking {
-                dataStoreManager.setCookie(cookie, "")
-                dataStoreManager.setLoggedIn(true)
-            }
-            return accountRepository
-                .getAccountInfo(
-                    cookie,
-                ).lastOrNull()
-                ?.takeIf {
-                    it.isNotEmpty()
-                }?.let { accountInfoList ->
+    ): Boolean =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            val currentCookie = dataStoreManager.cookie.first()
+            val currentPageId = dataStoreManager.pageId.first()
+            val currentAuthUser = dataStoreManager.authUser.first()
+            val currentLoggedIn = dataStoreManager.loggedIn.first() == DataStoreManager.TRUE
+            try {
+                runBlocking {
+                    dataStoreManager.setCookie(cookie, "")
+                    dataStoreManager.setLoggedIn(true)
+                }
+                accountRepository
+                    .getAccountInfo(
+                        cookie,
+                    ).lastOrNull()
+                    ?.takeIf {
+                        it.isNotEmpty()
+                    }?.let { accountInfoList ->
                     Logger.d("getAllGoogleAccount", "addAccount: ${accountInfoList.size} account(s)")
                     accountRepository.getGoogleAccounts().lastOrNull()?.forEach {
                         Logger.d("getAllGoogleAccount", "set used: start")
@@ -1666,7 +1667,7 @@ class SettingsViewModel(
                 dataStoreManager.setCookie(currentCookie, currentPageId, currentAuthUser)
                 dataStoreManager.setLoggedIn(currentLoggedIn)
             }
-            return false
+            false
         }
     }
 

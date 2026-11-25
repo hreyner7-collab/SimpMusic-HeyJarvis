@@ -1,6 +1,10 @@
 package org.simpmusic.cast
 
+import android.app.ActivityManager
+import android.app.Application
 import android.content.Context
+import android.os.Build
+import android.os.Process
 import androidx.media3.cast.CastPlayer
 import androidx.media3.common.Player
 import androidx.mediarouter.media.MediaRouteSelector
@@ -17,15 +21,30 @@ private var castContext: CastContext? = null
 @Volatile
 private var castAvailable: Boolean = false
 
+private fun isMainProcess(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        return Application.getProcessName() == context.packageName
+    }
+    val pid = Process.myPid()
+    val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return true
+    val processName = am.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName ?: return true
+    return processName == context.packageName
+}
+
 /**
  * Safely initializes the Google Cast framework. Never throws — devices/emulators
  * without Google Play services (or a misconfigured Cast receiver) simply end up
  * with casting disabled instead of crashing the app.
  */
 fun initCast(context: Context): Boolean {
+    val appContext = context.applicationContext
+    if (!isMainProcess(appContext)) {
+        Logger.d(TAG, "Skipping Cast init on non-main process")
+        castAvailable = false
+        return false
+    }
     castContext?.let { return castAvailable }
 
-    val appContext = context.applicationContext
     return try {
         val playServicesAvailable =
             GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(appContext) ==
@@ -58,7 +77,7 @@ fun wrapWithCastPlayer(
     context: Context,
     localPlayer: Player,
 ): Player {
-    if (!castAvailable) return localPlayer
+    if (!castAvailable || !isMainProcess(context.applicationContext)) return localPlayer
 
     return try {
         CastPlayer.Builder(context.applicationContext)
