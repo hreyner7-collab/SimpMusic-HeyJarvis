@@ -1,7 +1,11 @@
 package com.maxrave.simpmusic.di
 
 import com.maxrave.simpmusic.viewModel.AlbumViewModel
+import com.maxrave.simpmusic.handoff.PlaybackHandoffManager
+import com.maxrave.simpmusic.utils.DeviceAudioProfileController
+import com.maxrave.simpmusic.utils.StreamPrewarmer
 import com.maxrave.simpmusic.utils.VersionManager
+import com.maxrave.simpmusic.utils.WifiPlaylistAutoSyncManager
 import com.maxrave.simpmusic.viewModel.AnalyticsViewModel
 import com.maxrave.simpmusic.viewModel.ListenTogetherSettingsViewModel
 import com.maxrave.simpmusic.viewModel.ListenTogetherViewModel
@@ -39,6 +43,34 @@ import org.koin.dsl.module
 
 val viewModelModule =
     module {
+        single {
+            StreamPrewarmer(
+                streamRepository = get(),
+                dataStoreManager = get(),
+                songRepository = get(),
+            )
+        }
+        single {
+            WifiPlaylistAutoSyncManager(
+                dataStoreManager = get(),
+                localPlaylistRepository = get(),
+                playlistRepository = get(),
+                songRepository = get(),
+                downloadHandler = get(),
+            )
+        }
+        single {
+            DeviceAudioProfileController(
+                dataStoreManager = get(),
+                mediaPlayerHandler = get(),
+            )
+        }
+        single {
+            PlaybackHandoffManager(
+                mediaPlayerHandler = get(),
+                dataStoreManager = get(),
+            )
+        }
         single {
             SharedViewModel(
                 get(),

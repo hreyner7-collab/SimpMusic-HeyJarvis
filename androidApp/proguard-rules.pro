@@ -225,3 +225,28 @@
 -dontwarn io.sentry.instrumentation.file.SentryFileOutputStream$Factory
 -dontwarn io.sentry.okhttp.SentryOkHttpEventListener
 -dontwarn io.sentry.okhttp.SentryOkHttpInterceptor
+
+# Keep KMP domain/data/handoff/offline models, Spotify sync, AI service, QuickJS, Vosk & Sherpa-ONNX JNI classes
+-keep class com.maxrave.domain.data.** { *; }
+-keep class com.maxrave.domain.utils.** { *; }
+-keep class com.maxrave.simpmusic.handoff.** { *; }
+-keep class com.maxrave.spotify.** { *; }
+-keep class org.simpmusic.** { *; }
+-keep class com.maxrave.media3.** { *; }
+-keep class com.dokar.quickjs.** { *; }
+-keep class org.vosk.** { *; }
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keep class com.sun.jna.** { *; }
+-keep interface com.sun.jna.** { *; }
+-dontwarn org.vosk.**
+-dontwarn com.k2fsa.sherpa.onnx.**
+-dontwarn com.sun.jna.**
+-dontwarn com.dokar.quickjs.**
+-dontwarn com.maxrave.media3.**
+-dontwarn org.simpmusic.**
+-dontwarn io.ktor.**
+-dontwarn com.google.zxing.**
+-dontwarn org.mozilla.**
+-dontwarn org.jsoup.**
+-dontwarn net.sourceforge.pinyin4j.**
+-dontwarn com.atilika.kuromoji.**

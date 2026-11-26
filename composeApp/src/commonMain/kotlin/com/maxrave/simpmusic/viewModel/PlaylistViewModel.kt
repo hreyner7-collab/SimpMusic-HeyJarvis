@@ -28,6 +28,7 @@ import com.maxrave.domain.utils.toSongEntity
 import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.utils.FastPageCache
+import com.maxrave.simpmusic.utils.StreamPrewarmer
 import com.maxrave.simpmusic.viewModel.PlaylistUIState.Error
 import com.maxrave.simpmusic.viewModel.PlaylistUIState.Loading
 import com.maxrave.simpmusic.viewModel.PlaylistUIState.Success
@@ -67,6 +68,7 @@ class PlaylistViewModel(
     private val playlistRepository: PlaylistRepository,
 ) : BaseViewModel() {
     val downloadUtils: DownloadHandler by inject<DownloadHandler>()
+    private val streamPrewarmer: StreamPrewarmer? by lazy { runCatching { getKoin().get<StreamPrewarmer>() }.getOrNull() }
     private var _uiState = MutableStateFlow<PlaylistUIState>(Loading)
     val uiState: StateFlow<PlaylistUIState> = _uiState
 
@@ -203,6 +205,7 @@ class PlaylistViewModel(
                         ),
                 )
             _tracks.value = data.tracks
+            streamPrewarmer?.prewarmTracks(data.tracks, maxTracks = 2)
             _continuation.value = cachedPlaylist.continuation
             _tracksListState.value =
                 if (cachedPlaylist.continuation.isNullOrEmpty()) ListState.PAGINATION_EXHAUST else ListState.IDLE
@@ -251,6 +254,7 @@ class PlaylistViewModel(
                                             ),
                                     )
                                 _tracks.value = data.first.tracks
+                                streamPrewarmer?.prewarmTracks(data.first.tracks, maxTracks = 2)
                                 _continuation.value = data.second
                                 if (data.second.isNullOrEmpty()) _tracksListState.value = ListState.PAGINATION_EXHAUST
                                 playlistRepository.insertRadioPlaylist(data.first.toPlaylistEntity())
@@ -297,6 +301,7 @@ class PlaylistViewModel(
                                             ),
                                     )
                                 _tracks.value = data.first.tracks
+                                streamPrewarmer?.prewarmTracks(data.first.tracks, maxTracks = 2)
                                 _continuation.value = data.second
                                 if (data.second.isNullOrEmpty()) _tracksListState.value = ListState.PAGINATION_EXHAUST
                                 getPlaylistEntity(id = data.first.id, playlistBrowse = data.first)

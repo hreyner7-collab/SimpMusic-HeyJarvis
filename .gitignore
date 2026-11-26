@@ -19,6 +19,7 @@ crowdin.yml
 .kotlin/
 .idea
 /simpmusic.jks
+/.local-signing/
 /ffmpeg-kit/build/
 
 #dev files

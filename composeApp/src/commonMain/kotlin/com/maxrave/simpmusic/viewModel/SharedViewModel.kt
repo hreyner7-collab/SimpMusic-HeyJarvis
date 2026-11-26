@@ -441,6 +441,15 @@ class SharedViewModel(
                 isFirstLiked = it != STATUS_DONE
             }
         }
+        // Start Per-Device Audio Profiles, Phone <-> PC Playback Handoff, and background Wi-Fi Playlist Auto-Sync.
+        runCatching { getKoin().get<com.maxrave.simpmusic.utils.DeviceAudioProfileController>().start() }
+        runCatching { getKoin().get<com.maxrave.simpmusic.handoff.PlaybackHandoffManager>().start() }
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(6_000L)
+            runCatching {
+                getKoin().get<com.maxrave.simpmusic.utils.WifiPlaylistAutoSyncManager>().syncEnabledPlaylistsNow()
+            }
+        }
         viewModelScope.launch {
             mediaPlayerHandler.nowPlayingState
                 .distinctUntilChangedBy {

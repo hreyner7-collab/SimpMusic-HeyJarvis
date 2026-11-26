@@ -19,6 +19,7 @@ import com.maxrave.domain.utils.toArrayListTrack
 import com.maxrave.domain.utils.toSongEntity
 import com.maxrave.logger.LogLevel
 import com.maxrave.simpmusic.utils.FastPageCache
+import com.maxrave.simpmusic.utils.StreamPrewarmer
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -42,6 +43,7 @@ class AlbumViewModel(
     private val albumRepository: AlbumRepository,
 ) : BaseViewModel() {
     private val downloadUtils: DownloadHandler by inject<DownloadHandler>()
+    private val streamPrewarmer: StreamPrewarmer? by lazy { runCatching { getKoin().get<StreamPrewarmer>() }.getOrNull() }
     private val _uiState: MutableStateFlow<AlbumUIState> = MutableStateFlow(AlbumUIState.initial())
     val uiState: StateFlow<AlbumUIState> = _uiState
 
@@ -73,6 +75,7 @@ class AlbumViewModel(
                     )
                 }
                 getAlbumFlow(browseId)
+                streamPrewarmer?.prewarmTracks(cached.tracks, maxTracks = 2)
                 return@launch
             }
             albumRepository.getAlbumData(browseId).collectLatest { res ->
@@ -126,6 +129,7 @@ class AlbumViewModel(
                                 }
                             }
                             getAlbumFlow(browseId)
+                            streamPrewarmer?.prewarmTracks(data.tracks, maxTracks = 2)
                         } else {
                             makeToast(getString(Res.string.error) + ": Null data")
                             _uiState.update {

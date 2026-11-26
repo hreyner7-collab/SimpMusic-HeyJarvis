@@ -116,6 +116,12 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kmpalette.rememberPaletteState
 import com.maxrave.common.LOCAL_PLAYLIST_ID
 import com.maxrave.domain.data.entities.DownloadState
+import com.maxrave.domain.data.model.offline.AutoSyncPlaylistKind
+import com.maxrave.domain.data.model.offline.OfflineCacheAndSyncSettings.containsPlaylist
+import com.maxrave.domain.data.model.offline.OfflineCacheAndSyncSettings.toggleWifiAutoSyncPlaylist
+import com.maxrave.domain.data.model.offline.OfflineCacheAndSyncSettings.wifiAutoSyncPlaylistsFlow
+import com.maxrave.domain.data.model.offline.WifiAutoSyncPlaylistRef
+import com.maxrave.simpmusic.utils.WifiPlaylistAutoSyncManager
 import com.maxrave.domain.data.entities.LocalPlaylistEntity
 import com.maxrave.domain.data.entities.PairSongLocalPlaylist
 import com.maxrave.domain.data.entities.SongEntity
@@ -1628,6 +1634,9 @@ fun LocalPlaylistScreen(
     }
     if (playlistBottomSheetShow) {
         Logger.w("PlaylistScreen", "PlaylistBottomSheet")
+        val wifiAutoSyncManager: WifiPlaylistAutoSyncManager = koinInject()
+        val wifiSyncList by dataStoreManager.wifiAutoSyncPlaylistsFlow().collectAsState(initial = emptyList())
+        val isWifiSynced = wifiSyncList.containsPlaylist(uiState.id.toString(), AutoSyncPlaylistKind.LOCAL_PLAYLIST)
         LocalPlaylistBottomSheet(
             isBottomSheetVisible = playlistBottomSheetShow,
             onDismiss = { playlistBottomSheetShow = false },
@@ -1673,6 +1682,33 @@ fun LocalPlaylistScreen(
                         )
                     viewModel.makeToast(if (pinnedNow) "Pinned \"${uiState.title}\" to Library" else "Unpinned from Library")
                 }
+            },
+            isWifiAutoSync = isWifiSynced,
+            onToggleWifiAutoSync = {
+                coroutineScope.launch {
+                    val ref =
+                        WifiAutoSyncPlaylistRef(
+                            id = uiState.id.toString(),
+                            title = uiState.title,
+                            kind = AutoSyncPlaylistKind.LOCAL_PLAYLIST,
+                        )
+                    val enabledNow = dataStoreManager.toggleWifiAutoSyncPlaylist(ref)
+                    if (enabledNow) {
+                        val res = wifiAutoSyncManager.syncSinglePlaylistIfOnWifi(ref)
+                        val msg =
+                            when {
+                                res.skippedReason == "metered_network" -> "Wi-Fi Auto-Sync ON — will download once connected to Wi-Fi"
+                                res.tracksQueued > 0 -> "Wi-Fi Auto-Sync ON — downloading ${res.tracksQueued} track(s)"
+                                else -> "Wi-Fi Auto-Sync ON — playlist is up to date"
+                            }
+                        viewModel.makeToast(msg)
+                    } else {
+                        viewModel.makeToast("Wi-Fi Auto-Sync turned off for \"${uiState.title}\"")
+                    }
+                }
+            },
+            onCleanAndRepair = {
+                viewModel.cleanAndRepairPlaylist(uiState.id)
             },
         )
     }

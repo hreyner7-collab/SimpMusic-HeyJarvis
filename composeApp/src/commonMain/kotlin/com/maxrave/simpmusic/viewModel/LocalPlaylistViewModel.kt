@@ -29,6 +29,7 @@ import com.maxrave.domain.mediaservice.handler.DownloadHandler
 import com.maxrave.domain.mediaservice.handler.PlaylistType
 import com.maxrave.domain.mediaservice.handler.QueueData
 import com.maxrave.domain.repository.LocalPlaylistRepository
+import com.maxrave.domain.repository.SearchRepository
 import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.utils.FilterState
 import com.maxrave.domain.utils.collectLatestResource
@@ -39,6 +40,8 @@ import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.LogLevel
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.pagination.PagingActions
+import com.maxrave.simpmusic.utils.PlaylistHealthManager
+import com.maxrave.simpmusic.utils.StreamPrewarmer
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -93,6 +96,8 @@ class LocalPlaylistViewModel(
 ) : BaseViewModel() {
     private val converter = Converters()
     private val downloadUtils: DownloadHandler by inject<DownloadHandler>()
+    private val streamPrewarmer: StreamPrewarmer? by lazy { runCatching { getKoin().get<StreamPrewarmer>() }.getOrNull() }
+    private val searchRepository: SearchRepository? by lazy { runCatching { getKoin().get<SearchRepository>() }.getOrNull() }
 
     private var _offset: MutableStateFlow<Int> = MutableStateFlow(0)
     val offset: StateFlow<Int> = _offset
@@ -952,9 +957,98 @@ class LocalPlaylistViewModel(
                         if (refresh) {
                             getTracksPagingState(id, _uiState.value.filterState)
                         }
+                        pl.tracks?.take(2)?.let { topIds ->
+                            streamPrewarmer?.prewarmVideoIds(topIds, maxTracks = 2)
+                        }
                     }
                 },
             )
+        }
+    }
+
+    fun cleanAndRepairPlaylist(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            showLoadingDialog(message = "Scanning playlist for duplicates & unavailable tracks…")
+            try {
+                val allSongs = localPlaylistRepository.getFullPlaylistTracks(id)
+                if (allSongs.isEmpty()) {
+                    hideLoadingDialog()
+                    makeToast(getString(Res.string.playlist_is_empty))
+                    return@launch
+                }
+
+                // 1. Remove exact & normalized duplicates while keeping downloaded / available copy
+                val dupScan = PlaylistHealthManager.findDuplicates(allSongs)
+                var removedDups = 0
+                for (dup in dupScan.duplicatesToRemove) {
+                    var removed = false
+                    localPlaylistRepository
+                        .removeTrackFromLocalPlaylist(
+                            id = id,
+                            song = dup,
+                            successMessage = getString(Res.string.delete_song_from_playlist),
+                            updatedYtMessage = getString(Res.string.removed_from_YouTube_playlist),
+                            errorMessage = getString(Res.string.can_t_delete_from_youtube_playlist),
+                        ).collectLatestResource(
+                            onSuccess = { removed = true },
+                            onError = {},
+                        )
+                    if (removed) removedDups++
+                }
+
+                // 2. Detect unavailable/dead tracks and swap in best playable YouTube Music match
+                var repairedCount = 0
+                var unrepairableCount = 0
+                val searchRepo = searchRepository
+                val existingIds = dupScan.keptSongs.map { it.videoId }.toMutableSet()
+                if (searchRepo != null) {
+                    val brokenSongs = dupScan.keptSongs.filter { PlaylistHealthManager.isLikelyUnavailable(it) }
+                    for (broken in brokenSongs) {
+                        val proposal = PlaylistHealthManager.findBestReplacement(broken, searchRepo)
+                        if (proposal != null && existingIds.add(proposal.replacement.videoId)) {
+                            localPlaylistRepository
+                                .removeTrackFromLocalPlaylist(
+                                    id = id,
+                                    song = broken,
+                                    successMessage = getString(Res.string.delete_song_from_playlist),
+                                    updatedYtMessage = getString(Res.string.removed_from_YouTube_playlist),
+                                    errorMessage = getString(Res.string.can_t_delete_from_youtube_playlist),
+                                ).collectLatestResource(onSuccess = {}, onError = {})
+                            var added = false
+                            localPlaylistRepository
+                                .addTrackToLocalPlaylist(
+                                    id = id,
+                                    song = proposal.replacement.toSongEntity(),
+                                    successMessage = getString(Res.string.added_to_playlist),
+                                    updatedYtMessage = getString(Res.string.added_to_youtube_playlist),
+                                    errorMessage = getString(Res.string.can_t_add_to_youtube_playlist),
+                                ).collectLatestResource(
+                                    onSuccess = { added = true },
+                                    onError = {},
+                                )
+                            if (added) repairedCount++ else unrepairableCount++
+                        } else {
+                            unrepairableCount++
+                        }
+                    }
+                }
+
+                val report =
+                    PlaylistHealthManager.HealthCleanReport(
+                        duplicatesRemoved = removedDups,
+                        tracksRepaired = repairedCount,
+                        unrepairableCount = unrepairableCount,
+                    )
+                if (report.totalFixed > 0) {
+                    updatePlaylistState(id, refresh = true)
+                }
+                hideLoadingDialog()
+                makeToast(report.toSummaryMessage())
+            } catch (e: Exception) {
+                log("cleanAndRepairPlaylist failed: ${e.message}", LogLevel.ERROR)
+                hideLoadingDialog()
+                makeToast(getString(Res.string.error))
+            }
         }
     }
 

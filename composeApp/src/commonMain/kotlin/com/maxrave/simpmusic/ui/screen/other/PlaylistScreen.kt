@@ -58,6 +58,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -89,6 +90,13 @@ import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.extension.barBlurStyle
 import com.maxrave.simpmusic.ui.component.DownloadingIndicator
 import com.maxrave.domain.data.entities.DownloadState
+import com.maxrave.domain.data.model.offline.AutoSyncPlaylistKind
+import com.maxrave.domain.data.model.offline.OfflineCacheAndSyncSettings.containsPlaylist
+import com.maxrave.domain.data.model.offline.OfflineCacheAndSyncSettings.toggleWifiAutoSyncPlaylist
+import com.maxrave.domain.data.model.offline.OfflineCacheAndSyncSettings.wifiAutoSyncPlaylistsFlow
+import com.maxrave.domain.data.model.offline.WifiAutoSyncPlaylistRef
+import com.maxrave.domain.manager.DataStoreManager
+import com.maxrave.simpmusic.utils.WifiPlaylistAutoSyncManager
 import com.maxrave.domain.data.model.browse.album.Track
 import com.maxrave.domain.utils.toSongEntity
 import com.maxrave.logger.Logger
@@ -148,6 +156,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -1302,6 +1311,11 @@ fun PlaylistScreen(
                 }
                 if (playlistBottomSheetShow) {
                     Logger.w("PlaylistScreen", "PlaylistBottomSheet")
+                    val dataStoreManager: DataStoreManager = koinInject()
+                    val wifiAutoSyncManager: WifiPlaylistAutoSyncManager = koinInject()
+                    val sheetScope = rememberCoroutineScope()
+                    val wifiSyncList by dataStoreManager.wifiAutoSyncPlaylistsFlow().collectAsState(initial = emptyList())
+                    val isWifiSynced = wifiSyncList.containsPlaylist(data.id, AutoSyncPlaylistKind.YOUTUBE_PLAYLIST)
                     val addToQueue = {
                         viewModel.getFullTracks { track ->
                             sharedViewModel.addListToQueue(
@@ -1323,6 +1337,37 @@ fun PlaylistScreen(
                             viewModel.updatePlaylistTitle(newTitle, data.id)
                         },
                         onAddToQueue = if (data.isRadio) null else addToQueue,
+                        isWifiAutoSync = isWifiSynced,
+                        onToggleWifiAutoSync =
+                            if (data.isRadio) {
+                                null
+                            } else {
+                                {
+                                    sheetScope.launch {
+                                        val ref =
+                                            WifiAutoSyncPlaylistRef(
+                                                id = data.id,
+                                                title = data.title,
+                                                kind = AutoSyncPlaylistKind.YOUTUBE_PLAYLIST,
+                                            )
+                                        val enabledNow = dataStoreManager.toggleWifiAutoSyncPlaylist(ref)
+                                        if (enabledNow) {
+                                            val res = wifiAutoSyncManager.syncSinglePlaylistIfOnWifi(ref)
+                                            val msg =
+                                                when {
+                                                    res.skippedReason == "metered_network" ->
+                                                        "Wi-Fi Auto-Sync ON — will download once connected to Wi-Fi"
+                                                    res.tracksQueued > 0 ->
+                                                        "Wi-Fi Auto-Sync ON — downloading ${res.tracksQueued} track(s)"
+                                                    else -> "Wi-Fi Auto-Sync ON — playlist is up to date"
+                                                }
+                                            viewModel.makeToast(msg)
+                                        } else {
+                                            viewModel.makeToast("Wi-Fi Auto-Sync turned off for \"${data.title}\"")
+                                        }
+                                    }
+                                }
+                            },
                     )
                 }
                 AnimatedVisibility(

@@ -184,6 +184,7 @@ import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.icon.Speed
 import com.maxrave.simpmusic.ui.icon.Sync
 import com.maxrave.simpmusic.ui.icon.SyncDisabled
+import com.maxrave.simpmusic.ui.icon.Tune
 import com.maxrave.simpmusic.ui.icon.ThumbDownOutline
 import com.maxrave.simpmusic.ui.icon.Tune
 import com.maxrave.simpmusic.ui.icon.Update
@@ -3076,6 +3077,8 @@ fun PlaylistBottomSheet(
     onEditTitle: (newTitle: String) -> Unit = {},
     onSaveToLocal: () -> Unit,
     onAddToQueue: (() -> Unit)? = null,
+    isWifiAutoSync: Boolean = false,
+    onToggleWifiAutoSync: (() -> Unit)? = null,
     localPlaylistRepository: LocalPlaylistRepository = koinInject(),
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -3213,6 +3216,23 @@ fun PlaylistBottomSheet(
                         hideModalBottomSheet()
                     }
                 }
+                if (onToggleWifiAutoSync != null) {
+                    ActionButton(
+                        icon = SimpIcons.DownloadForOffline,
+                        text = null,
+                        textString =
+                            if (isWifiAutoSync) {
+                                "Wi-Fi Auto-Sync: ON"
+                            } else {
+                                "Auto-Sync Offline on Wi-Fi"
+                            },
+                        textColor = if (isWifiAutoSync) seed else null,
+                        iconColor = if (isWifiAutoSync) seed else Color.Unspecified,
+                    ) {
+                        onToggleWifiAutoSync()
+                        hideModalBottomSheet()
+                    }
+                }
                 val shareTitle = stringResource(Res.string.share)
                 ActionButton(icon = SimpIcons.Share, text = Res.string.share) {
                     val url = "https://music.youtube.com/playlist?list=${playlistId.replaceFirst("VL", "")}"
@@ -3239,6 +3259,9 @@ fun LocalPlaylistBottomSheet(
     onDelete: () -> Unit,
     isPinned: Boolean = false,
     onTogglePin: (() -> Unit)? = null,
+    isWifiAutoSync: Boolean = false,
+    onToggleWifiAutoSync: (() -> Unit)? = null,
+    onCleanAndRepair: (() -> Unit)? = null,
 ) {
     val coroutineScope = rememberCoroutineScope()
     var showEditTitle by remember { mutableStateOf(false) }
@@ -3415,6 +3438,33 @@ fun LocalPlaylistBottomSheet(
                         enable = (ytPlaylistId != null),
                     ) {
                         onUpdatePlaylist()
+                    }
+                    if (onToggleWifiAutoSync != null) {
+                        ActionButton(
+                            icon = SimpIcons.DownloadForOffline,
+                            text = null,
+                            textString =
+                                if (isWifiAutoSync) {
+                                    "Wi-Fi Auto-Sync: ON"
+                                } else {
+                                    "Auto-Sync Offline on Wi-Fi"
+                                },
+                            textColor = if (isWifiAutoSync) seed else null,
+                            iconColor = if (isWifiAutoSync) seed else Color.Unspecified,
+                        ) {
+                            onToggleWifiAutoSync()
+                            hideModalBottomSheet()
+                        }
+                    }
+                    if (onCleanAndRepair != null) {
+                        ActionButton(
+                            icon = SimpIcons.Tune,
+                            text = null,
+                            textString = "Clean Duplicates & Repair Tracks",
+                        ) {
+                            onCleanAndRepair()
+                            hideModalBottomSheet()
+                        }
                     }
                     ActionButton(icon = SimpIcons.Delete, text = Res.string.delete_playlist) {
                         onDelete()

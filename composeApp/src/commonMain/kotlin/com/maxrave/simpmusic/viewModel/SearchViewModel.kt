@@ -15,8 +15,10 @@ import com.maxrave.domain.repository.HomeRepository
 import com.maxrave.domain.repository.SearchRepository
 import com.maxrave.domain.utils.Resource
 import com.maxrave.domain.utils.toQueryList
+import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.LogLevel
 import com.maxrave.logger.Logger
+import com.maxrave.simpmusic.utils.StreamPrewarmer
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -94,6 +96,7 @@ class SearchViewModel(
     private val homeRepository: HomeRepository,
 ) : BaseViewModel() {
     private val _searchScreenUIState = MutableStateFlow<SearchScreenUIState>(SearchScreenUIState.Empty)
+    private val streamPrewarmer: StreamPrewarmer? by lazy { runCatching { getKoin().get<StreamPrewarmer>() }.getOrNull() }
     val searchScreenUIState: StateFlow<SearchScreenUIState> get() = _searchScreenUIState.asStateFlow()
 
     private val _searchScreenState = MutableStateFlow(SearchScreenState())
@@ -264,6 +267,9 @@ class SearchViewModel(
                             values.data?.let {
                                 song = it
                                 publishCurrent()
+                                it.firstOrNull()?.let { topSong ->
+                                    streamPrewarmer?.prewarmTracks(listOf(topSong.toTrack()), maxTracks = 1)
+                                }
                             }
                         }
                     }

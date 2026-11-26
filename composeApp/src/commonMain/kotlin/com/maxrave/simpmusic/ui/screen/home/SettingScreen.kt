@@ -1289,6 +1289,7 @@ fun SettingScreen(
                         )
                     }
                 }
+                RollingOfflineCacheAndSyncSettings()
                 SettingItem(
                     title = stringResource(Res.string.play_video_for_video_track_instead_of_audio_only),
                     subtitle = stringResource(Res.string.such_as_music_video_lyrics_video_podcasts_and_more),
@@ -1905,6 +1906,8 @@ fun SettingScreen(
                     EightDSection()
                 }
                 StereoWidenerSettings(enabledByCast = !castState.isRemote)
+                DeviceAudioProfilesSettings()
+                PlaybackHandoffSettings()
                 AiDjSettings()
                 MusicOnlyAndBlocklistSettings()
                 SettingItem(

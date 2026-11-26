@@ -83,10 +83,45 @@ android {
         }
     }
 
+    val releaseKeystoreFile =
+        listOf(
+            rootProject.file(".local-signing/simpmusic-heyjarvis-release.jks"),
+            rootProject.file("simpmusic.jks"),
+        ).firstOrNull { it.exists() }
+
+    signingConfigs {
+        if (releaseKeystoreFile != null) {
+            val signingPropsFile = rootProject.file(".local-signing/signing.properties")
+            val signingProps = Properties().apply {
+                if (signingPropsFile.exists()) {
+                    signingPropsFile.inputStream().use { load(it) }
+                }
+            }
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword =
+                    System.getenv("SIGNING_STORE_PASSWORD")
+                        ?: signingProps.getProperty("storePassword")
+                        ?: "simpmusic_heyjarvis_release"
+                keyAlias =
+                    System.getenv("SIGNING_KEY_ALIAS")
+                        ?: signingProps.getProperty("keyAlias")
+                        ?: "heyjarvis"
+                keyPassword =
+                    System.getenv("SIGNING_KEY_PASSWORD")
+                        ?: signingProps.getProperty("keyPassword")
+                        ?: "simpmusic_heyjarvis_release"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig =
+                signingConfigs.findByName("release")
+                    ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

@@ -27,6 +27,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +51,7 @@ import com.maxrave.simpmusic.expect.ui.DeviceVolumeController
 import com.maxrave.simpmusic.expect.ui.rememberCastReceivers
 import com.maxrave.simpmusic.expect.ui.rememberDeviceVolumeController
 import com.maxrave.simpmusic.getPlatform
+import com.maxrave.simpmusic.handoff.PlaybackHandoffManager
 import com.maxrave.simpmusic.ui.component.SurfaceDarkColors
 import com.maxrave.simpmusic.ui.component.rememberSurfaceDarkColors
 import com.maxrave.simpmusic.ui.icon.Check
@@ -60,6 +62,9 @@ import com.maxrave.simpmusic.ui.icon.Smartphone
 import com.maxrave.simpmusic.ui.icon.Speaker
 import com.maxrave.simpmusic.ui.theme.typo
 import kotlinx.coroutines.launch
+import multiplatform.network.cmptoast.ToastDuration
+import multiplatform.network.cmptoast.ToastGravity
+import multiplatform.network.cmptoast.showToast
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import simpmusic.composeapp.generated.resources.Res
@@ -121,8 +126,13 @@ internal fun AppleMusicOutputSheet(
     val localDensity = LocalDensity.current
     // Scanning for receivers only while this is open: discovery keeps the radio busy.
     val cast = rememberCastReceivers(discover = true)
+    val handoffManager = koinInject<PlaybackHandoffManager>()
+    val handoffPeers by handoffManager.peers.collectAsStateWithLifecycle()
     // Devices coming and going update the list on their own; the system's own route changing does not.
-    LaunchedEffect(Unit) { onRefresh() }
+    LaunchedEffect(Unit) {
+        onRefresh()
+        handoffManager.refreshPeers()
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -193,6 +203,78 @@ internal fun AppleMusicOutputSheet(
                             colors = colors,
                             onClick = { if (!receiver.isConnected) cast.connect(receiver.id) },
                         )
+                    }
+                }
+                if (handoffPeers.isNotEmpty()) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                        thickness = 1.dp,
+                        color = Color.White.copy(alpha = 0.10f),
+                    )
+                    Text(
+                        text = "SimpMusic Devices on Wi-Fi (Handoff)",
+                        style = typo().bodySmall,
+                        color = colors.subtitle,
+                        modifier = Modifier.fillMaxWidth().padding(start = 32.dp, end = 20.dp, top = 4.dp, bottom = 2.dp),
+                    )
+                    handoffPeers.forEach { peer ->
+                        val peerIcon = if (peer.platform == "ANDROID") SimpIcons.Smartphone else SimpIcons.Speaker
+                        val subtitle =
+                            when {
+                                peer.nowPlayingTitle.isNotBlank() && peer.isPlaying ->
+                                    "Playing: ${peer.nowPlayingTitle}"
+                                peer.nowPlayingTitle.isNotBlank() ->
+                                    "Paused: ${peer.nowPlayingTitle}"
+                                else -> "Ready on Wi-Fi"
+                            }
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(64.dp)
+                                    .padding(horizontal = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                                Icon(imageVector = peerIcon, contentDescription = null, tint = colors.content, modifier = Modifier.size(22.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                                Text(text = peer.deviceName, style = typo().labelSmall, color = colors.content, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(text = subtitle, style = typo().bodySmall, color = colors.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        val res = handoffManager.sendPlaybackTo(peer)
+                                        showToast(
+                                            res.getOrElse { it.message ?: "Handoff failed" },
+                                            duration = ToastDuration.Short,
+                                            gravity = ToastGravity.Bottom,
+                                        )
+                                        if (res.isSuccess) closeSheet()
+                                    }
+                                },
+                            ) {
+                                Text("Send", color = colors.content, style = typo().labelSmall)
+                            }
+                            if (peer.nowPlayingTitle.isNotBlank()) {
+                                TextButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val res = handoffManager.pullPlaybackFrom(peer)
+                                            showToast(
+                                                res.getOrElse { it.message ?: "Pull failed" },
+                                                duration = ToastDuration.Short,
+                                                gravity = ToastGravity.Bottom,
+                                            )
+                                            if (res.isSuccess) closeSheet()
+                                        }
+                                    },
+                                ) {
+                                    Text("Pull", color = colors.content, style = typo().labelSmall)
+                                }
+                            }
+                        }
                     }
                 }
                 deviceVolumeController?.let { controller ->
