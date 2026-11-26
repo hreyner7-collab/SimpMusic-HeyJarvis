@@ -786,10 +786,13 @@ class LocalPlaylistViewModel(
             is LocalPlaylistUIEvent.ItemClick -> {
                 val loadedList = lazyTrackPagingItems.value?.itemSnapshotList?.toList() ?: return
                 val clickedSong = loadedList.find { it?.first?.videoId == ev.videoId }?.first ?: return
+                val nonNullSongs = loadedList.mapNotNull { it?.first }
+                val lastTimestamp = loadedList.lastOrNull { it?.second?.inPlaylist != null }?.second?.inPlaylist?.let { converter.dateToTimestamp(it) }
 
+                setShuffle(false)
                 setQueueData(
                     QueueData.Data(
-                        listTracks = loadedList.mapNotNull { it?.first }.toArrayListTrack(),
+                        listTracks = nonNullSongs.toArrayListTrack(),
                         firstPlayedTrack = clickedSong.toTrack(),
                         playlistId = LOCAL_PLAYLIST_ID + uiState.value.id,
                         playlistName = "${
@@ -801,21 +804,10 @@ class LocalPlaylistViewModel(
                         continuation =
                             if (offset.value > 0) {
                                 when (uiState.value.filterState) {
-                                    FilterState.OlderFirst -> {
-                                        ASC + converter.dateToTimestamp(loadedList.lastOrNull()?.second?.inPlaylist)
-                                    }
-
-                                    FilterState.NewerFirst -> {
-                                        DESC + converter.dateToTimestamp(loadedList.lastOrNull()?.second?.inPlaylist)
-                                    }
-
-                                    FilterState.CustomOrder -> {
-                                        CUSTOM_ORDER + offset.value.toString()
-                                    }
-
-                                    FilterState.Title -> {
-                                        TITLE + offset.value.toString()
-                                    }
+                                    FilterState.OlderFirst -> lastTimestamp?.let { ASC + it }
+                                    FilterState.NewerFirst -> lastTimestamp?.let { DESC + it }
+                                    FilterState.CustomOrder -> CUSTOM_ORDER + offset.value.toString()
+                                    FilterState.Title -> TITLE + offset.value.toString()
                                 }
                             } else {
                                 null
@@ -825,14 +817,16 @@ class LocalPlaylistViewModel(
                 loadMediaItem(
                     clickedSong,
                     Config.PLAYLIST_CLICK,
-                    loadedList.map { it?.first }.indexOf(clickedSong),
+                    nonNullSongs.indexOf(clickedSong).coerceAtLeast(0),
                 )
             }
 
             is LocalPlaylistUIEvent.SuggestionsItemClick -> {
                 val suggestionsList = uiState.value.suggestions?.songs ?: return
                 val clickedSong = suggestionsList.find { it.videoId == ev.videoId } ?: return
+                val clickedIndex = suggestionsList.indexOf(clickedSong).coerceAtLeast(0)
 
+                setShuffle(false)
                 setQueueData(
                     QueueData.Data(
                         listTracks = suggestionsList.toCollection(ArrayList()),
@@ -852,7 +846,7 @@ class LocalPlaylistViewModel(
                 loadMediaItem(
                     clickedSong,
                     Config.PLAYLIST_CLICK,
-                    0,
+                    clickedIndex,
                 )
             }
 
@@ -862,15 +856,18 @@ class LocalPlaylistViewModel(
                         makeToast(getString(Res.string.playlist_is_empty))
                         return
                     }
-
+                val nonNullSongs = loadedList.mapNotNull { it?.first }
                 val firstPlayTrack =
-                    loadedList.firstOrNull()?.first?.toTrack() ?: run {
+                    nonNullSongs.firstOrNull()?.toTrack() ?: run {
                         makeToast(getString(Res.string.playlist_is_empty))
                         return
                     }
+                val lastTimestamp = loadedList.lastOrNull { it?.second?.inPlaylist != null }?.second?.inPlaylist?.let { converter.dateToTimestamp(it) }
+
+                setShuffle(false)
                 setQueueData(
                     QueueData.Data(
-                        listTracks = loadedList.mapNotNull { it?.first }.toArrayListTrack(),
+                        listTracks = nonNullSongs.toArrayListTrack(),
                         firstPlayedTrack = firstPlayTrack,
                         playlistId = LOCAL_PLAYLIST_ID + uiState.value.id,
                         playlistName = "${
@@ -881,26 +878,11 @@ class LocalPlaylistViewModel(
                         playlistType = PlaylistType.LOCAL_PLAYLIST,
                         continuation =
                             if (offset.value > 0) {
-                                if (offset.value > 0) {
-                                    when (uiState.value.filterState) {
-                                        FilterState.OlderFirst -> {
-                                            ASC + converter.dateToTimestamp(loadedList.lastOrNull()?.second?.inPlaylist)
-                                        }
-
-                                        FilterState.NewerFirst -> {
-                                            DESC + converter.dateToTimestamp(loadedList.lastOrNull()?.second?.inPlaylist)
-                                        }
-
-                                        FilterState.CustomOrder -> {
-                                            CUSTOM_ORDER + offset.value.toString()
-                                        }
-
-                                        FilterState.Title -> {
-                                            TITLE + offset.value.toString()
-                                        }
-                                    }
-                                } else {
-                                    null
+                                when (uiState.value.filterState) {
+                                    FilterState.OlderFirst -> lastTimestamp?.let { ASC + it }
+                                    FilterState.NewerFirst -> lastTimestamp?.let { DESC + it }
+                                    FilterState.CustomOrder -> CUSTOM_ORDER + offset.value.toString()
+                                    FilterState.Title -> TITLE + offset.value.toString()
                                 }
                             } else {
                                 null
@@ -923,9 +905,10 @@ class LocalPlaylistViewModel(
                         makeToast(getString(Res.string.playlist_is_empty))
                         return@launch
                     }
-                    val random = listVideoId.random()
-                    val randomIndex = listVideoId.indexOf(random)
+                    val randomIndex = listVideoId.indices.random()
+                    val random = listVideoId[randomIndex]
                     val firstPlayedTrack = songRepository.getSongById(random).singleOrNull()?.toTrack() ?: return@launch
+                    setShuffle(true)
                     setQueueData(
                         QueueData.Data(
                             listTracks = arrayListOf(firstPlayedTrack),
@@ -937,7 +920,7 @@ class LocalPlaylistViewModel(
                                 )
                             } \"${uiState.value.title}\"",
                             playlistType = PlaylistType.LOCAL_PLAYLIST,
-                            continuation = "",
+                            continuation = if (listVideoId.size > 1) "" else null,
                         ),
                     )
                     shufflePlaylist(randomIndex)

@@ -265,6 +265,7 @@ fun PlaylistScreen(
             it?.songEntity
         }.collectAsState(initial = null)
     val isPlaying by sharedViewModel.controllerState.map { it.isPlaying }.collectAsState(initial = false)
+    val isShuffle by sharedViewModel.controllerState.map { it.isShuffle }.collectAsState(initial = false)
 
     var currentItem by remember {
         mutableStateOf<Track?>(null)
@@ -643,7 +644,7 @@ fun PlaylistScreen(
                                                             Spacer(modifier = Modifier.height(20.dp))
                                                             // Apple Music-style action row:
                                                             // [Shuffle][Play pill][Download/More] (cluster centered, all 48dp matching size)
-                                                            val isThisPlaying = isPlaying && playingPlaylistId == data.id
+                                                            val isThisPlaying = isPlaying && playingPlaylistId == data.id && !isShuffle
                                                             Row(
                                                                 modifier =
                                                                     Modifier
@@ -858,7 +859,7 @@ fun PlaylistScreen(
                                                 if (isPortrait) {
                                                     // Apple Music-style action row:
                                                     // [Shuffle][Play pill][Download/More] (cluster centered, all 48dp matching size)
-                                                    val isThisPlaying = isPlaying && playingPlaylistId == data.id
+                                                    val isThisPlaying = isPlaying && playingPlaylistId == data.id && !isShuffle
                                                     Row(
                                                         modifier =
                                                             Modifier

@@ -293,6 +293,12 @@ class JerryMediaPlaybackTest {
                     Unit
                 }
                 "sleepStop" -> { sleepStopCalls++; Unit }
+                "setShuffle" -> {
+                    val enabled = args?.get(0) as? Boolean ?: false
+                    fakePlayer.shuffleModeEnabled = enabled
+                    controlState.value = controlState.value.copy(isShuffle = enabled)
+                    Unit
+                }
                 "shufflePlaylist" -> {
                     val idx = args?.get(0) as? Int ?: 0
                     shufflePlaylistCalls += idx

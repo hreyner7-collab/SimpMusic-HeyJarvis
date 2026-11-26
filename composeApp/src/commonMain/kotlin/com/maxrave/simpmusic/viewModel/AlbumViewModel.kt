@@ -217,13 +217,15 @@ class AlbumViewModel(
         collectDownloadStateJob =
             viewModelScope.launch {
                 downloadUtils.downloadTask.collectLatest { downloadTask ->
+                    val tracks = uiState.value.listTrack
+                    if (tracks.isEmpty()) return@collectLatest
                     var count = 0
-                    uiState.value.listTrack.forEach { track ->
+                    tracks.forEach { track ->
                         if (downloadTask[track.videoId] == DownloadState.STATE_DOWNLOADED) {
                             count++
                         }
                     }
-                    if (count == uiState.value.listTrack.size) {
+                    if (count == tracks.size) {
                         albumRepository.updateAlbumDownloadState(uiState.value.browseId, DownloadState.STATE_DOWNLOADED)
                         _uiState.update {
                             it.copy(
@@ -236,6 +238,7 @@ class AlbumViewModel(
     }
 
     fun playTrack(track: Track) {
+        setShuffle(false)
         setQueueData(
             QueueData.Data(
                 listTracks = uiState.value.listTrack.toCollection(ArrayList()),
@@ -251,16 +254,17 @@ class AlbumViewModel(
     }
 
     fun shuffle() {
-        if (uiState.value.listTrack.isEmpty()) {
+        val tracks = uiState.value.listTrack
+        if (tracks.isEmpty()) {
             makeToast(getString(Res.string.playlist_is_empty))
             return
         }
-        val shuffleList = uiState.value.listTrack.shuffled()
-        val randomIndex = shuffleList.indices.random()
+        val randomIndex = tracks.indices.random()
+        setShuffle(true)
         setQueueData(
             QueueData.Data(
-                listTracks = shuffleList.toCollection(ArrayList()),
-                firstPlayedTrack = shuffleList[randomIndex],
+                listTracks = tracks.toCollection(ArrayList()),
+                firstPlayedTrack = tracks[randomIndex],
                 playlistId = uiState.value.browseId.replaceFirst("VL", ""),
                 playlistName = "${getString(Res.string.album)} \"${uiState.value.title}\"",
                 // Not ALBUM: shuffling has already thrown away the running order, so the reason to
@@ -269,7 +273,7 @@ class AlbumViewModel(
                 continuation = null,
             ),
         )
-        loadMediaItem(shuffleList[randomIndex], Config.ALBUM_CLICK, randomIndex)
+        loadMediaItem(tracks[randomIndex], Config.ALBUM_CLICK, randomIndex)
     }
 
     fun downloadFullAlbum() {

@@ -223,6 +223,7 @@ class ArtistViewModel(
                 val data = res.data
                 when (res) {
                     is Resource.Success if data != null && data.first.isNotEmpty() -> {
+                        setShuffle(false)
                         setQueueData(
                             QueueData.Data(
                                 listTracks = data.first,
@@ -254,10 +255,20 @@ class ArtistViewModel(
                 val data = res.data
                 when (res) {
                     is Resource.Success if data != null && data.first.isNotEmpty() -> {
+                        val popularPrefix = artistScreenState.value.data.popularSongs.take(minOf(5, data.first.size)).map { it.videoId }
+                        val endpointPrefix = data.first.take(minOf(5, data.first.size)).map { it.videoId }
+                        val tracks =
+                            if (data.first.size > 1 && popularPrefix.size >= 2 && endpointPrefix == popularPrefix) {
+                                data.first.shuffled()
+                            } else {
+                                data.first
+                            }
+                        val firstTrack = tracks.first()
+                        setShuffle(true)
                         setQueueData(
                             QueueData.Data(
-                                listTracks = data.first,
-                                firstPlayedTrack = data.first.first(),
+                                listTracks = tracks,
+                                firstPlayedTrack = firstTrack,
                                 playlistId = endpoint.playlistId,
                                 playlistName = "\"${artistScreenState.value.data.title}\" ${getString(Res.string.shuffle)}",
                                 playlistType = PlaylistType.RADIO,
@@ -265,14 +276,31 @@ class ArtistViewModel(
                             ),
                         )
                         loadMediaItem(
-                            data.first.first(),
+                            firstTrack,
                             Config.PLAYLIST_CLICK,
                             0,
                         )
                     }
 
                     else -> {
-                        makeToast(res.message)
+                        val popular = artistScreenState.value.data.popularSongs
+                        if (popular.isNotEmpty()) {
+                            val randomIndex = popular.indices.random()
+                            setShuffle(true)
+                            setQueueData(
+                                QueueData.Data(
+                                    listTracks = ArrayList(popular),
+                                    firstPlayedTrack = popular[randomIndex],
+                                    playlistId = artistScreenState.value.data.channelId,
+                                    playlistName = "\"${artistScreenState.value.data.title}\" ${getString(Res.string.shuffle)}",
+                                    playlistType = PlaylistType.PLAYLIST,
+                                    continuation = null,
+                                ),
+                            )
+                            loadMediaItem(popular[randomIndex], Config.PLAYLIST_CLICK, randomIndex)
+                        } else {
+                            makeToast(res.message)
+                        }
                     }
                 }
             }

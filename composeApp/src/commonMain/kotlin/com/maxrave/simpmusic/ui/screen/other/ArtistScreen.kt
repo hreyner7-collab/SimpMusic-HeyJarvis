@@ -926,6 +926,7 @@ private fun ArtistSections(
                         },
                         onClickListener = {
                             val firstQueue: Track = song
+                            viewModel.setShuffle(false)
                             viewModel.setQueueData(
                                 QueueData.Data(
                                     listTracks = arrayListOf(firstQueue),
@@ -1151,6 +1152,7 @@ private fun ArtistSections(
                         HomeItemVideo(
                             forceDark = true,                            onClick = {
                                 val firstQueue: Track = video
+                                viewModel.setShuffle(false)
                                 viewModel.setQueueData(
                                     QueueData.Data(
                                         listTracks = arrayListOf(firstQueue),

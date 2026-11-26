@@ -214,8 +214,8 @@ class JerryMediaPlayback(
                     playlistType = PlaylistType.RADIO,
                     configType = Config.PLAYLIST_CLICK,
                     continuation = (res as? Resource.Success)?.data?.second,
+                    shuffle = true,
                 )
-                setShuffle(true)
                 return "${artistMatch.artist} shuffled"
             }
         }
@@ -257,8 +257,8 @@ class JerryMediaPlayback(
                             playlistType = PlaylistType.RADIO,
                             configType = Config.PLAYLIST_CLICK,
                             continuation = (radioRes as? Resource.Success)?.data?.second,
+                            shuffle = shuffle,
                         )
-                        if (shuffle) setShuffle(true)
                         return if (shuffle) "${browse.name} shuffled" else browse.name
                     }
                 }
@@ -272,8 +272,8 @@ class JerryMediaPlayback(
                         playlistType = PlaylistType.PLAYLIST,
                         configType = Config.PLAYLIST_CLICK,
                         continuation = null,
+                        shuffle = shuffle,
                     )
-                    if (shuffle) setShuffle(true)
                     return if (shuffle) "${browse.name} shuffled" else browse.name
                 }
             }
@@ -291,8 +291,8 @@ class JerryMediaPlayback(
                     playlistType = PlaylistType.RADIO,
                     configType = Config.PLAYLIST_CLICK,
                     continuation = null,
+                    shuffle = true,
                 )
-                setShuffle(true)
                 return "${artistMatch.artist} shuffled"
             }
         }
@@ -312,8 +312,8 @@ class JerryMediaPlayback(
             playlistType = PlaylistType.PLAYLIST,
             configType = Config.PLAYLIST_CLICK,
             continuation = null,
+            shuffle = shuffle,
         )
-        if (shuffle) setShuffle(true)
         return if (shuffle) "${artistMatch.artist} shuffled" else artistMatch.artist
     }
 
@@ -940,6 +940,7 @@ class JerryMediaPlayback(
         handoffMutex.withLock {
             currentCoroutineContext().ensureActive()
             withContext(Dispatchers.Main.immediate) {
+                handler.setShuffle(false)
                 handler.reset()
                 handler.setQueueData(
                     QueueData.Data(
@@ -1241,6 +1242,7 @@ class JerryMediaPlayback(
         configType: String,
         continuation: String?,
         recordOutgoing: Boolean = true,
+        shuffle: Boolean = false,
     ) {
         val uniqueTracks = tracks.filter { it.videoId.isNotBlank() }.distinctBy { it.videoId }
         if (uniqueTracks.isEmpty()) return
@@ -1249,6 +1251,7 @@ class JerryMediaPlayback(
         handoffMutex.withLock {
             currentCoroutineContext().ensureActive()
             withContext(Dispatchers.Main.immediate) {
+                handler.setShuffle(shuffle)
                 handler.reset()
                 handler.setQueueData(
                     QueueData.Data(

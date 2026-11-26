@@ -272,6 +272,7 @@ class PodcastViewModel(
             is PodcastUIEvent.PlayAll -> {
                 if (podcastData.listEpisode.isNotEmpty()) {
                     val firstEpisode = podcastData.listEpisode.first()
+                    setShuffle(false)
                     val queueData =
                         QueueData.Data(
                             listTracks = podcastData.listEpisode.map { it.toTrack() },
@@ -293,14 +294,11 @@ class PodcastViewModel(
             is PodcastUIEvent.Shuffle -> {
                 if (podcastData.listEpisode.isNotEmpty()) {
                     val index = kotlin.random.Random.nextInt(0, podcastData.listEpisode.size)
-                    val shuffleList = podcastData.listEpisode.toMutableList()
-                    val firstPlayItem = shuffleList.removeAt(index)
-                    shuffleList.shuffle()
-                    shuffleList.add(0, firstPlayItem)
-
+                    val firstPlayItem = podcastData.listEpisode[index]
+                    setShuffle(true)
                     val queueData =
                         QueueData.Data(
-                            listTracks = shuffleList.map { it.toTrack() },
+                            listTracks = podcastData.listEpisode.map { it.toTrack() },
                             firstPlayedTrack = firstPlayItem.toTrack(),
                             playlistId = event.podcastId,
                             playlistName = "Podcast \"${podcastData.title}\"",
@@ -311,7 +309,7 @@ class PodcastViewModel(
                     loadMediaItem(
                         firstPlayItem.toTrack(),
                         Config.PLAYLIST_CLICK,
-                        0,
+                        index,
                     )
                 }
             }
@@ -319,8 +317,9 @@ class PodcastViewModel(
             is PodcastUIEvent.EpisodeClick -> {
                 val videoId = event.videoId
                 val episode = podcastData.listEpisode.find { it.videoId == videoId } ?: return
-                val index = podcastData.listEpisode.indexOf(episode)
+                val index = podcastData.listEpisode.indexOf(episode).coerceAtLeast(0)
 
+                setShuffle(false)
                 val queueData =
                     QueueData.Data(
                         listTracks = podcastData.listEpisode.map { it.toTrack() },

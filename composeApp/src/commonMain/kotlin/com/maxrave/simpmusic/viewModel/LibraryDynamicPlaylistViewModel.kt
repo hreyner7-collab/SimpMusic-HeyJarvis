@@ -291,6 +291,7 @@ class LibraryDynamicPlaylistViewModel(
                 else -> return
             }
         if (playTrack == null) return
+        setShuffle(false)
         setQueueData(
             QueueData.Data(
                 listTracks = targetList.toArrayListTrack(),
@@ -322,6 +323,7 @@ class LibraryDynamicPlaylistViewModel(
     fun playAll(type: LibraryDynamicPlaylistType) {
         val targetList = getSongList(type)
         val firstTrack = targetList.firstOrNull() ?: return
+        setShuffle(false)
         setQueueData(
             QueueData.Data(
                 listTracks = targetList.toArrayListTrack(),
@@ -342,11 +344,12 @@ class LibraryDynamicPlaylistViewModel(
     fun shuffle(type: LibraryDynamicPlaylistType) {
         val targetList = getSongList(type)
         if (targetList.isEmpty()) return
-        val shuffledList = targetList.shuffled()
-        val firstTrack = shuffledList.first()
+        val randomIndex = targetList.indices.random()
+        val firstTrack = targetList[randomIndex]
+        setShuffle(true)
         setQueueData(
             QueueData.Data(
-                listTracks = shuffledList.toArrayListTrack(),
+                listTracks = targetList.toArrayListTrack(),
                 firstPlayedTrack = firstTrack.toTrack(),
                 playlistId = null,
                 playlistName = playlistName(type),
@@ -357,7 +360,7 @@ class LibraryDynamicPlaylistViewModel(
         loadMediaItem(
             firstTrack.toTrack(),
             Config.PLAYLIST_CLICK,
-            0,
+            randomIndex,
         )
     }
 

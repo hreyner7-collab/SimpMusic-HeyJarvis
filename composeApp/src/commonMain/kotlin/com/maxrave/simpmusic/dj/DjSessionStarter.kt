@@ -92,6 +92,7 @@ class DjSessionStarter(
         DjSessionState.begin(picks)
         val tracks = picks.map { it.track }
         withContext(Dispatchers.Main.immediate) {
+            handler.setShuffle(false)
             handler.reset()
             handler.setQueueData(
                 QueueData.Data(

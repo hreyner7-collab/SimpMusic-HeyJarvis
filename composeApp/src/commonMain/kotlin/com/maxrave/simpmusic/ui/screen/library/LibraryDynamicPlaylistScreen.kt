@@ -631,6 +631,7 @@ fun LibraryDynamicPlaylistScreen(
                                 val data = analyticsUIState.topTracks.data
                                 if (!data.isNullOrEmpty()) {
                                     val first = data.first().second
+                                    sharedViewModel.setShuffle(false)
                                     sharedViewModel.setQueueData(
                                         QueueData.Data(
                                             listTracks = data.map { it.second }.toArrayListTrack(),
@@ -660,11 +661,12 @@ fun LibraryDynamicPlaylistScreen(
                             if (type is LibraryDynamicPlaylistType.TopTracks) {
                                 val data = analyticsUIState.topTracks.data
                                 if (!data.isNullOrEmpty()) {
-                                    val shuffled = data.shuffled()
-                                    val first = shuffled.first().second
+                                    val randomIndex = data.indices.random()
+                                    val first = data[randomIndex].second
+                                    sharedViewModel.setShuffle(true)
                                     sharedViewModel.setQueueData(
                                         QueueData.Data(
-                                            listTracks = shuffled.map { it.second }.toArrayListTrack(),
+                                            listTracks = data.map { it.second }.toArrayListTrack(),
                                             firstPlayedTrack = first.toTrack(),
                                             playlistId = null,
                                             playlistName = getStringBlocking(Res.string.your_top_tracks),
@@ -675,7 +677,7 @@ fun LibraryDynamicPlaylistScreen(
                                     sharedViewModel.loadMediaItem(
                                         first.toTrack(),
                                         Config.PLAYLIST_CLICK,
-                                        0,
+                                        randomIndex,
                                     )
                                 }
                             } else {

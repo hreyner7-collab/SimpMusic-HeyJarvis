@@ -120,6 +120,7 @@ class PlaylistViewModel(
                                                 }
                                             }
                                             downloadUtils.downloads.collectLatest { downloads ->
+                                                if (tracks.isEmpty()) return@collectLatest
                                                 var count = 0
                                                 tracks.forEachIndexed { index, track ->
                                                     val trackDownloadState = downloads[track.videoId]?.first?.state
@@ -472,6 +473,30 @@ class PlaylistViewModel(
         }
     }
 
+    private fun shuffleLoadedTracksLocally(data: PlaylistState): Boolean {
+        val loadedList = tracks.value
+        if (loadedList.isEmpty()) return false
+        val startIndex = kotlin.random.Random.nextInt(loadedList.size)
+        val firstSong = loadedList[startIndex]
+        setShuffle(true)
+        setQueueData(
+            QueueData.Data(
+                listTracks = loadedList.toCollection(arrayListOf<Track>()),
+                firstPlayedTrack = firstSong,
+                playlistId = data.id,
+                playlistName = "\"${data.title}\" ${getString(Res.string.shuffle)}",
+                playlistType = PlaylistType.PLAYLIST,
+                continuation = continuation.value,
+            ),
+        )
+        loadMediaItem(
+            firstSong,
+            Config.PLAYLIST_CLICK,
+            startIndex,
+        )
+        return true
+    }
+
     fun onUIEvent(event: PlaylistUIEvent) {
         val data = uiState.value.data ?: return
         when (event) {
@@ -479,7 +504,8 @@ class PlaylistViewModel(
                 val videoId = event.videoId
                 val loadedList = tracks.value
                 val clickedSong = loadedList.firstOrNull { it.videoId == videoId } ?: return
-                val index = loadedList.indexOf(clickedSong)
+                val index = loadedList.indexOf(clickedSong).coerceAtLeast(0)
+                setShuffle(false)
                 setQueueData(
                     QueueData.Data(
                         listTracks = loadedList.toCollection(arrayListOf<Track>()),
@@ -510,6 +536,7 @@ class PlaylistViewModel(
                     return
                 }
                 val clickedSong = loadedList.first()
+                setShuffle(false)
                 setQueueData(
                     QueueData.Data(
                         listTracks = loadedList.toCollection(arrayListOf<Track>()),
@@ -532,40 +559,60 @@ class PlaylistViewModel(
             }
 
             PlaylistUIEvent.Shuffle -> {
+                // When the full playlist is already loaded in memory (no remaining continuation pages),
+                // shuffle locally right away: zero network wait, genuine random starting track, all
+                // tracks preserved, and toggling Shuffle off in Now Playing restores original order.
+                if (continuation.value.isNullOrEmpty() && shuffleLoadedTracksLocally(data)) {
+                    return
+                }
                 val shuffleEndpoint = data.shuffleEndpoint
                 if (shuffleEndpoint == null) {
-                    makeToast(
-                        getString(Res.string.shuffle_not_available),
-                    )
+                    if (!shuffleLoadedTracksLocally(data)) {
+                        makeToast(
+                            getString(Res.string.shuffle_not_available),
+                        )
+                    }
                     return
                 } else {
                     viewModelScope.launch {
                         songRepository.getRadioFromEndpoint(shuffleEndpoint).collectLatest { res ->
                             val result = res.data
                             when (res) {
-                                is Resource.Success if (result != null) -> {
+                                is Resource.Success if (result != null && result.first.isNotEmpty()) -> {
                                     Logger.d(tag, "Shuffle data: ${result.first.size}")
+                                    val loadedPrefixIds = tracks.value.take(minOf(5, result.first.size)).map { it.videoId }
+                                    val endpointPrefixIds = result.first.take(minOf(5, result.first.size)).map { it.videoId }
+                                    val shuffledTracks =
+                                        if (result.first.size > 1 && loadedPrefixIds.size >= 2 && endpointPrefixIds == loadedPrefixIds) {
+                                            result.first.shuffled()
+                                        } else {
+                                            result.first
+                                        }
+                                    val firstTrack = shuffledTracks.firstOrNull() ?: return@collectLatest
+                                    setShuffle(true)
                                     setQueueData(
                                         QueueData.Data(
-                                            listTracks = result.first.toCollection(arrayListOf<Track>()),
-                                            firstPlayedTrack = result.first.firstOrNull() ?: return@collectLatest,
-                                            playlistId = shuffleEndpoint.playlistId,
+                                            listTracks = shuffledTracks.toCollection(arrayListOf<Track>()),
+                                            firstPlayedTrack = firstTrack,
+                                            playlistId = data.id,
                                             playlistName = "\"${data.title}\" ${getString(Res.string.shuffle)}",
                                             playlistType = PlaylistType.RADIO,
                                             continuation = result.second,
                                         ),
                                     )
                                     loadMediaItem(
-                                        result.first.firstOrNull() ?: return@collectLatest,
+                                        firstTrack,
                                         Config.RADIO_CLICK,
                                         0,
                                     )
                                 }
 
                                 else -> {
-                                    makeToast(
-                                        res.message ?: getString(Res.string.error),
-                                    )
+                                    if (!shuffleLoadedTracksLocally(data)) {
+                                        makeToast(
+                                            res.message ?: getString(Res.string.error),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -585,12 +632,14 @@ class PlaylistViewModel(
                         songRepository.getRadioFromEndpoint(radioEndpoint).collectLatest { res ->
                             val result = res.data
                             when (res) {
-                                is Resource.Success if (result != null) -> {
+                                is Resource.Success if (result != null && result.first.isNotEmpty()) -> {
                                     Logger.d(tag, "Radio data: ${result.first.size}")
+                                    val firstTrack = result.first.firstOrNull() ?: return@collectLatest
+                                    setShuffle(false)
                                     setQueueData(
                                         QueueData.Data(
                                             listTracks = result.first.toCollection(arrayListOf<Track>()),
-                                            firstPlayedTrack = result.first.firstOrNull() ?: return@collectLatest,
+                                            firstPlayedTrack = firstTrack,
                                             playlistId = radioEndpoint.playlistId,
                                             playlistName = "\"${data.title}\" ${getString(Res.string.radio)}",
                                             playlistType = PlaylistType.RADIO,
@@ -598,7 +647,7 @@ class PlaylistViewModel(
                                         ),
                                     )
                                     loadMediaItem(
-                                        result.first.firstOrNull() ?: return@collectLatest,
+                                        firstTrack,
                                         Config.RADIO_CLICK,
                                         0,
                                     )

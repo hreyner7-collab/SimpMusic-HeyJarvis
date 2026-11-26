@@ -282,6 +282,7 @@ fun LocalPlaylistScreen(
             it?.songEntity
         }.collectAsState(initial = null)
     val isPlaying by sharedViewModel.controllerState.map { it.isPlaying }.collectAsState(initial = false)
+    val isShuffle by sharedViewModel.controllerState.map { it.isShuffle }.collectAsState(initial = false)
 
     val queueData by sharedViewModel.getQueueDataState().collectAsStateWithLifecycle()
     val playingPlaylistId by remember {
@@ -823,7 +824,9 @@ fun LocalPlaylistScreen(
                                             // Apple Music-style action row: [Shuffle][Play pill][Download][Suggest]
                                             // centered cluster. Suggest (AI) only shows when synced with YouTube.
                                             val isThisPlaying =
-                                                isPlaying && playingPlaylistId == LOCAL_PLAYLIST_ID + uiState.id
+                                                isPlaying &&
+                                                    playingPlaylistId == LOCAL_PLAYLIST_ID + uiState.id &&
+                                                    !isShuffle
                                             Row(
                                                 modifier =
                                                     Modifier
@@ -1070,7 +1073,9 @@ fun LocalPlaylistScreen(
                                     // Apple Music-style action row: [Shuffle][Play pill][Download][Suggest]
                                     // centered cluster. Suggest (AI) only shows when synced with YouTube.
                                     val isThisPlaying =
-                                        isPlaying && playingPlaylistId == LOCAL_PLAYLIST_ID + uiState.id
+                                        isPlaying &&
+                                            playingPlaylistId == LOCAL_PLAYLIST_ID + uiState.id &&
+                                            !isShuffle
                                     Row(
                                         modifier =
                                             Modifier

@@ -43,6 +43,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -122,6 +123,7 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
@@ -149,6 +151,7 @@ fun AlbumScreen(
     val uriHandler = LocalUriHandler.current
 
     val playingVideoId by viewModel.nowPlayingVideoId.collectAsStateWithLifecycle()
+    val isShuffle by sharedViewModel.controllerState.map { it.isShuffle }.collectAsState(initial = false)
 
     val queueData by sharedViewModel.getQueueDataState().collectAsStateWithLifecycle()
     val playingPlaylistId by remember {
@@ -485,7 +488,8 @@ fun AlbumScreen(
                                                         // [Shuffle][Play pill][Download] (cluster centered, all 48dp matching size)
                                                         val isThisPlaying =
                                                             playingVideoId.isNotEmpty() &&
-                                                                playingPlaylistId == browseId.replaceFirst("VL", "")
+                                                                playingPlaylistId == browseId.replaceFirst("VL", "") &&
+                                                                !isShuffle
                                                         Row(
                                                             modifier =
                                                                 Modifier
@@ -689,7 +693,8 @@ fun AlbumScreen(
                                             if (isPortrait) {
                                                 val isThisPlaying =
                                                     playingVideoId.isNotEmpty() &&
-                                                        playingPlaylistId == browseId.replaceFirst("VL", "")
+                                                        playingPlaylistId == browseId.replaceFirst("VL", "") &&
+                                                        !isShuffle
                                                 Row(
                                                     modifier =
                                                         Modifier

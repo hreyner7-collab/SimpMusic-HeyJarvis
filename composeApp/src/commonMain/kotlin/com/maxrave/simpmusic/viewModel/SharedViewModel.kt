@@ -602,8 +602,8 @@ class SharedViewModel(
                             is SimpleMediaState.Loading -> {
                                 _timeline.update {
                                     it.copy(
-                                        bufferedPercent = mediaState.bufferedPercentage,
-                                        total = mediaState.duration,
+                                        bufferedPercent = mediaState.bufferedPercentage.coerceIn(0, 100),
+                                        total = mediaState.duration.takeIf { d -> d > 0L } ?: it.total,
                                         loading = true,
                                     )
                                 }
@@ -1168,6 +1168,7 @@ class SharedViewModel(
             val localSong = songRepository.getSongById(videoId).firstOrNull()
             if (localSong != null) {
                 val track = localSong.toTrack()
+                mediaPlayerHandler.setShuffle(false)
                 mediaPlayerHandler.setQueueData(
                     QueueData.Data(
                         listTracks = arrayListOf(track),
@@ -1184,6 +1185,7 @@ class SharedViewModel(
                     val track = response.data
                     when (response) {
                         is Resource.Success if (track != null) -> {
+                            mediaPlayerHandler.setShuffle(false)
                             mediaPlayerHandler.setQueueData(
                                 QueueData.Data(
                                     listTracks = arrayListOf(track),
@@ -1213,6 +1215,9 @@ class SharedViewModel(
         index: Int? = null,
     ) {
         viewModelScope.launch {
+            if (type == SONG_CLICK || type == VIDEO_CLICK || type == SHARE) {
+                mediaPlayerHandler.setShuffle(false)
+            }
             mediaPlayerHandler.clearMediaItems()
             songRepository.insertSong(track.toSongEntity()).lastOrNull()?.let {
                 println("insertSong: $it")
@@ -2249,6 +2254,7 @@ class SharedViewModel(
     }
 
     fun addListToQueue(listTrack: ArrayList<Track>) {
+        if (listTrack.isEmpty()) return
         viewModelScope.launch {
             // A radio, a mix or an Endless queue has no end to append to, so a single song (the swipe
             // on a song row) goes right after the current one instead.

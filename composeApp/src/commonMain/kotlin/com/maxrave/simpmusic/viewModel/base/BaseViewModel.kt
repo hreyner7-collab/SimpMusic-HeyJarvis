@@ -149,7 +149,12 @@ abstract class BaseViewModel :
         }
     }
 
+    fun setShuffle(enabled: Boolean) {
+        mediaPlayerHandler.setShuffle(enabled)
+    }
+
     fun shufflePlaylist(firstPlayIndex: Int = 0) {
+        mediaPlayerHandler.setShuffle(true)
         mediaPlayerHandler.shufflePlaylist(firstPlayIndex)
     }
 
@@ -169,6 +174,7 @@ abstract class BaseViewModel :
                 val tracks = res.data?.first
                 if (res is Resource.Success && !tracks.isNullOrEmpty()) {
                     val isRadio = endpoint.playlistId?.isRadioQueueId() == true
+                    setShuffle(false)
                     setQueueData(
                         QueueData.Data(
                             listTracks = tracks.toCollection(arrayListOf<Track>()),
