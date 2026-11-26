@@ -405,9 +405,10 @@ class SharedViewModel(
 //                    }
 //                }
             val abLoopJob =
-                launch {
+                launch(Dispatchers.Default) {
                     timeline.collect { tl ->
                         val loop = _abLoopState.value
+                        if (!loop.isActive) return@collect
                         if (loop.shouldLoopBack(tl.current) &&
                             tl.total > 0L &&
                             controllerState.value.isPlaying
@@ -416,7 +417,9 @@ class SharedViewModel(
                             if (now - lastAbLoopSeekAtMs >= 400L) {
                                 lastAbLoopSeekAtMs = now
                                 loop.seekPercentForPointA(tl.total)?.let { pct ->
-                                    onUIEvent(UIEvent.UpdateProgress(pct))
+                                    withContext(Dispatchers.Main) {
+                                        onUIEvent(UIEvent.UpdateProgress(pct))
+                                    }
                                 }
                             }
                         }
@@ -441,13 +444,19 @@ class SharedViewModel(
                 isFirstLiked = it != STATUS_DONE
             }
         }
-        // Start Per-Device Audio Profiles, Phone <-> PC Playback Handoff, and background Wi-Fi Playlist Auto-Sync.
+        // Start Per-Device Audio Profiles, Playback Handoff, Collaborative Rooms, Whole-Home Audio,
+        // background Wi-Fi Playlist Auto-Sync, and Scheduled Automated Cloud Backup.
         runCatching { getKoin().get<com.maxrave.simpmusic.utils.DeviceAudioProfileController>().start() }
         runCatching { getKoin().get<com.maxrave.simpmusic.handoff.PlaybackHandoffManager>().start() }
+        runCatching { getKoin().get<com.maxrave.simpmusic.collab.CollaborativeRoomManager>().start() }
+        runCatching { getKoin().get<com.maxrave.simpmusic.smarthome.WholeHomeAudioManager>().start() }
         viewModelScope.launch(Dispatchers.IO) {
             delay(6_000L)
             runCatching {
                 getKoin().get<com.maxrave.simpmusic.utils.WifiPlaylistAutoSyncManager>().syncEnabledPlaylistsNow()
+            }
+            runCatching {
+                getKoin().get<com.maxrave.simpmusic.backup.CloudBackupManager>().runScheduledBackupIfDue()
             }
         }
         viewModelScope.launch {
@@ -576,23 +585,23 @@ class SharedViewModel(
                             }
 
                             is SimpleMediaState.Progress -> {
-                                if (mediaState.progress >= 0L && mediaState.progress != _timeline.value.current) {
-                                    // A live stream never reports a length (ExoPlayer: C.TIME_UNSET), so
-                                    // a missing one means "loading" for everything except a live stream.
-                                    if (_timeline.value.total > 0L || _timeline.value.isLive) {
+                                val prev = _timeline.value
+                                if (mediaState.progress >= 0L && mediaState.progress != prev.current) {
+                                    // Avoid querying player.duration on every tick once total is already known.
+                                    if (prev.total > 0L || prev.isLive) {
                                         _timeline.update {
                                             it.copy(
-                                                total = mediaPlayerHandler.getPlayerDuration().takeIf { d -> d > 0L } ?: it.total,
                                                 current = mediaState.progress,
                                                 loading = false,
                                             )
                                         }
                                     } else {
+                                        val resolvedTotal = mediaPlayerHandler.getPlayerDuration().takeIf { d -> d > 0L } ?: prev.total
                                         _timeline.update {
                                             it.copy(
                                                 current = mediaState.progress,
-                                                loading = true,
-                                                total = mediaPlayerHandler.getPlayerDuration().takeIf { d -> d > 0L } ?: it.total,
+                                                loading = resolvedTotal <= 0L,
+                                                total = resolvedTotal,
                                             )
                                         }
                                     }

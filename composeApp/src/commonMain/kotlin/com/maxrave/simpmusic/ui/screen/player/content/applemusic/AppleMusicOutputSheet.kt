@@ -7,6 +7,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,7 +20,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +55,9 @@ import com.maxrave.simpmusic.expect.ui.rememberCastReceivers
 import com.maxrave.simpmusic.expect.ui.rememberDeviceVolumeController
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.handoff.PlaybackHandoffManager
+import com.maxrave.simpmusic.smarthome.SmartSpeakerManager
+import com.maxrave.simpmusic.smarthome.WholeHomeAudioManager
+import com.maxrave.simpmusic.smarthome.WholeHomeRole
 import com.maxrave.simpmusic.ui.component.SurfaceDarkColors
 import com.maxrave.simpmusic.ui.component.rememberSurfaceDarkColors
 import com.maxrave.simpmusic.ui.icon.Check
@@ -128,10 +134,16 @@ internal fun AppleMusicOutputSheet(
     val cast = rememberCastReceivers(discover = true)
     val handoffManager = koinInject<PlaybackHandoffManager>()
     val handoffPeers by handoffManager.peers.collectAsStateWithLifecycle()
+    val smartSpeakerManager = koinInject<SmartSpeakerManager>()
+    val smartSpeakers by smartSpeakerManager.speakers.collectAsStateWithLifecycle()
+    val smartSpeakerState by smartSpeakerManager.state.collectAsStateWithLifecycle()
+    val wholeHomeManager = koinInject<WholeHomeAudioManager>()
+    val wholeHomeState by wholeHomeManager.state.collectAsStateWithLifecycle()
     // Devices coming and going update the list on their own; the system's own route changing does not.
     LaunchedEffect(Unit) {
         onRefresh()
         handoffManager.refreshPeers()
+        smartSpeakerManager.scanForSpeakers()
     }
 
     ModalBottomSheet(
@@ -148,7 +160,10 @@ internal fun AppleMusicOutputSheet(
             shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
             colors = CardDefaults.cardColors().copy(containerColor = colors.container),
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 Spacer(modifier = Modifier.height(5.dp))
                 Box(
                     modifier =
@@ -205,22 +220,160 @@ internal fun AppleMusicOutputSheet(
                         )
                     }
                 }
-                if (handoffPeers.isNotEmpty()) {
+                if (smartSpeakers.isNotEmpty() || smartSpeakerState.isCastingToSpeaker || smartSpeakerState.isScanning) {
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
                         thickness = 1.dp,
                         color = Color.White.copy(alpha = 0.10f),
                     )
-                    Text(
-                        text = "SimpMusic Devices on Wi-Fi (Handoff)",
-                        style = typo().bodySmall,
-                        color = colors.subtitle,
+                    Row(
                         modifier = Modifier.fillMaxWidth().padding(start = 32.dp, end = 20.dp, top = 4.dp, bottom = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Smart Home Speakers (Sonos / DLNA)",
+                            style = typo().bodySmall,
+                            color = colors.subtitle,
+                        )
+                        TextButton(onClick = { smartSpeakerManager.scanForSpeakers() }) {
+                            Text(
+                                text = if (smartSpeakerState.isScanning) "Scanning…" else "Rescan",
+                                color = colors.subtitle,
+                                style = typo().bodySmall,
+                            )
+                        }
+                    }
+                    smartSpeakerState.activeSpeaker?.let { active ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "${active.friendlyName} · ${smartSpeakerState.volumePercent}%",
+                                    style = typo().labelSmall,
+                                    color = colors.content,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = if (smartSpeakerState.isPlaying) "Playing ${smartSpeakerState.trackTitle}" else "Paused",
+                                    style = typo().bodySmall,
+                                    color = colors.subtitle,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            TextButton(onClick = { scope.launch { smartSpeakerManager.togglePlayPause() } }) {
+                                Text(if (smartSpeakerState.isPlaying) "Pause" else "Play", color = colors.content, style = typo().labelSmall)
+                            }
+                            if (active.renderingControlUrl != null) {
+                                TextButton(onClick = { scope.launch { smartSpeakerManager.setVolume(smartSpeakerState.volumePercent - 10) } }) {
+                                    Text("−", color = colors.content, style = typo().labelMedium)
+                                }
+                                TextButton(onClick = { scope.launch { smartSpeakerManager.setVolume(smartSpeakerState.volumePercent + 10) } }) {
+                                    Text("+", color = colors.content, style = typo().labelMedium)
+                                }
+                            }
+                            TextButton(onClick = { scope.launch { smartSpeakerManager.stopCasting() } }) {
+                                Text("Stop", color = colors.content, style = typo().labelSmall)
+                            }
+                        }
+                    }
+                    smartSpeakers.forEach { speaker ->
+                        val isConnected = smartSpeakerState.activeSpeaker?.udn == speaker.udn
+                        OutputRow(
+                            icon = SimpIcons.Speaker,
+                            name = speaker.friendlyName,
+                            status =
+                                if (isConnected) {
+                                    stringResource(Res.string.audio_output_playing_here)
+                                } else {
+                                    speaker.ecosystemLabel
+                                },
+                            selected = isConnected,
+                            colors = colors,
+                            onClick = {
+                                scope.launch {
+                                    val res = smartSpeakerManager.castCurrentTrackTo(speaker)
+                                    showToast(
+                                        res.getOrElse { it.message ?: "Speaker connection failed" },
+                                        duration = ToastDuration.Short,
+                                        gravity = ToastGravity.Bottom,
+                                    )
+                                    if (res.isSuccess) closeSheet()
+                                }
+                            },
+                        )
+                    }
+                }
+                if (handoffPeers.isNotEmpty() || wholeHomeState.isActive) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                        thickness = 1.dp,
+                        color = Color.White.copy(alpha = 0.10f),
                     )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 32.dp, end = 20.dp, top = 4.dp, bottom = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "SimpMusic Wi-Fi · Handoff & Whole-Home Audio",
+                            style = typo().bodySmall,
+                            color = colors.subtitle,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (wholeHomeState.isActive) {
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        wholeHomeManager.disbandOrLeaveGroup()
+                                        showToast("Stopped Whole-Home Audio", duration = ToastDuration.Short, gravity = ToastGravity.Bottom)
+                                    }
+                                },
+                            ) {
+                                Text("Stop Group", color = colors.content, style = typo().labelSmall)
+                            }
+                        } else if (handoffPeers.isNotEmpty()) {
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        val res = wholeHomeManager.startWholeHomePlayback()
+                                        showToast(
+                                            res.getOrElse { it.message ?: "Whole-Home sync failed" },
+                                            duration = ToastDuration.Short,
+                                            gravity = ToastGravity.Bottom,
+                                        )
+                                        if (res.isSuccess) closeSheet()
+                                    }
+                                },
+                            ) {
+                                Text("Play All Rooms", color = colors.content, style = typo().labelSmall)
+                            }
+                        }
+                    }
+                    if (wholeHomeState.isActive) {
+                        Text(
+                            text =
+                                if (wholeHomeState.role == WholeHomeRole.LEADER) {
+                                    "Whole-Home Group active · ${wholeHomeState.groupName}"
+                                } else {
+                                    "Synced to ${wholeHomeState.leaderDeviceName.orEmpty()}"
+                                },
+                            style = typo().bodySmall,
+                            color = colors.content,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 2.dp),
+                        )
+                    }
                     handoffPeers.forEach { peer ->
                         val peerIcon = if (peer.platform == "ANDROID") SimpIcons.Smartphone else SimpIcons.Speaker
+                        val inGroup = peer.deviceId in wholeHomeState.groupedPeerIds
                         val subtitle =
                             when {
+                                inGroup -> "In Whole-Home Group"
                                 peer.nowPlayingTitle.isNotBlank() && peer.isPlaying ->
                                     "Playing: ${peer.nowPlayingTitle}"
                                 peer.nowPlayingTitle.isNotBlank() ->
@@ -232,6 +385,7 @@ internal fun AppleMusicOutputSheet(
                                 Modifier
                                     .fillMaxWidth()
                                     .height(64.dp)
+                                    .clickable { wholeHomeManager.togglePeerInGroup(peer) }
                                     .padding(horizontal = 20.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

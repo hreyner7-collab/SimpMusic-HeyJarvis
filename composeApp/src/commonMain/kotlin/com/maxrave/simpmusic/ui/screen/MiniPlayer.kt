@@ -139,11 +139,15 @@ import com.maxrave.simpmusic.ui.icon.VolumeUp
 import com.maxrave.simpmusic.ui.screen.player.content.toAudioQualityLabel
 import com.maxrave.simpmusic.ui.theme.ArtworkShape
 import com.maxrave.simpmusic.ui.theme.LocalIsDarkTheme
+import com.maxrave.simpmusic.ui.theme.LocalLiquidGlassEnabled
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.viewModel.SharedViewModel
 import com.maxrave.simpmusic.viewModel.UIEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -170,21 +174,28 @@ fun MiniPlayer(
     /** Lets the queue's song sheets open artist and album pages; the Desktop capsule's queue needs it. */
     navController: NavController? = null,
 ) {
-    val isLiquidGlassEnabled by sharedViewModel.getEnableLiquidGlass().collectAsStateWithLifecycle(DataStoreManager.TRUE)
-    val controllerState by sharedViewModel.controllerState.collectAsStateWithLifecycle()
-    val timelineState by sharedViewModel.timeline.collectAsStateWithLifecycle()
-    // The Desktop capsule's quality line between its timestamps — see toAudioQualityLabel.
-    val formatState by sharedViewModel.format.collectAsStateWithLifecycle(initialValue = null)
-
-    val layer = rememberGraphicsLayer()
-
-    // Glass needs both the luminance sampling loop that drives it and the theme-following text
-    // colour; without the loop the glass sits at luminance 0, a 2dp blur and a 0.12 darken, which
-    // reads as a smear. The setting governs the Android card and the Desktop capsule alike.
-    val useGlassSurface = isLiquidGlassEnabled == DataStoreManager.TRUE
-    val luminance = rememberGlassLuminance(layer, enabled = useGlassSurface && isVisible)
-
+    // Respect the resolved theme/performance liquid glass state so Performance Mode disables blur cleanly.
+    val useGlassSurface = LocalLiquidGlassEnabled.current
     val isDarkTheme = LocalIsDarkTheme.current
+    // Theme-calibrated luminance with layer = null eliminates double backdrop recording and
+    // GPU->CPU readPixels() stalls during scrolling while preserving the exact frosted glass look.
+    val luminance = remember(isDarkTheme) { mutableFloatStateOf(if (isDarkTheme) 0.44f else 0.58f) }
+
+    // Collect ONLY low-frequency track/control state at the top of MiniPlayer — NEVER timeline!
+    // Timeline ticks are isolated into tiny leaf composables below so progress updates never
+    // recompose Card, LiquidGlass, AsyncImage, AnimatedContent, or scrolling siblings.
+    val songEntity by remember(sharedViewModel) {
+        sharedViewModel.nowPlayingState
+            .map { it?.songEntity }
+            .distinctUntilChangedBy { Triple(it?.videoId, it?.title, it?.thumbnails) }
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val isPlaying by remember(sharedViewModel) {
+        sharedViewModel.controllerState.map { it.isPlaying }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
+    val liked by remember(sharedViewModel) {
+        sharedViewModel.controllerState.map { it.isLiked }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
+
     val textColor by animateColorAsState(
         // With liquid glass the surface follows the theme (light = frosted white → black text);
         // without it, the card is a theme surface, so its foreground token.
@@ -198,76 +209,10 @@ fun MiniPlayer(
         animationSpec = tween(500),
     )
 
-    val (songEntity, setSongEntity) =
-        remember {
-            mutableStateOf<SongEntity?>(null)
-        }
-    val (liked, setLiked) =
-        remember {
-            mutableStateOf(false)
-        }
-    val (isPlaying, setIsPlaying) =
-        remember {
-            mutableStateOf(false)
-        }
-    val (progress, setProgress) =
-        remember {
-            mutableFloatStateOf(0f)
-        }
-    val (isCrossfading, setIsCrossfading) =
-        remember {
-            mutableStateOf(false)
-        }
-
     val coroutineScope = rememberCoroutineScope()
-
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
-        label = "",
-    )
 
     val offsetX = remember { Animatable(initialValue = 0f) }
     val offsetY = remember { Animatable(0f) }
-
-    var loading by rememberSaveable {
-        mutableStateOf(true)
-    }
-
-    LaunchedEffect(key1 = true) {
-        val job1 =
-            launch {
-                sharedViewModel.nowPlayingState.collect { item ->
-                    if (item != null) {
-                        setSongEntity(item.songEntity)
-                    }
-                }
-            }
-        val job2 =
-            launch {
-                sharedViewModel.controllerState.collectLatest { state ->
-                    setLiked(state.isLiked)
-                    setIsPlaying(state.isPlaying)
-                    setIsCrossfading(state.isCrossfading)
-                }
-            }
-        val job4 =
-            launch {
-                sharedViewModel.timeline.collect { timeline ->
-                    loading = timeline.loading
-                    val prog =
-                        if (timeline.total > 0L && timeline.current >= 0L) {
-                            timeline.current.toFloat() / timeline.total
-                        } else {
-                            0f
-                        }
-                    setProgress(prog)
-                }
-            }
-        job1.join()
-        job2.join()
-        job4.join()
-    }
 
     if (getPlatform() == Platform.Android) {
         // One shape for both the Card and the clip below. They must not diverge: the clip wraps
@@ -276,14 +221,14 @@ fun MiniPlayer(
         val miniPlayerShape = CircleShape
         // Without glass the card follows the theme, not the playing artwork.
         val cardColor =
-            if (isLiquidGlassEnabled == DataStoreManager.TRUE) {
+            if (useGlassSurface) {
                 Color.Transparent
             } else {
                 // Same opaque surface as the bottom bar capsule, so the two floating surfaces read as one set.
                 MaterialTheme.colorScheme.surfaceContainer
             }
         // The flat (default) card: round artwork and controls sitting in filled circles. Glass keeps its own look.
-        val isFlat = isLiquidGlassEnabled != DataStoreManager.TRUE
+        val isFlat = !useGlassSurface
         Card(
             shape = miniPlayerShape,
             colors =
@@ -294,8 +239,8 @@ fun MiniPlayer(
             modifier =
                 modifier
                     .then(
-                        if (isLiquidGlassEnabled == DataStoreManager.TRUE) {
-                            Modifier.liquidGlass(backdrop, layer, luminance, RoundedCornerShape(16.dp))
+                        if (useGlassSurface) {
+                            Modifier.liquidGlass(backdrop, null, luminance, RoundedCornerShape(16.dp))
                         } else {
                             Modifier
                         },
@@ -396,19 +341,8 @@ fun MiniPlayer(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 if (isFlat) {
-                                    // Progress rides a ring around the artwork: wavy while playing, flat when paused.
-                                    val ringStroke = Stroke(width = with(LocalDensity.current) { 3.dp.toPx() }, cap = StrokeCap.Round)
-                                    CircularWavyProgressIndicator(
-                                        progress = { animatedProgress },
-                                        modifier = Modifier.fillMaxSize(),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        stroke = ringStroke,
-                                        trackStroke = ringStroke,
-                                        // A raw 0/1, never a tweened value: the node animates amplitude
-                                        // itself and drops new targets mid-animation (see WavySeekBar).
-                                        amplitude = { p -> if (p > 0f && isPlaying) 1f else 0f },
-                                    )
+                                    // Isolated leaf: timeline ticks only redraw this 40dp ring, never the MiniPlayer.
+                                    MiniPlayerAndroidProgressRing(sharedViewModel = sharedViewModel)
                                 }
                                 AsyncImage(
                                     model =
@@ -479,8 +413,9 @@ fun MiniPlayer(
                                                     .wrapContentHeight(
                                                         align = Alignment.CenterVertically,
                                                     ).basicMarquee(
-                                                        iterations = if (controllerState.isPlaying) Int.MAX_VALUE else 0,
-                                                        animationMode = MarqueeAnimationMode.Immediately,
+                                                        iterations = if (isPlaying) 2 else 0,
+                                                        initialDelayMillis = 2_000,
+                                                        repeatDelayMillis = 4_000,
                                                     ).focusable(),
                                         )
                                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -504,8 +439,9 @@ fun MiniPlayer(
                                                         .wrapContentHeight(
                                                             align = Alignment.CenterVertically,
                                                         ).basicMarquee(
-                                                            iterations = if (controllerState.isPlaying) Int.MAX_VALUE else 0,
-                                                            animationMode = MarqueeAnimationMode.Immediately,
+                                                            iterations = if (isPlaying) 2 else 0,
+                                                            initialDelayMillis = 2_500,
+                                                            repeatDelayMillis = 4_000,
                                                         ).focusable(),
                                             )
                                         }
@@ -562,21 +498,12 @@ fun MiniPlayer(
                                 .then(if (isFlat) Modifier.background(MaterialTheme.colorScheme.primary, CircleShape) else Modifier),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Crossfade(targetState = loading, label = "") {
-                            if (it) {
-                                Box(modifier = Modifier.size(controlSize), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        color = playColor,
-                                        strokeWidth = 3.dp,
-                                    )
-                                }
-                            } else {
-                                PlayPauseButton(isPlaying = isPlaying, modifier = Modifier.size(controlSize), tint = playColor) {
-                                    sharedViewModel.onUIEvent(UIEvent.PlayPause)
-                                }
-                            }
-                        }
+                        MiniPlayerAndroidPlayPause(
+                            sharedViewModel = sharedViewModel,
+                            isPlaying = isPlaying,
+                            controlSize = controlSize,
+                            playColor = playColor,
+                        )
                     }
 
                     Spacer(modifier = Modifier.width(if (isFlat) 8.dp else 15.dp))
@@ -591,58 +518,23 @@ fun MiniPlayer(
                                     horizontal = 10.dp,
                                 ).align(Alignment.BottomCenter),
                     ) {
-                        LeftToRight {
-                            LinearProgressIndicator(
-                                progress = { animatedProgress },
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .height(1.dp)
-                                        .background(
-                                            color = Color.Transparent,
-                                            shape = RoundedCornerShape(4.dp),
-                                        ),
-                                color = textColor,
-                                trackColor = Color.Transparent,
-                                strokeCap = StrokeCap.Round,
-                                drawStopIndicator = {},
-                            )
-                        }
+                        MiniPlayerAndroidHairlineProgress(
+                            sharedViewModel = sharedViewModel,
+                            textColor = textColor,
+                        )
                     }
                 }
             }
         }
     } else {
-        // Desktop bottom bar surface follows the theme (haze over content), so text and controls
-        // use the theme foreground token instead of the artwork-luminance colour.
+        // Desktop bottom bar surface follows the theme, so text and controls use theme foreground.
         val textColor = MaterialTheme.colorScheme.onBackground
-
-        // Crossfade cue: a label on the artist line, nothing on the bar itself. The Now Playing
-        // screen cycles the track through hues for this, which on a 2dp hairline reads as a
-        // rendering fault rather than as a transition.
-        // Head of the highlight that travels through the "Crossfading" label, 0..1. Runs
-        // unconditionally: putting it behind the crossfade check would restart the animation from
-        // zero each time the label appears, so the sweep would jump rather than continue.
         val progressColor = textColor
+        val controllerState by sharedViewModel.controllerState.collectAsStateWithLifecycle()
+        val formatState by sharedViewModel.format.collectAsStateWithLifecycle(initialValue = null)
 
-        var isSliding by rememberSaveable {
-            mutableStateOf(false)
-        }
-        var sliderValue by rememberSaveable {
-            mutableFloatStateOf(0f)
-        }
         var showQueueBottomSheet by rememberSaveable {
             mutableStateOf(false)
-        }
-        LaunchedEffect(key1 = timelineState, key2 = isSliding) {
-            if (!isSliding) {
-                sliderValue =
-                    if (timelineState.total > 0L) {
-                        timelineState.current.toFloat() * 100 / timelineState.total.toFloat()
-                    } else {
-                        0f
-                    }
-            }
         }
         // Only the Desktop capsule has a queue button, and App.kt hands that capsule the nav controller.
         if (showQueueBottomSheet && navController != null) {
@@ -654,18 +546,13 @@ fun MiniPlayer(
                 onNavigateToOtherScreen = { showQueueBottomSheet = false },
             )
         }
-        // Apple Music-style floating capsule: transport on the left, the track and its slim
-        // progress slider in the middle, the action cluster on the right. Size and placement come
-        // from the caller (App.kt), so the capsule keeps a fixed width and floats over content.
-        // Without glass it is an opaque theme surface, the Android flat card's colour; a haze blur
-        // instead gives a dark smear rather than a floating pill.
         val capsuleShape = RoundedCornerShape(50)
         val density = LocalDensity.current
         Box(
             modifier
                 .then(
                     if (useGlassSurface) {
-                        Modifier.liquidGlass(backdrop, layer, luminance, capsuleShape, blurScale = 1.2f)
+                        Modifier.liquidGlass(backdrop, null, luminance, capsuleShape, blurScale = 1.2f)
                     } else {
                         Modifier.background(MaterialTheme.colorScheme.surfaceContainer, capsuleShape)
                     },
@@ -711,285 +598,16 @@ fun MiniPlayer(
                     modifier = Modifier.height(28.dp).padding(horizontal = 14.dp),
                     color = textColor.copy(alpha = 0.2f),
                 )
-                // The whole track cluster is the hover target, not the progress line itself:
-                // pointing anywhere near the title thickens the slider and reveals the
-                // timestamps, so a 2dp line never has to be hit precisely. Apple hides the
-                // times behind a much smaller hover area and it is the single most complained
-                // about part of their Tahoe player.
-                val trackInteraction = remember { MutableInteractionSource() }
-                val isTrackHovered by trackInteraction.collectIsHoveredAsState()
-                // The artwork is carved out of that hover: pointing at it keeps the track shown and
-                // offers the full-screen lyrics button instead of swapping to the timestamps.
-                val artworkInteraction = remember { MutableInteractionSource() }
-                val isArtworkHovered by artworkInteraction.collectIsHoveredAsState()
-                val showScrubber = (isTrackHovered && !isArtworkHovered) || isSliding
-                // A Box, not a Column: the [artwork -> text] content is centred on the capsule's own
-                // vertical axis and the progress line hangs off the bottom edge. Stacking them in a
-                // Column instead centres the PAIR, which pushes the content above the axis by half
-                // the slider's height. Across the 60dp capsule that lands the ~33dp content at 13-46
-                // and the line at 52, clear of the content by ~6dp. The old stacked layout could not
-                // fit its 56dp of children in a padded 52dp box at all, and overlapped by 4dp.
-                Box(
-                    modifier =
-                        Modifier
-                            .width(300.dp)
-                            .fillMaxHeight()
-                            .hoverable(trackInteraction),
-                ) {
-                    // Trim.Both + Alignment.Center: the app font carries most of its slack under
-                    // the baseline, so glyphs ride low inside their own line box — the box was
-                    // centred all along, the DIGITS were not. This centres and hugs the glyphs.
-                    val scrubberDigits =
-                        typo().bodySmall.copy(
-                            lineHeight = 11.sp,
-                            lineHeightStyle =
-                                LineHeightStyle(
-                                    alignment = LineHeightStyle.Alignment.Center,
-                                    trim = LineHeightStyle.Trim.Both,
-                                ),
-                        )
-                    // Hovering swaps the WHOLE content block — artwork included — out for the
-                    // timestamps, the way Apple's capsule does. The two cross-fade through alpha
-                    // rather than AnimatedVisibility, because an alpha of 0 is still MEASURED: the
-                    // content keeps donating its height, so nothing around it reflows as the pointer
-                    // arrives, and the swap area needs no hardcoded height.
-                    val infoAlpha by animateFloatAsState(
-                        targetValue = if (showScrubber) 0f else 1f,
-                        animationSpec = tween(200),
-                        label = "CapsuleInfoAlpha",
-                    )
-                    Row(
-                        modifier =
-                            Modifier
-                                .align(Alignment.Center)
-                                .graphicsLayer { alpha = infoAlpha },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // 32dp, not 40: the artwork is the tallest thing in the content row, so it
-                        // sets the floor under the capsule's own height once the progress box is
-                        // hung below it. At 40 the shortest capsule that still cleared the line
-                        // was 72dp, which read as a slab rather than a floating pill.
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(32.dp)
-                                    .clip(ArtworkShape)
-                                    .hoverable(artworkInteraction),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            AsyncImage(
-                                model =
-                                    ImageRequest
-                                        .Builder(LocalPlatformContext.current)
-                                        .data(songEntity?.thumbnails)
-                                        .crossfade(120)
-                                        .build(),
-                                placeholder = rememberHolderPainter(),
-                                error = rememberHolderPainter(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                            // The Apple Music lyrics view's open-in-full button, reachable from the capsule.
-                            androidx.compose.animation.AnimatedVisibility(
-                                visible = isArtworkHovered,
-                                enter = fadeIn(),
-                                exit = fadeOut(),
-                            ) {
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.4f))
-                                            .clickable(onClick = onOpenFullscreenLyrics),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .size(24.dp)
-                                                .clip(CircleShape)
-                                                .background(Color.White.copy(alpha = 0.24f)),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = SimpIcons.OpenInFull,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(14.dp),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = (songEntity?.title ?: "").toString(),
-                                // labelSmall is 14sp — oversized against a 40dp artwork; keep its
-                                // weight, drop the size a notch.
-                                style = typo().labelSmall.copy(fontSize = 12.sp),
-                                color = textColor,
-                                maxLines = 1,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .wrapContentHeight(
-                                            align = Alignment.CenterVertically,
-                                        ).basicMarquee(
-                                            iterations = if (controllerState.isPlaying) Int.MAX_VALUE else 0,
-                                            animationMode = MarqueeAnimationMode.Immediately,
-                                        ).focusable(),
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                androidx.compose.animation.AnimatedVisibility(visible = songEntity?.isExplicit == true) {
-                                    ExplicitBadge(
-                                        modifier =
-                                            Modifier
-                                                .size(16.dp)
-                                                .padding(end = 4.dp),
-                                    )
-                                }
-                                Text(
-                                    text = (songEntity?.artistName?.connectArtists() ?: ""),
-                                    style = typo().bodySmall,
-                                    color = textColor.copy(alpha = 0.7f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    // fill = false so the artist name gives the label room instead
-                                    // of claiming the whole row and pushing it out of view.
-                                    modifier = Modifier.weight(1f, fill = false),
-                                )
-                                // On the artist line rather than with the timestamps: that row
-                                // rides `alpha = 1f - infoAlpha`, so it only exists while the
-                                // pointer is over the capsule — a crossfade cue nobody sees
-                                // unless they happen to be hovering is no cue at all.
-                                AnimatedVisibility(
-                                    visible = timelineState.isCrossfading,
-                                    enter = fadeIn(),
-                                    exit = fadeOut(),
-                                ) {
-                                    // The label is what travels: a highlight sweeping left to
-                                    // right through the glyphs. TextStyle takes a brush directly,
-                                    // so the gradient paints the text itself — no overlay, no
-                                    // clipping, and it keeps working whatever the label's width.
-                                    val sweepTransition = rememberInfiniteTransition(label = "miniPlayerCrossfadeSweep")
-                                    val crossfadeSweep by sweepTransition.animateFloat(
-                                        initialValue = 0f,
-                                        targetValue = 1f,
-                                        animationSpec =
-                                            infiniteRepeatable(
-                                                animation = tween(3200, easing = LinearEasing),
-                                                repeatMode = RepeatMode.Restart,
-                                            ),
-                                        label = "miniPlayerSweepHead",
-                                    )
-                                    val shimmerSpan = 140f
-                                    val shimmerHead = crossfadeSweep * (shimmerSpan * 3f) - shimmerSpan
-                                    Text(
-                                        text = " · " + stringResource(Res.string.crossfading),
-                                        style =
-                                            typo().bodySmall.copy(
-                                                brush =
-                                                    Brush.horizontalGradient(
-                                                        0f to textColor.copy(alpha = 0.45f),
-                                                        // The sweep head is PURE white, not the resting label colour — the label
-                                                        // colour is an adaptive grey, and a grey gleam reads as no gleam at all.
-                                                        0.5f to Color.White,
-                                                        1f to textColor.copy(alpha = 0.45f),
-                                                        startX = shimmerHead,
-                                                        endX = shimmerHead + shimmerSpan,
-                                                        tileMode = TileMode.Clamp,
-                                                    ),
-                                            ),
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    // The timestamps take the content's place on the same axis, spanning the whole
-                    // cluster rather than only the text column — so the elapsed digit starts where the
-                    // artwork was, which is what makes the swap read as one block being replaced.
-                    Row(
-                        modifier =
-                            Modifier
-                                .align(Alignment.Center)
-                                .fillMaxWidth()
-                                .graphicsLayer { alpha = 1f - infoAlpha },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = timelineState.elapsedLabel(sliderValue / 100f),
-                            style = scrubberDigits,
-                            color = textColor.copy(alpha = 0.7f),
-                            maxLines = 1,
-                        )
-                        // The Now Playing quality line, centred between the times and a step dimmer.
-                        formatState.toAudioQualityLabel()?.let { quality ->
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    imageVector = SimpIcons.Headphones,
-                                    contentDescription = null,
-                                    tint = textColor.copy(alpha = 0.45f),
-                                    modifier = Modifier.size(13.dp),
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = quality,
-                                    style = scrubberDigits,
-                                    color = textColor.copy(alpha = 0.45f),
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                        Text(
-                            // Time REMAINING, signed, which is what Apple's capsule reports on the
-                            // right — not the track's total length.
-                            text =
-                                if (timelineState.isLive) {
-                                    stringResource(Res.string.live_badge)
-                                } else {
-                                    "−" +
-                                        formatDuration(
-                                            (timelineState.total * (1f - sliderValue / 100f)).roundToLong(),
-                                        )
-                                },
-                            style = scrubberDigits,
-                            color = textColor.copy(alpha = 0.7f),
-                            maxLines = 1,
-                        )
-                    }
-                    // The timestamps now sit on the content line, so the track no longer has to
-                    // inset itself to keep clear of them.
-                    CapsuleProgress(
-                        sliderValue = sliderValue,
-                        loading = loading && (controllerState.isPlaying || timelineState.total > 0L),
-                        trackHeight = if (showScrubber) 4.dp else 2.dp,
-                        thumbSize = 0.dp,
-                        textColor = textColor,
-                        progressColor = progressColor,
-                        modifier =
-                            Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth(),
-                        onValueChange = {
-                            isSliding = true
-                            sliderValue = it * 100f
-                        },
-                        onValueChangeFinished = {
-                            isSliding = false
-                            sharedViewModel.onUIEvent(
-                                UIEvent.UpdateProgress(sliderValue),
-                            )
-                        },
-                    )
-                }
+                DesktopCapsuleTrackCluster(
+                    sharedViewModel = sharedViewModel,
+                    songEntity = songEntity,
+                    isPlaying = controllerState.isPlaying,
+                    isCrossfading = controllerState.isCrossfading,
+                    formatState = formatState,
+                    textColor = textColor,
+                    progressColor = progressColor,
+                    onOpenFullscreenLyrics = onOpenFullscreenLyrics,
+                )
                 VerticalDivider(
                     modifier = Modifier.height(28.dp).padding(horizontal = 14.dp),
                     color = textColor.copy(alpha = 0.2f),
@@ -1242,6 +860,379 @@ fun MiniPlayer(
 
 private val VOLUME_POPUP_HEIGHT = 180.dp
 private val VOLUME_SLIDER_LENGTH = 96.dp
+
+/**
+ * Isolated leaf for Android's flat MiniPlayer progress ring.
+ * Quantizes progress to 0.5% steps (sub-pixel on a 40dp ring) so scrolling lists never stall from
+ * continuous 60-120fps recompositions of the MiniPlayer container.
+ */
+@Composable
+private fun MiniPlayerAndroidProgressRing(sharedViewModel: SharedViewModel) {
+    val progress by remember(sharedViewModel) {
+        sharedViewModel.timeline
+            .map { tl ->
+                if (tl.total > 0L && tl.current >= 0L) {
+                    val raw = (tl.current.toFloat() / tl.total).coerceIn(0f, 1f)
+                    (raw * 200f).roundToInt() / 200f
+                } else {
+                    0f
+                }
+            }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = 0f)
+    CircularProgressIndicator(
+        progress = { progress },
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        strokeWidth = 3.dp,
+        strokeCap = StrokeCap.Round,
+    )
+}
+
+/** Isolated leaf for Android's glass MiniPlayer 1dp bottom progress hairline. */
+@Composable
+private fun MiniPlayerAndroidHairlineProgress(
+    sharedViewModel: SharedViewModel,
+    textColor: Color,
+) {
+    val progress by remember(sharedViewModel) {
+        sharedViewModel.timeline
+            .map { tl ->
+                if (tl.total > 0L && tl.current >= 0L) {
+                    val raw = (tl.current.toFloat() / tl.total).coerceIn(0f, 1f)
+                    (raw * 250f).roundToInt() / 250f
+                } else {
+                    0f
+                }
+            }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = 0f)
+    LeftToRight {
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        color = Color.Transparent,
+                        shape = RoundedCornerShape(4.dp),
+                    ),
+            color = textColor,
+            trackColor = Color.Transparent,
+            strokeCap = StrokeCap.Round,
+            drawStopIndicator = {},
+        )
+    }
+}
+
+/** Isolated leaf for Android's MiniPlayer play/pause + loading spinner. */
+@Composable
+private fun MiniPlayerAndroidPlayPause(
+    sharedViewModel: SharedViewModel,
+    isPlaying: Boolean,
+    controlSize: Dp,
+    playColor: Color,
+) {
+    val loading by remember(sharedViewModel) {
+        sharedViewModel.timeline.map { it.loading }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
+    Crossfade(targetState = loading, label = "miniPlayerPlayPause") { isLoading ->
+        if (isLoading) {
+            Box(modifier = Modifier.size(controlSize), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = playColor,
+                    strokeWidth = 3.dp,
+                )
+            }
+        } else {
+            PlayPauseButton(isPlaying = isPlaying, modifier = Modifier.size(controlSize), tint = playColor) {
+                sharedViewModel.onUIEvent(UIEvent.PlayPause)
+            }
+        }
+    }
+}
+
+/**
+ * Isolated middle track/scrubber cluster for the Desktop floating capsule so timeline progress
+ * updates never recompose the glass container, transport buttons, or volume popup.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DesktopCapsuleTrackCluster(
+    sharedViewModel: SharedViewModel,
+    songEntity: SongEntity?,
+    isPlaying: Boolean,
+    isCrossfading: Boolean,
+    formatState: com.maxrave.domain.data.entities.NewFormatEntity?,
+    textColor: Color,
+    progressColor: Color,
+    onOpenFullscreenLyrics: () -> Unit,
+) {
+    var isSliding by rememberSaveable { mutableStateOf(false) }
+    var sliderValue by rememberSaveable { mutableFloatStateOf(0f) }
+
+    val trackInteraction = remember { MutableInteractionSource() }
+    val isTrackHovered by trackInteraction.collectIsHoveredAsState()
+    val artworkInteraction = remember { MutableInteractionSource() }
+    val isArtworkHovered by artworkInteraction.collectIsHoveredAsState()
+    val showScrubber = (isTrackHovered && !isArtworkHovered) || isSliding
+
+    // Quantized progress (0.25% steps) keeps the capsule hairline smooth with minimal redraws;
+    // when hovered or sliding we read full timeline for crisp timestamps.
+    val capsuleProgressFraction by remember(sharedViewModel) {
+        sharedViewModel.timeline
+            .map { tl ->
+                if (tl.total > 0L) {
+                    ((tl.current.toFloat() / tl.total.toFloat()).coerceIn(0f, 1f) * 400f).roundToInt() / 4f
+                } else {
+                    0f
+                }
+            }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = 0f)
+    val isLoading by remember(sharedViewModel) {
+        sharedViewModel.timeline
+            .map { it.loading && (it.total > 0L || isPlaying) }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
+
+    LaunchedEffect(capsuleProgressFraction, isSliding) {
+        if (!isSliding) {
+            sliderValue = capsuleProgressFraction
+        }
+    }
+
+    Box(
+        modifier =
+            Modifier
+                .width(300.dp)
+                .fillMaxHeight()
+                .hoverable(trackInteraction),
+    ) {
+        val scrubberDigits =
+            typo().bodySmall.copy(
+                lineHeight = 11.sp,
+                lineHeightStyle =
+                    LineHeightStyle(
+                        alignment = LineHeightStyle.Alignment.Center,
+                        trim = LineHeightStyle.Trim.Both,
+                    ),
+            )
+        val infoAlpha by animateFloatAsState(
+            targetValue = if (showScrubber) 0f else 1f,
+            animationSpec = tween(200),
+            label = "CapsuleInfoAlpha",
+        )
+        Row(
+            modifier =
+                Modifier
+                    .align(Alignment.Center)
+                    .graphicsLayer { alpha = infoAlpha },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(32.dp)
+                        .clip(ArtworkShape)
+                        .hoverable(artworkInteraction),
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model =
+                        ImageRequest
+                            .Builder(LocalPlatformContext.current)
+                            .data(songEntity?.thumbnails)
+                            .crossfade(120)
+                            .build(),
+                    placeholder = rememberHolderPainter(),
+                    error = rememberHolderPainter(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isArtworkHovered,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                ) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.4f))
+                                .clickable(onClick = onOpenFullscreenLyrics),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.24f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = SimpIcons.OpenInFull,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = songEntity?.title.orEmpty(),
+                    style = typo().labelSmall.copy(fontSize = 12.sp),
+                    color = textColor,
+                    maxLines = 1,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight(align = Alignment.CenterVertically)
+                            .basicMarquee(
+                                iterations = if (isPlaying) 2 else 0,
+                                initialDelayMillis = 2_000,
+                                repeatDelayMillis = 4_000,
+                            ).focusable(),
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.animation.AnimatedVisibility(visible = songEntity?.isExplicit == true) {
+                        ExplicitBadge(
+                            modifier =
+                                Modifier
+                                    .size(16.dp)
+                                    .padding(end = 4.dp),
+                        )
+                    }
+                    Text(
+                        text = songEntity?.artistName?.connectArtists().orEmpty(),
+                        style = typo().bodySmall,
+                        color = textColor.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    AnimatedVisibility(
+                        visible = isCrossfading,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
+                        val sweepTransition = rememberInfiniteTransition(label = "miniPlayerCrossfadeSweep")
+                        val crossfadeSweep by sweepTransition.animateFloat(
+                            initialValue = 0f,
+                            targetValue = 1f,
+                            animationSpec =
+                                infiniteRepeatable(
+                                    animation = tween(3200, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Restart,
+                                ),
+                            label = "miniPlayerSweepHead",
+                        )
+                        val shimmerSpan = 140f
+                        val shimmerHead = crossfadeSweep * (shimmerSpan * 3f) - shimmerSpan
+                        Text(
+                            text = " · " + stringResource(Res.string.crossfading),
+                            style =
+                                typo().bodySmall.copy(
+                                    brush =
+                                        Brush.horizontalGradient(
+                                            0f to textColor.copy(alpha = 0.45f),
+                                            0.5f to Color.White,
+                                            1f to textColor.copy(alpha = 0.45f),
+                                            startX = shimmerHead,
+                                            endX = shimmerHead + shimmerSpan,
+                                            tileMode = TileMode.Clamp,
+                                        ),
+                                ),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+        // Only collect per-second elapsed/remaining timestamps while the hover scrubber is visible.
+        if (infoAlpha < 0.99f) {
+            val timelineState by sharedViewModel.timeline.collectAsStateWithLifecycle()
+            Row(
+                modifier =
+                    Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = 1f - infoAlpha },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = timelineState.elapsedLabel(sliderValue / 100f),
+                    style = scrubberDigits,
+                    color = textColor.copy(alpha = 0.7f),
+                    maxLines = 1,
+                )
+                formatState.toAudioQualityLabel()?.let { quality ->
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = SimpIcons.Headphones,
+                            contentDescription = null,
+                            tint = textColor.copy(alpha = 0.45f),
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = quality,
+                            style = scrubberDigits,
+                            color = textColor.copy(alpha = 0.45f),
+                            maxLines = 1,
+                        )
+                    }
+                }
+                Text(
+                    text =
+                        if (timelineState.isLive) {
+                            stringResource(Res.string.live_badge)
+                        } else {
+                            "−" +
+                                formatDuration(
+                                    (timelineState.total * (1f - sliderValue / 100f)).roundToLong(),
+                                )
+                        },
+                    style = scrubberDigits,
+                    color = textColor.copy(alpha = 0.7f),
+                    maxLines = 1,
+                )
+            }
+        }
+        CapsuleProgress(
+            sliderValue = sliderValue,
+            loading = isLoading,
+            trackHeight = if (showScrubber) 4.dp else 2.dp,
+            thumbSize = 0.dp,
+            textColor = textColor,
+            progressColor = progressColor,
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(),
+            onValueChange = {
+                isSliding = true
+                sliderValue = it * 100f
+            },
+            onValueChangeFinished = {
+                isSliding = false
+                sharedViewModel.onUIEvent(
+                    UIEvent.UpdateProgress(sliderValue),
+                )
+            },
+        )
+    }
+}
 
 /**
  * The capsule player's progress bar: a real [Slider] so it can be dragged, drawn over a

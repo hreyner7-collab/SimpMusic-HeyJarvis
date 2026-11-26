@@ -46,6 +46,7 @@ actual class PlaybackHandoffTransport actual constructor() {
         onGetState: (pauseLocal: Boolean) -> HandoffPlaybackSnapshot?,
         onReceiveTransfer: (HandoffPlaybackSnapshot) -> Unit,
         onPeerDiscovered: (HandoffPeer) -> Unit,
+        onReceiveCustomPost: (path: String, body: String) -> Boolean,
     ): Int {
         stopServer()
         val server =
@@ -65,7 +66,7 @@ actual class PlaybackHandoffTransport actual constructor() {
                 try {
                     val client = server.accept()
                     thread(name = "SimpMusic-Handoff-Conn", isDaemon = true) {
-                        handleHttpClient(client, onGetState, onReceiveTransfer)
+                        handleHttpClient(client, onGetState, onReceiveTransfer, onReceiveCustomPost)
                     }
                 } catch (_: Exception) {
                     if (!running.get()) break
@@ -104,6 +105,8 @@ actual class PlaybackHandoffTransport actual constructor() {
                                         nowPlayingTitle = beacon.nowPlayingTitle,
                                         nowPlayingArtist = beacon.nowPlayingArtist,
                                         isPlaying = beacon.isPlaying,
+                                        activeRoomCode = beacon.activeRoomCode,
+                                        wholeHomeGroupId = beacon.wholeHomeGroupId,
                                     ),
                                 )
                             }
@@ -158,6 +161,36 @@ actual class PlaybackHandoffTransport actual constructor() {
             }
         }
 
+    actual suspend fun sendCustomPost(
+        peer: HandoffPeer,
+        path: String,
+        body: String,
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val bytes = body.toByteArray(StandardCharsets.UTF_8)
+                val normalizedPath = if (path.startsWith("/")) path else "/$path"
+                val conn =
+                    (URL("http://${peer.host}:${peer.httpPort}$normalizedPath").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        connectTimeout = 2_500
+                        readTimeout = 4_000
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        setFixedLengthStreamingMode(bytes.size)
+                    }
+                try {
+                    conn.outputStream.use { it.write(bytes) }
+                    conn.responseCode in 200..299
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (e: Exception) {
+                Logger.w(TAG, "sendCustomPost($path) to ${peer.host}:${peer.httpPort} failed: ${e.message}")
+                false
+            }
+        }
+
     actual suspend fun pullSnapshot(
         peer: HandoffPeer,
         pauseRemote: Boolean,
@@ -196,6 +229,7 @@ actual class PlaybackHandoffTransport actual constructor() {
         socket: Socket,
         onGetState: (pauseLocal: Boolean) -> HandoffPlaybackSnapshot?,
         onReceiveTransfer: (HandoffPlaybackSnapshot) -> Unit,
+        onReceiveCustomPost: (path: String, body: String) -> Boolean,
     ) {
         socket.use { s ->
             s.soTimeout = 5_000
@@ -255,6 +289,22 @@ actual class PlaybackHandoffTransport actual constructor() {
                         writeHttpResponse(output, 200, "OK", """{"ok":true}""")
                     } else {
                         writeHttpResponse(output, 400, "Bad Request", """{"ok":false}""")
+                    }
+                }
+
+                method == "POST" -> {
+                    val bodyBytes = ByteArray(contentLength)
+                    var offset = 0
+                    while (offset < contentLength) {
+                        val read = input.read(bodyBytes, offset, contentLength - offset)
+                        if (read <= 0) break
+                        offset += read
+                    }
+                    val rawBody = String(bodyBytes, 0, offset, StandardCharsets.UTF_8)
+                    if (onReceiveCustomPost(fullPath, rawBody)) {
+                        writeHttpResponse(output, 200, "OK", """{"ok":true}""")
+                    } else {
+                        writeHttpResponse(output, 404, "Not Found", """{"ok":false}""")
                     }
                 }
 

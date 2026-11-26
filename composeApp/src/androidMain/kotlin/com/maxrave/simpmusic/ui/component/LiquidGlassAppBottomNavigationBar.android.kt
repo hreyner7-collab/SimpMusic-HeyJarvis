@@ -22,11 +22,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -80,30 +83,19 @@ actual fun LiquidGlassAppBottomNavigationBar(
     liquidGlass: Boolean,
     reloadDestinationIfNeeded: (KClass<*>) -> Unit,
 ) {
-    val layer = rememberGraphicsLayer()
     val searchFabInteraction = rememberGlassInteraction()
-    // Only the glass reads what is behind it.
-    val luminance = rememberGlassLuminance(layer, enabled = liquidGlass)
+    // Fixed theme-calibrated luminance avoids double-rendering the full-screen backdrop layer and
+    // calling GPU->CPU readPixels() on the main thread during scrolling.
+    val isDarkTheme = LocalIsDarkTheme.current
+    val luminance = remember(isDarkTheme) { mutableFloatStateOf(if (isDarkTheme) 0.44f else 0.58f) }
 
-    val nowPlayingData by viewModel.nowPlayingState.collectAsStateWithLifecycle()
-    // MiniPlayer visibility: derived, never stored.
-    //
-    // This is a second copy of the rule App.kt applies to the plain bottom bar, and it carried the
-    // same two faults. rememberSaveable(true) makes the first composition assert "a track is
-    // playing" before anything knows — nowPlayingState starts null and only fills in once the
-    // service has connected and the queue has been restored — and the LaunchedEffect that
-    // corrected it could only run AFTER that frame had already been drawn. So the bar laid itself
-    // out with the mini player, dropped it, then brought it back, animating each step through
-    // decoupledConstraints.
-    //
-    // Fixing the copy in App.kt did nothing here, because with liquid glass on it is THIS file
-    // that draws the mini player.
-    val isShowMiniPlayer by remember {
-        derivedStateOf {
-            val item = nowPlayingData?.mediaItem
-            item != null && item != GenericMediaItem.EMPTY
-        }
-    }
+    val isShowMiniPlayer by remember(viewModel) {
+        viewModel.nowPlayingState
+            .map { data ->
+                val item = data?.mediaItem
+                item != null && item != GenericMediaItem.EMPTY
+            }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
 
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val bottomNavScreens =
@@ -263,7 +255,7 @@ actual fun LiquidGlassAppBottomNavigationBar(
                             tabs = barTabs,
                             selectedTab = barTabs.indexOfFirst { it.ordinal == selectedIndex },
                             backdrop = backdrop,
-                            layer = layer,
+                            layer = null,
                             luminance = luminance,
                             availableWidth = capsuleBudget,
                             onTabSelected = { position -> selectTab(barTabs[position].ordinal) },

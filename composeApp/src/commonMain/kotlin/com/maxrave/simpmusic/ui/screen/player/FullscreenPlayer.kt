@@ -114,8 +114,10 @@ fun FullscreenPlayer(
             hideNavBar()
             isFullScreen = true
             sharedViewModel.isFullScreen = true
+            com.maxrave.domain.mediaservice.handler.PlaybackTimelinePrecision.acquireHighFrequency()
         },
         onDispose = {
+            com.maxrave.domain.mediaservice.handler.PlaybackTimelinePrecision.releaseHighFrequency()
             sharedViewModel.isFullScreen = false
             isFullScreen = false
             showNavBar()

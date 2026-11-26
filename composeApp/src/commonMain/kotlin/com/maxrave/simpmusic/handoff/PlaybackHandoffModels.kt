@@ -23,6 +23,8 @@ data class HandoffBeacon(
     val nowPlayingTitle: String = "",
     val nowPlayingArtist: String = "",
     val isPlaying: Boolean = false,
+    val activeRoomCode: String? = null,
+    val wholeHomeGroupId: String? = null,
 )
 
 @Serializable
@@ -36,6 +38,8 @@ data class HandoffPeer(
     val nowPlayingArtist: String = "",
     val isPlaying: Boolean = false,
     val lastSeenMs: Long = 0L,
+    val activeRoomCode: String? = null,
+    val wholeHomeGroupId: String? = null,
 )
 
 @Serializable

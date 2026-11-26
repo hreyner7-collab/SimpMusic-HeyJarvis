@@ -186,6 +186,12 @@ fun NowPlayingScreenContent(
     dismissIcon: ImageVector,
     onDismiss: () -> Unit = {},
 ) {
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        com.maxrave.domain.mediaservice.handler.PlaybackTimelinePrecision.acquireHighFrequency()
+        onDispose {
+            com.maxrave.domain.mediaservice.handler.PlaybackTimelinePrecision.releaseHighFrequency()
+        }
+    }
     val coroutineScope = rememberCoroutineScope()
 
     // ViewModel State

@@ -1908,6 +1908,7 @@ fun SettingScreen(
                 StereoWidenerSettings(enabledByCast = !castState.isRemote)
                 DeviceAudioProfilesSettings()
                 PlaybackHandoffSettings()
+                SmartHomeAndWholeHomeAudioSettings()
                 AiDjSettings()
                 MusicOnlyAndBlocklistSettings()
                 SettingItem(
@@ -2977,6 +2978,7 @@ fun SettingScreen(
                     subtitle = stringResource(Res.string.backup_downloaded_description),
                     switch = (backupDownloaded to { viewModel.setBackupDownloaded(it) }),
                 )
+                AutomatedCloudBackupSettings()
                 // Auto Backup (Android only)
                 if (getPlatform() == Platform.Android) {
                     SettingItem(

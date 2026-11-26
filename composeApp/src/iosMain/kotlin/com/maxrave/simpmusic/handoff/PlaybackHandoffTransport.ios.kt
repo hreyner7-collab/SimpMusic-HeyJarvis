@@ -11,6 +11,7 @@ actual class PlaybackHandoffTransport actual constructor() {
         onGetState: (pauseLocal: Boolean) -> HandoffPlaybackSnapshot?,
         onReceiveTransfer: (HandoffPlaybackSnapshot) -> Unit,
         onPeerDiscovered: (HandoffPeer) -> Unit,
+        onReceiveCustomPost: (path: String, body: String) -> Boolean,
     ): Int = 0
 
     actual fun broadcastDiscoverPing() {}
@@ -18,6 +19,12 @@ actual class PlaybackHandoffTransport actual constructor() {
     actual suspend fun sendSnapshot(
         peer: HandoffPeer,
         snapshot: HandoffPlaybackSnapshot,
+    ): Boolean = false
+
+    actual suspend fun sendCustomPost(
+        peer: HandoffPeer,
+        path: String,
+        body: String,
     ): Boolean = false
 
     actual suspend fun pullSnapshot(

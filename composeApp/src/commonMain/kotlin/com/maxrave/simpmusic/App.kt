@@ -91,6 +91,7 @@ import com.maxrave.simpmusic.ui.icon.ArrowForwardIos
 import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.navigation.destination.home.AnalyticsDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.HomeDestination
+import com.maxrave.simpmusic.ui.navigation.destination.home.ListenTogetherDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.NotificationDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.SettingsDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.WrappedDestination
@@ -124,7 +125,9 @@ import com.mikepenz.markdown.m3.markdownTypography
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
@@ -172,7 +175,6 @@ fun App(
     }
 
     val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
-    val nowPlayingData by viewModel.nowPlayingState.collectAsStateWithLifecycle()
     val updateData by viewModel.updateResponse.collectAsStateWithLifecycle()
     val intent by viewModel.intent.collectAsStateWithLifecycle()
     val showNotificationPermissionDialog by viewModel.showNotificationPermissionDialog.collectAsStateWithLifecycle()
@@ -219,12 +221,13 @@ fun App(
     //
     // Reading it straight from nowPlayingData removes both failure modes: there is no first-frame
     // guess to be wrong, and no saved copy to disagree with the source.
-    val isShowMiniPlayer by remember {
-        derivedStateOf {
-            val item = nowPlayingData?.mediaItem
-            item != null && item != GenericMediaItem.EMPTY
-        }
-    }
+    val isShowMiniPlayer by remember(viewModel) {
+        viewModel.nowPlayingState
+            .map { data ->
+                val item = data?.mediaItem
+                item != null && item != GenericMediaItem.EMPTY
+            }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
 
     // Now playing screen
     var isShowNowPlaylistScreen by rememberSaveable {
@@ -404,6 +407,11 @@ fun App(
                         } else {
                             viewModel.makeToast(getString(Res.string.this_link_is_not_supported))
                         }
+                    }
+
+                    // simpmusic://room/CODE — open Listen Together room screen directly
+                    "room" -> {
+                        navController.navigate(ListenTogetherDestination) { launchSingleTop = true }
                     }
 
                     // simpmusic://recognize — the Quick Settings tile (Android only): Search with the

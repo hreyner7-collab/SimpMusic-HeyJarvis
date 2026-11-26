@@ -105,7 +105,7 @@ fun LiquidGlassTabBar(
     tabs: List<BottomNavScreen>,
     selectedTab: Int,
     backdrop: PlatformBackdrop,
-    layer: GraphicsLayer,
+    layer: GraphicsLayer?,
     luminance: State<Float>,
     modifier: Modifier = Modifier,
     availableWidth: Dp = Dp.Unspecified,

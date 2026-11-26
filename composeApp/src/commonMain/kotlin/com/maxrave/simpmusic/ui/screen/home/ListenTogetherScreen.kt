@@ -77,6 +77,10 @@ import com.maxrave.domain.data.model.listentogether.RoomConnection
 import com.maxrave.domain.data.model.listentogether.RoomJoinRequest
 import com.maxrave.domain.data.model.listentogether.RoomMember
 import com.maxrave.domain.data.model.listentogether.RoomSuggestion
+import com.maxrave.domain.data.model.listentogether.RoomTrack
+import com.maxrave.simpmusic.collab.CollaborativeFeedEntry
+import com.maxrave.simpmusic.collab.CollaborativeRoomProtocol
+import com.maxrave.simpmusic.collab.CollaborativeRoomUiState
 import com.maxrave.simpmusic.expect.shareUrl
 import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
 import com.maxrave.simpmusic.expect.ui.PlatformBackdrop
@@ -86,17 +90,26 @@ import com.maxrave.simpmusic.expect.ui.rememberBackdrop
 import com.maxrave.simpmusic.extension.angledGradientBackground
 import com.maxrave.simpmusic.extension.artworkScrimBrush
 import com.maxrave.simpmusic.extension.rgbFactor
+import com.maxrave.simpmusic.handoff.HandoffPeer
 import com.maxrave.simpmusic.ui.component.EndOfPage
 import com.maxrave.simpmusic.ui.component.LiquidGlassIconButton
+import com.maxrave.simpmusic.ui.icon.Add
 import com.maxrave.simpmusic.ui.icon.ArrowBackIosNew
 import com.maxrave.simpmusic.ui.icon.ArrowForwardIos
 import com.maxrave.simpmusic.ui.icon.Check
 import com.maxrave.simpmusic.ui.icon.Close
 import com.maxrave.simpmusic.ui.icon.ContentCopy
 import com.maxrave.simpmusic.ui.icon.Logout
+import com.maxrave.simpmusic.ui.icon.MusicNote
+import com.maxrave.simpmusic.ui.icon.Search
+import com.maxrave.simpmusic.ui.icon.Send
 import com.maxrave.simpmusic.ui.icon.Settings
 import com.maxrave.simpmusic.ui.icon.Share
 import com.maxrave.simpmusic.ui.icon.SimpIcons
+import com.maxrave.simpmusic.ui.icon.Sort
+import com.maxrave.simpmusic.ui.icon.Sync
+import com.maxrave.simpmusic.ui.icon.ThumbUp
+import com.maxrave.simpmusic.ui.icon.ThumbUpOutline
 import com.maxrave.simpmusic.ui.navigation.destination.home.ListenTogetherSettingsDestination
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.viewModel.ListenTogetherViewModel
@@ -204,7 +217,9 @@ fun ListenTogetherScreen(
         val copyCode: () -> Unit = { state.roomCode?.let { clipboard.setText(AnnotatedString(it)) } }
         val shareTitle = stringResource(Res.string.listen_together)
         val shareCode: () -> Unit = {
-            state.roomCode?.let { shareUrl(title = shareTitle, url = SHARE_PREFIX + it) }
+            state.roomCode?.let {
+                shareUrl(title = shareTitle, url = CollaborativeRoomProtocol.buildShareInviteText(it))
+            }
         }
         val openSettings: () -> Unit = { navController.navigate(ListenTogetherSettingsDestination) }
 
@@ -365,8 +380,23 @@ private fun ColumnScope.WorkArea(
         ErrorCard(message = lastError, onDismiss = viewModel::clearError)
     }
 
+    val collabState by viewModel.collabState.collectAsStateWithLifecycle()
+    val nearbyRooms by viewModel.nearbyRooms.collectAsStateWithLifecycle()
+    val autoApproveSuggestions by viewModel.autoApproveSuggestions.collectAsStateWithLifecycle()
+    val chatDraft by viewModel.chatDraft.collectAsStateWithLifecycle()
+    val suggestQuery by viewModel.suggestQuery.collectAsStateWithLifecycle()
+    val suggestResults by viewModel.suggestResults.collectAsStateWithLifecycle()
+    val isSearchingSuggestions by viewModel.isSearchingSuggestions.collectAsStateWithLifecycle()
+
     when {
         state.inRoom -> {
+            LiveSyncNowPlayingCard(
+                state = state,
+                autoApproveSuggestions = autoApproveSuggestions,
+                onRequestSync = viewModel::requestSync,
+                onToggleOpenQueue = viewModel::setAutoApproveSuggestions,
+                onSuggestPlaying = { viewModel.suggestCurrentPlayingTrack() },
+            )
             AnimatedVisibility(visible = state.waitingFor.isNotEmpty()) {
                 BufferBanner(state.waitingForNames)
             }
@@ -377,9 +407,33 @@ private fun ColumnScope.WorkArea(
             }
             AnimatedVisibility(visible = state.isHost && state.suggestions.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Suggestions(state.suggestions, viewModel::approveSuggestion, viewModel::rejectSuggestion)
+                    Suggestions(
+                        suggestions = state.suggestions,
+                        onApprove = viewModel::approveSuggestion,
+                        onApproveAll = viewModel::approveAllSuggestions,
+                        onReject = viewModel::rejectSuggestion,
+                    )
                 }
             }
+            CollaborativeQueuePanel(
+                state = state,
+                collabState = collabState,
+                suggestQuery = suggestQuery,
+                suggestResults = suggestResults,
+                isSearching = isSearchingSuggestions,
+                onSuggestQueryChange = viewModel::onSuggestQueryChange,
+                onSearchSuggestions = viewModel::searchTracksToSuggest,
+                onSuggestTrack = viewModel::suggestTrack,
+                onToggleVote = viewModel::toggleTrackVote,
+                onApplyTopVotedOrder = viewModel::applyTopVotedQueueOrder,
+            )
+            LiveReactionsAndFeedCard(
+                collabState = collabState,
+                chatDraft = chatDraft,
+                onChatDraftChange = viewModel::onChatDraftChange,
+                onSendChat = viewModel::sendChatMessage,
+                onSendReaction = viewModel::sendReaction,
+            )
             Members(
                 members = state.members,
                 selfId = state.selfUserId,
@@ -402,6 +456,13 @@ private fun ColumnScope.WorkArea(
                 enabled = displayName.isNotBlank() && state.isConnected,
                 onClick = viewModel::createRoom,
             )
+
+            AnimatedVisibility(visible = nearbyRooms.isNotEmpty()) {
+                NearbyRoomsPanel(
+                    rooms = nearbyRooms,
+                    onJoinRoom = viewModel::joinNearbyRoom,
+                )
+            }
 
             DividerLabel(stringResource(Res.string.lt_or_join_with_code))
 
@@ -777,9 +838,29 @@ private fun JoinRequests(
 private fun Suggestions(
     suggestions: List<RoomSuggestion>,
     onApprove: (String) -> Unit,
+    onApproveAll: () -> Unit,
     onReject: (String) -> Unit,
 ) {
-    SectionHeader(stringResource(Res.string.lt_suggestions), suggestions.size)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(Res.string.lt_suggestions), style = typo().titleSmall, color = MaterialTheme.colorScheme.onBackground)
+            Box(
+                Modifier
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                    .padding(horizontal = 8.dp, vertical = 1.dp),
+            ) {
+                Text("${suggestions.size}", style = typo().labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        if (suggestions.size > 1) {
+            Chip(text = "Approve all", filled = true, onClick = onApproveAll)
+        }
+    }
     suggestions.forEach { suggestion ->
         Surface {
             Row(
@@ -1332,4 +1413,379 @@ private fun CodeInput(
             }
         },
     )
+}
+
+@Composable
+private fun LiveSyncNowPlayingCard(
+    state: ListenTogetherRoom,
+    autoApproveSuggestions: Boolean,
+    onRequestSync: () -> Unit,
+    onToggleOpenQueue: (Boolean) -> Unit,
+    onSuggestPlaying: () -> Unit,
+) {
+    Surface(tint = MaterialTheme.colorScheme.primary) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(SimpIcons.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Text(
+                        text = if (state.isPlaying) "Playing together" else "Room paused",
+                        style = typo().labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                val syncLabel =
+                    when {
+                        state.syncRttMs != null -> "Synced · ${state.syncRttMs} ms"
+                        state.isClockCalibrated -> "Clock synced"
+                        else -> "Calibrating…"
+                    }
+                Text(
+                    text = syncLabel,
+                    style = typo().bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            val track = state.currentTrack
+            if (track != null && track.title.isNotBlank()) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = track.title,
+                        style = typo().titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text =
+                            buildString {
+                                append(track.artist.ifBlank { "Unknown artist" })
+                                if (track.suggestedBy.isNotBlank()) append(" · suggested by ${track.suggestedBy}")
+                            },
+                        style = typo().bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                Text(
+                    text = if (state.isHost) "Start playing any track to sync the room" else "Waiting for the host to start playback",
+                    style = typo().bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (state.isHost) {
+                    Chip(
+                        text = if (autoApproveSuggestions) "Open queue: ON" else "Open queue: OFF",
+                        filled = autoApproveSuggestions,
+                        onClick = { onToggleOpenQueue(!autoApproveSuggestions) },
+                    )
+                } else {
+                    Chip(text = "Re-sync", filled = false, onClick = onRequestSync)
+                    Chip(text = "Suggest my song", filled = true, onClick = onSuggestPlaying)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollaborativeQueuePanel(
+    state: ListenTogetherRoom,
+    collabState: CollaborativeRoomUiState,
+    suggestQuery: String,
+    suggestResults: List<RoomTrack>,
+    isSearching: Boolean,
+    onSuggestQueryChange: (String) -> Unit,
+    onSearchSuggestions: () -> Unit,
+    onSuggestTrack: (RoomTrack) -> Unit,
+    onToggleVote: (trackId: String, title: String) -> Unit,
+    onApplyTopVotedOrder: () -> Unit,
+) {
+    val rankedQueue =
+        remember(state.queue, collabState.votesByTrackId) {
+            CollaborativeRoomProtocol.rankUpcomingQueue(state.queue, collabState.votesByTrackId)
+        }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionHeader("Collaborative Queue", rankedQueue.size)
+        }
+        if (state.isHost && collabState.votesByTrackId.isNotEmpty() && rankedQueue.size > 1) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Chip(text = "Apply top-voted order", filled = true, onClick = onApplyTopVotedOrder)
+            }
+        }
+        // Inline YouTube Music track suggester
+        Surface {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    BasicTextField(
+                        value = suggestQuery,
+                        onValueChange = onSuggestQueryChange,
+                        singleLine = true,
+                        textStyle = typo().bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .clip(ROW_SHAPE)
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f)),
+                        decorationBox = { inner ->
+                            Box(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
+                                if (suggestQuery.isEmpty()) {
+                                    Text(
+                                        text = if (state.isHost) "Search to add a song to room queue…" else "Search to suggest a song…",
+                                        style = typo().bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                inner()
+                            }
+                        },
+                    )
+                    ActionGlyph(SimpIcons.Search, MaterialTheme.colorScheme.primary, onSearchSuggestions)
+                }
+                if (isSearching) {
+                    Text("Searching YouTube Music…", style = typo().bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                suggestResults.take(5).forEach { result ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(result.title, style = typo().bodyMedium, color = MaterialTheme.colorScheme.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(result.artist, style = typo().bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        ActionGlyph(SimpIcons.Add, MaterialTheme.colorScheme.primary) { onSuggestTrack(result) }
+                    }
+                }
+            }
+        }
+        if (rankedQueue.isEmpty()) {
+            Text(
+                text = "Upcoming room tracks appear here — tap 👍 on any track to vote it up next",
+                style = typo().bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Surface {
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    rankedQueue.take(12).forEachIndexed { idx, track ->
+                        val votes = collabState.voteCount(track.id)
+                        val voted = collabState.hasVoted(track.id, state.selfUserId)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                text = "${idx + 1}",
+                                style = typo().labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.width(20.dp),
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(track.title, style = typo().bodyMedium, color = MaterialTheme.colorScheme.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    text =
+                                        buildString {
+                                            append(track.artist.ifBlank { "Track" })
+                                            if (track.suggestedBy.isNotBlank()) append(" · by ${track.suggestedBy}")
+                                        },
+                                    style = typo().bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (voted) {
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.10f)
+                                            },
+                                        ).clickable { onToggleVote(track.id, track.title) }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(
+                                    imageVector = if (voted) SimpIcons.ThumbUp else SimpIcons.ThumbUpOutline,
+                                    contentDescription = "Upvote track",
+                                    tint = if (voted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Text(
+                                    text = "$votes",
+                                    style = typo().labelSmall,
+                                    color = if (voted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveReactionsAndFeedCard(
+    collabState: CollaborativeRoomUiState,
+    chatDraft: String,
+    onChatDraftChange: (String) -> Unit,
+    onSendChat: () -> Unit,
+    onSendReaction: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader("Live Reactions & Room Feed", collabState.feed.size)
+        Surface {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CollaborativeRoomProtocol.QUICK_REACTIONS.forEach { emoji ->
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.10f))
+                                    .clickable { onSendReaction(emoji) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(emoji, style = typo().titleSmall)
+                        }
+                    }
+                }
+                if (collabState.feed.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        collabState.feed.takeLast(6).forEach { entry ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "${entry.senderName}:",
+                                    style = typo().labelSmall,
+                                    color = if (entry.isSystem) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+                                )
+                                Text(
+                                    text = entry.message,
+                                    style = typo().bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    BasicTextField(
+                        value = chatDraft,
+                        onValueChange = onChatDraftChange,
+                        singleLine = true,
+                        textStyle = typo().bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .clip(ROW_SHAPE)
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f)),
+                        decorationBox = { inner ->
+                            Box(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
+                                if (chatDraft.isEmpty()) {
+                                    Text("Say something to the room…", style = typo().bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                inner()
+                            }
+                        },
+                    )
+                    ActionGlyph(SimpIcons.Send, MaterialTheme.colorScheme.primary, onSendChat)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NearbyRoomsPanel(
+    rooms: List<HandoffPeer>,
+    onJoinRoom: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionHeader("Nearby Rooms on Wi-Fi", rooms.size)
+        Surface(tint = MaterialTheme.colorScheme.primary) {
+            Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                rooms.forEach { peer ->
+                    val code = peer.activeRoomCode.orEmpty()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(peer.deviceName, style = typo().bodyMedium, color = MaterialTheme.colorScheme.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                text =
+                                    buildString {
+                                        append("Room $code")
+                                        if (peer.nowPlayingTitle.isNotBlank()) append(" · ${peer.nowPlayingTitle}")
+                                    },
+                                style = typo().bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Chip(text = "Join", filled = true, onClick = { onJoinRoom(code) })
+                    }
+                }
+            }
+        }
+    }
 }

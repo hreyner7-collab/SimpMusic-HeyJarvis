@@ -230,6 +230,9 @@
 -keep class com.maxrave.domain.data.** { *; }
 -keep class com.maxrave.domain.utils.** { *; }
 -keep class com.maxrave.simpmusic.handoff.** { *; }
+-keep class com.maxrave.simpmusic.backup.** { *; }
+-keep class com.maxrave.simpmusic.collab.** { *; }
+-keep class com.maxrave.simpmusic.smarthome.** { *; }
 -keep class com.maxrave.spotify.** { *; }
 -keep class org.simpmusic.** { *; }
 -keep class com.maxrave.media3.** { *; }

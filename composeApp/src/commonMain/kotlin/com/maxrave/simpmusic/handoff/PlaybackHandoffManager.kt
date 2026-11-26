@@ -40,6 +40,7 @@ expect class PlaybackHandoffTransport() {
         onGetState: (pauseLocal: Boolean) -> HandoffPlaybackSnapshot?,
         onReceiveTransfer: (HandoffPlaybackSnapshot) -> Unit,
         onPeerDiscovered: (HandoffPeer) -> Unit,
+        onReceiveCustomPost: (path: String, body: String) -> Boolean = { _, _ -> false },
     ): Int
 
     fun broadcastDiscoverPing()
@@ -47,6 +48,12 @@ expect class PlaybackHandoffTransport() {
     suspend fun sendSnapshot(
         peer: HandoffPeer,
         snapshot: HandoffPlaybackSnapshot,
+    ): Boolean
+
+    suspend fun sendCustomPost(
+        peer: HandoffPeer,
+        path: String,
+        body: String,
     ): Boolean
 
     suspend fun pullSnapshot(
@@ -80,6 +87,38 @@ class PlaybackHandoffManager(
 
     @Volatile
     private var cachedDeviceName: String = transport.defaultDeviceName()
+
+    @Volatile
+    private var activeRoomCodeProvider: () -> String? = { null }
+
+    @Volatile
+    private var wholeHomeGroupIdProvider: () -> String? = { null }
+
+    @Volatile
+    private var customPostHandlers: Map<String, (String) -> Boolean> = emptyMap()
+
+    fun currentDeviceName(): String = cachedDeviceName
+
+    fun registerBeaconProviders(
+        roomCodeProvider: (() -> String?)? = null,
+        groupIdProvider: (() -> String?)? = null,
+    ) {
+        if (roomCodeProvider != null) activeRoomCodeProvider = roomCodeProvider
+        if (groupIdProvider != null) wholeHomeGroupIdProvider = groupIdProvider
+    }
+
+    fun registerCustomPostHandler(
+        pathPrefix: String,
+        handler: (String) -> Boolean,
+    ) {
+        customPostHandlers = customPostHandlers + (pathPrefix to handler)
+    }
+
+    suspend fun sendCustomPostToPeer(
+        peer: HandoffPeer,
+        path: String,
+        body: String,
+    ): Boolean = runCatching { transport.sendCustomPost(peer, path, body) }.getOrDefault(false)
 
     private var lifecycleJob: Job? = null
     private var pruneJob: Job? = null
@@ -244,6 +283,11 @@ class PlaybackHandoffManager(
                                 .sortedBy { it.deviceName.lowercase() }
                         }
                     },
+                    onReceiveCustomPost = { path, body ->
+                        val handler =
+                            customPostHandlers.entries.firstOrNull { (prefix, _) -> path.startsWith(prefix) }?.value
+                        handler?.invoke(body) ?: false
+                    },
                 )
             }.getOrDefault(0)
         _boundPort.value = port
@@ -280,6 +324,8 @@ class PlaybackHandoffManager(
             nowPlayingTitle = title,
             nowPlayingArtist = artist,
             isPlaying = mediaPlayerHandler.controlState.value.isPlaying,
+            activeRoomCode = runCatching { activeRoomCodeProvider() }.getOrNull(),
+            wholeHomeGroupId = runCatching { wholeHomeGroupIdProvider() }.getOrNull(),
         )
     }
 

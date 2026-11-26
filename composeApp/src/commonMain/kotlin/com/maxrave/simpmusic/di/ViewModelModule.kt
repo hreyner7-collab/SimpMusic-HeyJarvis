@@ -1,7 +1,11 @@
 package com.maxrave.simpmusic.di
 
 import com.maxrave.simpmusic.viewModel.AlbumViewModel
+import com.maxrave.simpmusic.backup.CloudBackupManager
+import com.maxrave.simpmusic.collab.CollaborativeRoomManager
 import com.maxrave.simpmusic.handoff.PlaybackHandoffManager
+import com.maxrave.simpmusic.smarthome.SmartSpeakerManager
+import com.maxrave.simpmusic.smarthome.WholeHomeAudioManager
 import com.maxrave.simpmusic.utils.DeviceAudioProfileController
 import com.maxrave.simpmusic.utils.StreamPrewarmer
 import com.maxrave.simpmusic.utils.VersionManager
@@ -69,6 +73,34 @@ val viewModelModule =
             PlaybackHandoffManager(
                 mediaPlayerHandler = get(),
                 dataStoreManager = get(),
+            )
+        }
+        single {
+            CollaborativeRoomManager(
+                listenTogetherRepository = get(),
+                handoffManager = get(),
+                mediaPlayerHandler = get(),
+            )
+        }
+        single {
+            CloudBackupManager(
+                dataStoreManager = get(),
+                analyticsRepository = get(),
+                songRepository = get(),
+                localPlaylistRepository = get(),
+            )
+        }
+        single {
+            SmartSpeakerManager(
+                mediaPlayerHandler = get(),
+                streamRepository = get(),
+                dataStoreManager = get(),
+            )
+        }
+        single {
+            WholeHomeAudioManager(
+                mediaPlayerHandler = get(),
+                handoffManager = get(),
             )
         }
         single {
@@ -274,6 +306,9 @@ val viewModelModule =
                 repository = get(),
                 dataStore = get(),
                 bridge = get(),
+                collaborativeRoomManager = get(),
+                mediaPlayerHandler = get(),
+                searchRepository = get(),
             )
         }
 

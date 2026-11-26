@@ -151,7 +151,9 @@ fun AlbumScreen(
     val uriHandler = LocalUriHandler.current
 
     val playingVideoId by viewModel.nowPlayingVideoId.collectAsStateWithLifecycle()
-    val isShuffle by sharedViewModel.controllerState.map { it.isShuffle }.collectAsState(initial = false)
+    val isShuffle by remember(sharedViewModel) {
+        sharedViewModel.controllerState.map { it.isShuffle }.distinctUntilChanged()
+    }.collectAsState(initial = false)
 
     val queueData by sharedViewModel.getQueueDataState().collectAsStateWithLifecycle()
     val playingPlaylistId by remember {

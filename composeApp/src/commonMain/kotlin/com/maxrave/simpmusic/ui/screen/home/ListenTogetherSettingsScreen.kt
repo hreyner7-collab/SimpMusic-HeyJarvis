@@ -97,6 +97,8 @@ fun ListenTogetherSettingsScreen(
     val usingCustom by viewModel.usingCustomServer.collectAsStateWithLifecycle()
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
     val autoJoins by viewModel.autoApproveJoins.collectAsStateWithLifecycle()
+    val autoSuggestions by viewModel.autoApproveSuggestions.collectAsStateWithLifecycle()
+    val followHostVolume by viewModel.followHostVolume.collectAsStateWithLifecycle()
     val blocked by viewModel.blockedNames.collectAsStateWithLifecycle()
 
     var draftUrl by remember(serverUrl) { mutableStateOf(serverUrl) }
@@ -230,6 +232,18 @@ fun ListenTogetherSettingsScreen(
                         subtitle = stringResource(Res.string.lt_auto_approve_joins_desc),
                         checked = autoJoins,
                         onCheckedChange = { viewModel.setAutoApproveJoins(it) },
+                    )
+                    ToggleRow(
+                        title = "Open collaborative queue",
+                        subtitle = "Auto-approve track suggestions from listeners directly into the room queue",
+                        checked = autoSuggestions,
+                        onCheckedChange = { viewModel.setAutoApproveSuggestions(it) },
+                    )
+                    ToggleRow(
+                        title = "Follow host volume",
+                        subtitle = "Automatically match the host's volume adjustments while listening as a guest",
+                        checked = followHostVolume,
+                        onCheckedChange = { viewModel.setFollowHostVolume(it) },
                     )
                 }
 

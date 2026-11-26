@@ -195,6 +195,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.launch
@@ -283,12 +284,17 @@ fun LocalPlaylistScreen(
     var showSelectionAddToPlaylist by rememberSaveable { mutableStateOf(false) }
     var shouldShowSuggestButton by rememberSaveable { mutableStateOf(false) }
 
-    val playingTrack by sharedViewModel.nowPlayingState
-        .mapLatest {
-            it?.songEntity
-        }.collectAsState(initial = null)
-    val isPlaying by sharedViewModel.controllerState.map { it.isPlaying }.collectAsState(initial = false)
-    val isShuffle by sharedViewModel.controllerState.map { it.isShuffle }.collectAsState(initial = false)
+    val playingTrack by remember(sharedViewModel) {
+        sharedViewModel.nowPlayingState
+            .map { it?.songEntity }
+            .distinctUntilChangedBy { it?.videoId }
+    }.collectAsState(initial = null)
+    val isPlaying by remember(sharedViewModel) {
+        sharedViewModel.controllerState.map { it.isPlaying }.distinctUntilChanged()
+    }.collectAsState(initial = false)
+    val isShuffle by remember(sharedViewModel) {
+        sharedViewModel.controllerState.map { it.isShuffle }.distinctUntilChanged()
+    }.collectAsState(initial = false)
 
     val queueData by sharedViewModel.getQueueDataState().collectAsStateWithLifecycle()
     val playingPlaylistId by remember {

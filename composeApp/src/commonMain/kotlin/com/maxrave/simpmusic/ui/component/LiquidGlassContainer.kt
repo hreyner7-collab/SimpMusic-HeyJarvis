@@ -116,7 +116,7 @@ fun Modifier.liquidGlass(
 @Composable
 fun Modifier.liquidGlass(
     backdrop: PlatformBackdrop,
-    layer: GraphicsLayer,
+    layer: GraphicsLayer?,
     luminance: State<Float>,
     shape: Shape = CircleShape,
     interactive: Boolean = true,

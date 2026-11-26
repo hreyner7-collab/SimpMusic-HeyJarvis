@@ -171,6 +171,12 @@ fun FullscreenLyricsContent(
     nowPlayingStyle: String,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        com.maxrave.domain.mediaservice.handler.PlaybackTimelinePrecision.acquireHighFrequency()
+        onDispose {
+            com.maxrave.domain.mediaservice.handler.PlaybackTimelinePrecision.releaseHighFrequency()
+        }
+    }
     // The Apple Music renderer applies its own gutter inside LyricsView — it has to, because the
     // blur needs margin of its own to spill into and a caller-side gutter leaves it sliced flat at
     // the edge. This sheet's own 50dp then stacked on top of it, insetting the text by 70dp.
