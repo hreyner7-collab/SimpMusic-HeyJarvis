@@ -61,4 +61,55 @@ class SmartLightingEncoderTest {
         val nanResult = SmartLightingFrameEncoder.computeRgbFromSpectrum(nanBands, LightingReactiveMode.BASS_FLASH, Float.NaN, Float.NaN)
         assertEquals(RgbColor(0, 0, 0), nanResult)
     }
+
+    @Test
+    fun goveeBleFramesMatchVerifiedXorChecksums() {
+        val on = SmartLightingFrameEncoder.encodeGoveeBlePower(true)
+        assertEquals(20, on.size)
+        assertEquals(0x33.toByte(), on[0])
+        assertEquals(0x01.toByte(), on[1])
+        assertEquals(0x01.toByte(), on[2])
+        assertEquals(0x33.toByte(), on[19])
+
+        val off = SmartLightingFrameEncoder.encodeGoveeBlePower(false)
+        assertEquals(0x32.toByte(), off[19])
+
+        val red = SmartLightingFrameEncoder.encodeGoveeBleColor(RgbColor(255, 0, 0))
+        assertEquals(0x33.toByte(), red[0])
+        assertEquals(0x05.toByte(), red[1])
+        assertEquals(0x02.toByte(), red[2])
+        assertEquals(0xFF.toByte(), red[3])
+        assertEquals(0xCB.toByte(), red[19])
+    }
+
+    @Test
+    fun djDiscoEngineMapsHeavyBassToRedAndHighPitchToCyan() {
+        val engine = DjDiscoLightEngine()
+        val heavyBass = FloatArray(24) { if (it <= 4) 0.95f else 0.05f }
+        val bassFrame = engine.step(heavyBass, userBrightness = 1f, sensitivity = 1f)
+        assertEquals("HEAVY BASS → RED", bassFrame.activeCue)
+        assertTrue(bassFrame.color.r > bassFrame.color.b && bassFrame.color.r > bassFrame.color.g)
+
+        val engine2 = DjDiscoLightEngine()
+        val highPitch = FloatArray(24) { if (it >= 16) 0.95f else 0.05f }
+        val highFrame = engine2.step(highPitch, userBrightness = 1f, sensitivity = 1f)
+        assertEquals("HIGH PITCH → CYAN", highFrame.activeCue)
+        assertTrue(highFrame.color.b > highFrame.color.r)
+    }
+
+    @Test
+    fun goveeLanWizYeelightAndLifxParsersWork() {
+        val govee = SmartLightingFrameEncoder.parseGoveeScanReply("""{"msg":{"cmd":"scan","data":{"ip":"192.168.0.50","sku":"H6199"}}}""", "192.168.0.50")
+        assertEquals("Govee H6199", govee?.name)
+        assertEquals(LightingProtocol.GOVEE_LAN, govee?.protocol)
+
+        val wiz = SmartLightingFrameEncoder.parseWizDiscoveryReply("""{"method":"getPilot","result":{"mac":"a8bb50123456","state":true}}""", "192.168.0.60")
+        assertEquals("WiZ Bulb (3456)", wiz?.name)
+
+        val yeelight = SmartLightingFrameEncoder.parseYeelightDiscoveryReply("Location: yeelight://192.168.0.70:55443\r\nmodel: color4\r\n", "192.168.0.70")
+        assertEquals("Yeelight color4", yeelight?.name)
+
+        val lifxReq = SmartLightingFrameEncoder.encodeLifxGetServicePacket()
+        assertEquals(36, lifxReq.size)
+    }
 }

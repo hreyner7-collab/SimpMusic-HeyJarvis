@@ -20,13 +20,20 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.math.roundToInt
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
+@OptIn(ExperimentalTime::class)
 class SmartLightingManager(
     private val dataStoreManager: DataStoreManager,
     private val mediaPlayerHandler: MediaPlayerHandler,
 ) {
     companion object {
         private const val PREF_KEY = "smart_lighting_v1"
+        private const val BLE_MIN_INTERVAL_MS = 85L
+        private const val WIFI_BULB_MIN_INTERVAL_MS = 120L
+        private const val MIN_RGB_DELTA = 6
     }
 
     private val json =
@@ -36,6 +43,7 @@ class SmartLightingManager(
         }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val transport = PlatformLightingTransport()
+    private val djEngine = DjDiscoLightEngine()
 
     private val _config = MutableStateFlow(SmartLightingConfig())
     val config: StateFlow<SmartLightingConfig> = _config.asStateFlow()
@@ -43,11 +51,25 @@ class SmartLightingManager(
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
+    private val _activeCue = MutableStateFlow<String?>(null)
+    val activeCue: StateFlow<String?> = _activeCue.asStateFlow()
+
     private val _lastColor = MutableStateFlow(RgbColor(0, 0, 0))
     val lastColor: StateFlow<RgbColor> = _lastColor.asStateFlow()
 
+    private val _discoveredDevices = MutableStateFlow<List<SmartLightDevice>>(emptyList())
+    val discoveredDevices: StateFlow<List<SmartLightDevice>> = _discoveredDevices.asStateFlow()
+
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
     private var loopJob: Job? = null
     private var collectorRegistered = false
+    private val lastSentAtMsById = HashMap<String, Long>()
+    private val lastSentColorById = HashMap<String, RgbColor>()
+    private val webhookTriggeredThisPlay = HashSet<String>()
+
+    private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
 
     fun start() {
         if (loopJob?.isActive == true) return
@@ -70,10 +92,13 @@ class SmartLightingManager(
                         val activeDevices = cfg.devices.filter { it.enabled && it.host.isNotBlank() }
                         if (!cfg.enabled || activeDevices.isEmpty() || !playing) {
                             unregisterIfNeeded()
+                            djEngine.reset()
+                            webhookTriggeredThisPlay.clear()
+                            _activeCue.value = null
                             _statusMessage.value =
                                 when {
                                     !cfg.enabled -> null
-                                    activeDevices.isEmpty() -> "Add & enable a light to sync"
+                                    activeDevices.isEmpty() -> "Tap Scan to connect your Govee or Wi-Fi lights"
                                     else -> "Paused (0% CPU)"
                                 }
                             return@collectLatest
@@ -85,16 +110,25 @@ class SmartLightingManager(
                         try {
                             while (true) {
                                 val bands = AudioVisualizerBus.bands.value
-                                val color =
-                                    SmartLightingFrameEncoder.computeRgbFromSpectrum(
-                                        bands = bands,
-                                        mode = cfg.mode,
-                                        brightness = cfg.brightness,
-                                        sensitivity = cfg.sensitivity,
-                                    )
+                                val (color, dynBright, cue) =
+                                    if (cfg.mode == LightingReactiveMode.DJ_DISCO) {
+                                        val frame = djEngine.step(bands, cfg.brightness, cfg.sensitivity)
+                                        Triple(frame.color, frame.brightness, frame.activeCue)
+                                    } else {
+                                        val c =
+                                            SmartLightingFrameEncoder.computeRgbFromSpectrum(
+                                                bands = bands,
+                                                mode = cfg.mode,
+                                                brightness = cfg.brightness,
+                                                sensitivity = cfg.sensitivity,
+                                            )
+                                        Triple(c, cfg.brightness, cfg.mode.label)
+                                    }
                                 _lastColor.value = color
+                                _activeCue.value = cue
+                                val now = nowMs()
                                 for (device in activeDevices) {
-                                    sendFrame(device, bands, color, cfg)
+                                    sendFrameThrottled(device, bands, color, dynBright, cfg, now)
                                 }
                                 delay(intervalMs)
                             }
@@ -112,6 +146,63 @@ class SmartLightingManager(
         transport.close()
     }
 
+    fun scanForLights() {
+        if (_isScanning.value) return
+        _isScanning.value = true
+        _statusMessage.value = "Scanning Bluetooth & Wi-Fi for lights..."
+        scope.launch {
+            try {
+                val found = transport.discoverLights(4200L)
+                _discoveredDevices.value = found
+                _statusMessage.value =
+                    if (found.isEmpty()) {
+                        "No lights found — make sure Bluetooth is ON or strip is powered"
+                    } else {
+                        "Found ${found.size} light(s)! Tap Connect to link to music"
+                    }
+            } finally {
+                _isScanning.value = false
+            }
+        }
+    }
+
+    suspend fun blinkDevice(device: SmartLightDevice): Result<Unit> =
+        when (device.protocol) {
+            LightingProtocol.GOVEE_BLE -> transport.blinkGoveeBle(device.host)
+            else -> testFlashDevice(device)
+        }
+
+    fun quickConnectDevice(device: SmartLightDevice) {
+        updateConfig { cfg ->
+            val exists = cfg.devices.any { it.protocol == device.protocol && it.host.equals(device.host, ignoreCase = true) }
+            val updatedList =
+                if (exists) {
+                    cfg.devices.map {
+                        if (it.protocol == device.protocol && it.host.equals(device.host, ignoreCase = true)) {
+                            it.copy(enabled = true)
+                        } else {
+                            it
+                        }
+                    }
+                } else {
+                    cfg.devices + device.copy(enabled = true)
+                }
+            cfg.copy(enabled = true, mode = LightingReactiveMode.DJ_DISCO, devices = updatedList)
+        }
+        scope.launch {
+            if (device.protocol == LightingProtocol.GOVEE_BLE) {
+                transport.sendGoveeBlePower(device.host, true)
+            }
+            testFlashDevice(device)
+        }
+    }
+
+    suspend fun turnOffDevice(device: SmartLightDevice): Result<Unit> =
+        when (device.protocol) {
+            LightingProtocol.GOVEE_BLE -> transport.sendGoveeBlePower(device.host, false)
+            else -> Result.success(Unit)
+        }
+
     private fun registerIfNeeded() {
         if (!collectorRegistered) {
             AudioVisualizerBus.registerCollector()
@@ -126,13 +217,56 @@ class SmartLightingManager(
         }
     }
 
-    private suspend fun sendFrame(
+    private suspend fun sendFrameThrottled(
         device: SmartLightDevice,
         bands: FloatArray,
         color: RgbColor,
+        dynBrightness: Float,
         cfg: SmartLightingConfig,
+        nowMs: Long,
     ) {
+        if (device.protocol == LightingProtocol.ALEXA_WEBHOOK) {
+            if (webhookTriggeredThisPlay.add(device.id)) {
+                transport.triggerWebhook(device.host)
+            }
+            return
+        }
+
+        val minInterval =
+            when (device.protocol) {
+                LightingProtocol.GOVEE_BLE -> BLE_MIN_INTERVAL_MS
+                LightingProtocol.GOVEE_LAN, LightingProtocol.WIZ_UDP, LightingProtocol.YEELIGHT_TCP -> WIFI_BULB_MIN_INTERVAL_MS
+                else -> 0L
+            }
+        if (minInterval > 0L) {
+            val prevAt = lastSentAtMsById[device.id] ?: 0L
+            if (nowMs - prevAt < minInterval) return
+            val prevColor = lastSentColorById[device.id]
+            if (prevColor != null && prevColor.maxChannelDelta(color) < MIN_RGB_DELTA) return
+        }
+
+        lastSentAtMsById[device.id] = nowMs
+        lastSentColorById[device.id] = color
+
         when (device.protocol) {
+            LightingProtocol.GOVEE_BLE -> {
+                val b255 = (dynBrightness.coerceIn(0.15f, 1f) * 255f).roundToInt()
+                transport.sendGoveeBleColor(device.host, color, b255)
+            }
+
+            LightingProtocol.GOVEE_LAN -> {
+                transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanColorPacket(color))
+            }
+
+            LightingProtocol.WIZ_UDP -> {
+                val pct = (dynBrightness.coerceIn(0.1f, 1f) * 100f).roundToInt()
+                transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeWizSetPilotPacket(color, pct))
+            }
+
+            LightingProtocol.YEELIGHT_TCP -> {
+                transport.sendTcpLine(device.host, device.port, SmartLightingFrameEncoder.encodeYeelightSetRgbCommand(color))
+            }
+
             LightingProtocol.WLED_UDP -> {
                 val payload =
                     SmartLightingFrameEncoder.encodeWledDrgbPacket(
@@ -153,6 +287,8 @@ class SmartLightingManager(
             LightingProtocol.OPENRGB_TCP -> {
                 transport.sendOpenRgbColor(device.host, device.port, color, device.ledCount)
             }
+
+            LightingProtocol.ALEXA_WEBHOOK -> Unit
         }
     }
 
@@ -180,9 +316,27 @@ class SmartLightingManager(
         }
 
     suspend fun testFlashDevice(device: SmartLightDevice): Result<Unit> {
-        val flashColor = RgbColor(255, 110, 40)
+        val flashColor = RgbColor(255, 16, 24)
         val fakeBands = FloatArray(AudioVisualizerBus.BAND_COUNT) { 0.9f }
         return when (device.protocol) {
+            LightingProtocol.GOVEE_BLE -> {
+                transport.sendGoveeBlePower(device.host, true)
+                transport.sendGoveeBleColor(device.host, flashColor, 255)
+            }
+
+            LightingProtocol.GOVEE_LAN -> {
+                transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanTurnOnPacket())
+                transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanColorPacket(flashColor))
+            }
+
+            LightingProtocol.WIZ_UDP -> {
+                transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeWizSetPilotPacket(flashColor, 100))
+            }
+
+            LightingProtocol.YEELIGHT_TCP -> {
+                transport.sendTcpLine(device.host, device.port, SmartLightingFrameEncoder.encodeYeelightSetRgbCommand(flashColor))
+            }
+
             LightingProtocol.WLED_UDP -> {
                 val payload =
                     SmartLightingFrameEncoder.encodeWledDrgbPacket(
@@ -205,6 +359,10 @@ class SmartLightingManager(
 
             LightingProtocol.OPENRGB_TCP -> {
                 transport.sendOpenRgbColor(device.host, device.port, flashColor, device.ledCount)
+            }
+
+            LightingProtocol.ALEXA_WEBHOOK -> {
+                transport.triggerWebhook(device.host)
             }
         }
     }

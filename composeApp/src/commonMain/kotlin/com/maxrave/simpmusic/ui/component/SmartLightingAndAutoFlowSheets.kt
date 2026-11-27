@@ -75,7 +75,10 @@ fun SmartLightingSection(
 ) {
     val cfg by manager.config.collectAsStateWithLifecycle()
     val status by manager.statusMessage.collectAsStateWithLifecycle()
+    val activeCue by manager.activeCue.collectAsStateWithLifecycle()
     val lastColor by manager.lastColor.collectAsStateWithLifecycle()
+    val discovered by manager.discoveredDevices.collectAsStateWithLifecycle()
+    val isScanning by manager.isScanning.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -114,7 +117,7 @@ fun SmartLightingSection(
                     Column {
                         Text("Smart Room Lighting Sync", style = typo().titleMedium)
                         Text(
-                            text = status ?: "Sync WLED, LIFX, or OpenRGB lights over LAN",
+                            text = activeCue?.let { "DJ Cue: $it" } ?: status ?: "1-Tap Govee Bluetooth & Wi-Fi Disco Sync",
                             style = typo().bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -126,6 +129,69 @@ fun SmartLightingSection(
                     checked = cfg.enabled,
                     onCheckedChange = { manager.setEnabled(it) },
                 )
+            }
+
+            Button(
+                onClick = { manager.scanForLights() },
+                enabled = !isScanning,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (isScanning) "Scanning Bluetooth & Wi-Fi..." else "Scan for Lights (Govee Bluetooth + Wi-Fi)")
+            }
+
+            if (discovered.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Discovered Nearby", style = typo().labelMedium, color = MaterialTheme.colorScheme.primary)
+                    discovered.forEach { dev ->
+                        val alreadyAdded = cfg.devices.any { it.protocol == dev.protocol && it.host.equals(dev.host, ignoreCase = true) }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(dev.name, style = typo().bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${dev.protocol.displayName} • ${dev.host}",
+                                        style = typo().labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val res = manager.blinkDevice(dev)
+                                            showToast(
+                                                if (res.isSuccess) "Blinked ${dev.name}" else "Blink failed: ${res.exceptionOrNull()?.message}",
+                                                duration = ToastDuration.Short,
+                                                gravity = ToastGravity.Bottom,
+                                            )
+                                        }
+                                    },
+                                ) {
+                                    Text("Blink")
+                                }
+                                FilledTonalButton(
+                                    onClick = {
+                                        manager.quickConnectDevice(dev)
+                                        showToast(
+                                            "Connected ${dev.name} in DJ Disco mode",
+                                            duration = ToastDuration.Short,
+                                            gravity = ToastGravity.Bottom,
+                                        )
+                                    },
+                                ) {
+                                    Text(if (alreadyAdded) "Connected" else "Connect")
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Row(
@@ -199,6 +265,11 @@ fun SmartLightingSection(
                             },
                         ) {
                             Text("Test")
+                        }
+                        if (dev.protocol == LightingProtocol.GOVEE_BLE) {
+                            TextButton(onClick = { scope.launch { manager.turnOffDevice(dev) } }) {
+                                Text("Off")
+                            }
                         }
                         Switch(
                             checked = dev.enabled,
