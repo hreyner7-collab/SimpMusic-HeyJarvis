@@ -173,8 +173,13 @@ class SmartLightingManager(
                                                     isBeatHit = due.isBeatHit,
                                                 )
                                             }
+                                            delay(12L)
+                                        } else {
+                                            val nextAt = queueMutex.withLock { queue.nextDeliverAtMs() }
+                                            val sleepMs =
+                                                if (nextAt != null) (nextAt - nowMs()).coerceIn(8L, 35L) else 35L
+                                            delay(sleepMs)
                                         }
-                                        delay(12L)
                                     }
                                 }
                             }

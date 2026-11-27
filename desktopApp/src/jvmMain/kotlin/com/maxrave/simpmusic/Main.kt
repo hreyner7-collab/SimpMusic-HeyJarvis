@@ -162,6 +162,8 @@ private fun applyPreferredRenderer() {
         }.getOrDefault("")
     if (api in setOf("DIRECT3D", "OPENGL", "SOFTWARE", "METAL")) {
         System.setProperty("skiko.renderApi", api)
+    } else if (System.getProperty("os.name").orEmpty().contains("win", ignoreCase = true)) {
+        System.setProperty("skiko.renderApi", "DIRECT3D")
     }
 }
 

@@ -146,9 +146,12 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
     // republished. Keep this call until that lands.
     java.awt.Desktop.isDesktopSupported()
 
-    System.setProperty("compose.swing.render.on.graphics", "true")
-    System.setProperty("compose.interop.blending", "true")
-    System.setProperty("compose.layers.type", "COMPONENT")
+    val isWindows = System.getProperty("os.name", "").contains("Win", ignoreCase = true)
+    if (!isWindows) {
+        System.setProperty("compose.swing.render.on.graphics", "true")
+        System.setProperty("compose.interop.blending", "true")
+        System.setProperty("compose.layers.type", "COMPONENT")
+    }
 
     // Vsync stays at skiko's default (on) everywhere: it is skiko's only frame cap. It used to be
     // forced off on macOS and Linux against a feared freeze on display changes (CMP-9725 /

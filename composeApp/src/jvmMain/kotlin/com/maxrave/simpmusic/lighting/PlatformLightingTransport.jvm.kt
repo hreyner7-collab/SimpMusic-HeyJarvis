@@ -33,6 +33,7 @@ actual class PlatformLightingTransport actual constructor() {
     private var bleProcess: Process? = null
     private var bleWriter: BufferedWriter? = null
     private var bleReader: BufferedReader? = null
+    private val bleStderrLines = ArrayDeque<String>()
 
     private fun getOrCreateSocket(): DatagramSocket {
         val existing = udpSocket
@@ -209,10 +210,14 @@ actual class PlatformLightingTransport actual constructor() {
                 writer.write(jsonLine)
                 writer.write("\n")
                 writer.flush()
-                val line = reader.readLine() ?: error("BLE bridge closed")
-                if (line.contains("\"ok\":false")) {
-                    val err = Regex("\"error\":\"([^\"]*)\"").find(line)?.groupValues?.get(1) ?: "BLE error"
-                    error(err)
+                val line =
+                    reader.readLine() ?: run {
+                        val stderrTail = synchronized(bleStderrLines) { bleStderrLines.joinToString(" | ") }
+                        error(if (stderrTail.isNotBlank()) "BLE bridge exited: $stderrTail" else "BLE bridge closed")
+                    }
+                val parsed = runCatching { bleJson.decodeFromString<BleBridgeResponse>(line) }.getOrNull()
+                if (parsed != null && !parsed.ok) {
+                    error(parsed.error ?: "BLE error")
                 }
                 line
             }.onFailure {
@@ -228,17 +233,56 @@ actual class PlatformLightingTransport actual constructor() {
         if (existing != null && existing.isAlive && bleWriter != null && bleReader != null) return
 
         val cacheDir = File(System.getProperty("user.home"), ".simpmusic${File.separator}cache").apply { mkdirs() }
-        val scriptFile = File(cacheDir, "govee_ble_bridge.py")
-        scriptFile.writeText(GOVEE_BLE_BRIDGE_PY, StandardCharsets.UTF_8)
+        val isWindows = System.getProperty("os.name", "").contains("win", ignoreCase = true)
+        val command: List<String> =
+            if (isWindows) {
+                val exeStream = PlatformLightingTransport::class.java.getResourceAsStream("/lighting/GoveeBleBridge.exe")
+                if (exeStream != null) {
+                    val exeBytes = exeStream.use { it.readBytes() }
+                    val exeFile = File(cacheDir, "GoveeBleBridge.exe")
+                    if (!exeFile.isFile || exeFile.length() != exeBytes.size.toLong()) {
+                        exeFile.writeBytes(exeBytes)
+                    }
+                    listOf(exeFile.absolutePath)
+                } else {
+                    val scriptFile = File(cacheDir, "govee_ble_bridge.py")
+                    scriptFile.writeText(GOVEE_BLE_BRIDGE_PY, StandardCharsets.UTF_8)
+                    val pythonExe = findPythonExecutable() ?: error("Python 3 with bleak not found for Desktop BLE")
+                    listOf(pythonExe, "-u", scriptFile.absolutePath)
+                }
+            } else {
+                val scriptFile = File(cacheDir, "govee_ble_bridge.py")
+                scriptFile.writeText(GOVEE_BLE_BRIDGE_PY, StandardCharsets.UTF_8)
+                val pythonExe = findPythonExecutable() ?: error("Python 3 with bleak not found for Desktop BLE")
+                listOf(pythonExe, "-u", scriptFile.absolutePath)
+            }
 
-        val pythonExe = findPythonExecutable() ?: error("Python 3 with bleak not found for Desktop BLE")
+        synchronized(bleStderrLines) { bleStderrLines.clear() }
         val proc =
-            ProcessBuilder(pythonExe, "-u", scriptFile.absolutePath)
+            ProcessBuilder(command)
                 .redirectErrorStream(false)
                 .start()
         bleProcess = proc
         bleWriter = BufferedWriter(OutputStreamWriter(proc.outputStream, StandardCharsets.UTF_8))
         bleReader = BufferedReader(InputStreamReader(proc.inputStream, StandardCharsets.UTF_8))
+        Thread(
+            {
+                runCatching {
+                    BufferedReader(InputStreamReader(proc.errorStream, StandardCharsets.UTF_8)).useLines { lines ->
+                        lines.forEach { errLine ->
+                            synchronized(bleStderrLines) {
+                                bleStderrLines.addLast(errLine)
+                                while (bleStderrLines.size > 8) bleStderrLines.removeFirst()
+                            }
+                        }
+                    }
+                }
+            },
+            "SimpMusic-BLE-Stderr",
+        ).apply {
+            isDaemon = true
+            start()
+        }
     }
 
     private fun findPythonExecutable(): String? {
@@ -253,18 +297,19 @@ actual class PlatformLightingTransport actual constructor() {
             )
         for (c in candidates) {
             if (c.contains("\\") || c.contains("/")) {
-                if (File(c).isFile) return c
-            } else {
-                val ok =
-                    runCatching {
-                        val p = ProcessBuilder(c, "--version").start()
-                        p.waitFor() == 0
-                    }.getOrDefault(false)
-                if (ok) return c
+                if (File(c).isFile && hasBleakModule(c)) return c
+            } else if (hasBleakModule(c)) {
+                return c
             }
         }
         return null
     }
+
+    private fun hasBleakModule(pythonCmd: String): Boolean =
+        runCatching {
+            val p = ProcessBuilder(pythonCmd, "-c", "import bleak").start()
+            p.waitFor() == 0
+        }.getOrDefault(false)
 
     private fun scanGoveeLan(timeoutMs: Long): List<SmartLightDevice> {
         val out = mutableListOf<SmartLightDevice>()
