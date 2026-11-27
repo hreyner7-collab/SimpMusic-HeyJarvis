@@ -47,6 +47,7 @@ actual class PlatformLightingTransport actual constructor() {
             var bleHint: String? = null
             coroutineScope {
                 val bleJob = async { scanGoveeBle(timeoutMs.coerceIn(2500L, 6000L)) }
+                val hueJob = async { runCatching { scanPhilipsHue() }.getOrDefault(emptyList()) }
                 val goveeLanJob = async { runCatching { scanGoveeLan(1800L) }.getOrDefault(emptyList()) }
                 val wizJob = async { runCatching { scanWiz(1600L) }.getOrDefault(emptyList()) }
                 val lifxJob = async { runCatching { scanLifx(1600L) }.getOrDefault(emptyList()) }
@@ -56,6 +57,7 @@ actual class PlatformLightingTransport actual constructor() {
                 val bleRes = bleJob.await()
                 found += bleRes.devices
                 bleHint = bleRes.diagnosticHint
+                found += hueJob.await()
                 found += goveeLanJob.await()
                 found += wizJob.await()
                 found += lifxJob.await()
@@ -164,6 +166,97 @@ actual class PlatformLightingTransport actual constructor() {
                 }
             }
         }
+
+    actual suspend fun sendHttpRequest(
+        url: String,
+        method: String,
+        body: String?,
+    ): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val conn =
+                    (URL(url.trim()).openConnection() as HttpURLConnection).apply {
+                        requestMethod = method
+                        connectTimeout = 2200
+                        readTimeout = 2500
+                        if (body != null) {
+                            doOutput = true
+                            setRequestProperty("Content-Type", "application/json")
+                        }
+                    }
+                try {
+                    if (body != null) {
+                        conn.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
+                    }
+                    val code = conn.responseCode
+                    val stream = if (code in 200..299) conn.inputStream else (conn.errorStream ?: conn.inputStream)
+                    val text = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) error("HTTP $code: $text")
+                    text
+                } finally {
+                    conn.disconnect()
+                }
+            }
+        }
+
+    private fun scanPhilipsHue(): List<SmartLightDevice> {
+        val cloudJson =
+            runCatching {
+                val conn =
+                    (URL(SmartLightingFrameEncoder.HUE_DISCOVERY_URL).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 2200
+                        readTimeout = 2200
+                    }
+                try {
+                    if (conn.responseCode in 200..299) {
+                        conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                    } else {
+                        ""
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            }.getOrDefault("")
+        val fromCloud = SmartLightingFrameEncoder.parseHueDiscoveryJson(cloudJson)
+        if (fromCloud.isNotEmpty()) return fromCloud
+
+        val out = mutableListOf<SmartLightDevice>()
+        runCatching {
+            DatagramSocket().use { sock ->
+                sock.soTimeout = 300
+                val ssdp =
+                    "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 1\r\nST: upnp:rootdevice\r\n\r\n"
+                        .encodeToByteArray()
+                sock.send(DatagramPacket(ssdp, ssdp.size, InetAddress.getByName("239.255.255.250"), 1900))
+                val deadline = System.currentTimeMillis() + 1200L
+                val buf = ByteArray(2048)
+                while (System.currentTimeMillis() < deadline) {
+                    val pkt = DatagramPacket(buf, buf.size)
+                    try {
+                        sock.receive(pkt)
+                        val raw = String(pkt.data, 0, pkt.length, StandardCharsets.UTF_8)
+                        if (raw.contains("IpBridge", ignoreCase = true) || raw.contains("hue-bridgeid", ignoreCase = true)) {
+                            val ip = pkt.address.hostAddress.orEmpty()
+                            if (ip.isNotBlank()) {
+                                out +=
+                                    SmartLightDevice(
+                                        id = "hue-bridge-$ip",
+                                        name = "Philips Hue Bridge ($ip)",
+                                        host = ip,
+                                        port = 80,
+                                        protocol = LightingProtocol.PHILIPS_HUE,
+                                        enabled = true,
+                                    )
+                            }
+                        }
+                    } catch (_: SocketTimeoutException) {
+                    }
+                }
+            }
+        }
+        return out.distinctBy { it.host }
+    }
 
     actual fun close() {
         runCatching { udpSocket?.close() }

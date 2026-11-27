@@ -86,6 +86,7 @@ fun SmartLightingSection(
     val lastColor by manager.lastColor.collectAsStateWithLifecycle()
     val discovered by manager.discoveredDevices.collectAsStateWithLifecycle()
     val isScanning by manager.isScanning.collectAsStateWithLifecycle()
+    val isPairingHue by manager.isPairingHue.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showAddDialog by remember { mutableStateOf(false) }
     var showFineTune by remember { mutableStateOf(false) }
@@ -145,7 +146,7 @@ fun SmartLightingSection(
                         Column {
                             Text("DJ Room Lights", style = typo().titleMedium, fontWeight = FontWeight.Bold)
                             Text(
-                                text = activeCue ?: status ?: "Govee Bluetooth & Wi-Fi Disco Sync",
+                                text = activeCue ?: status ?: "Philips Hue, Govee & Smart Lights Sync",
                                 style = typo().bodySmall,
                                 color = if (activeCue != null) liveColor else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 2,
@@ -180,6 +181,36 @@ fun SmartLightingSection(
                 }
             }
 
+            // Hue Bridge Link-Button Pairing Banner
+            if (isPairingHue) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Text(
+                            text = status ?: "Press the round button on your Philips Hue Bridge...",
+                            style = typo().bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { manager.cancelHuePairing() }) {
+                            Text("Cancel")
+                        }
+                    }
+                }
+            }
+
             // 3. Discovered Lights
             if (discovered.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -204,31 +235,44 @@ fun SmartLightingSection(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                TextButton(
-                                    onClick = {
-                                        scope.launch {
-                                            val res = manager.blinkDevice(dev)
-                                            showToast(
-                                                if (res.isSuccess) "Blinked ${formatFriendlyLightName(dev.name)}" else "Blink failed: ${res.exceptionOrNull()?.message}",
-                                                duration = ToastDuration.Short,
-                                                gravity = ToastGravity.Bottom,
-                                            )
-                                        }
-                                    },
-                                ) {
-                                    Text("Blink")
+                                val needsHuePair = dev.protocol == LightingProtocol.PHILIPS_HUE && dev.apiKey.isBlank()
+                                if (!needsHuePair) {
+                                    TextButton(
+                                        onClick = {
+                                            scope.launch {
+                                                val res = manager.blinkDevice(dev)
+                                                showToast(
+                                                    if (res.isSuccess) "Blinked ${formatFriendlyLightName(dev.name)}" else "Blink failed: ${res.exceptionOrNull()?.message}",
+                                                    duration = ToastDuration.Short,
+                                                    gravity = ToastGravity.Bottom,
+                                                )
+                                            }
+                                        },
+                                    ) {
+                                        Text("Blink")
+                                    }
                                 }
                                 FilledTonalButton(
                                     onClick = {
                                         manager.quickConnectDevice(dev)
                                         showToast(
-                                            "Connected ${formatFriendlyLightName(dev.name)} in DJ Disco mode",
+                                            if (needsHuePair) {
+                                                "Press the round button on top of your Hue Bridge"
+                                            } else {
+                                                "Connected ${formatFriendlyLightName(dev.name)} in DJ Disco mode"
+                                            },
                                             duration = ToastDuration.Short,
                                             gravity = ToastGravity.Bottom,
                                         )
                                     },
                                 ) {
-                                    Text(if (alreadyAdded) "Connected" else "Connect")
+                                    Text(
+                                        when {
+                                            needsHuePair -> "Pair Bridge"
+                                            alreadyAdded -> "Connected"
+                                            else -> "Connect"
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -262,7 +306,7 @@ fun SmartLightingSection(
                                 TextButton(onClick = { scope.launch { manager.blinkDevice(dev) } }) {
                                     Text("Blink")
                                 }
-                                if (dev.protocol == LightingProtocol.GOVEE_BLE) {
+                                if (dev.protocol == LightingProtocol.GOVEE_BLE || dev.protocol == LightingProtocol.PHILIPS_HUE) {
                                     TextButton(onClick = { scope.launch { manager.turnOffDevice(dev) } }) {
                                         Text("Off")
                                     }

@@ -42,5 +42,12 @@ actual class PlatformLightingTransport actual constructor() {
     actual suspend fun triggerWebhook(url: String): Result<Unit> =
         Result.failure(UnsupportedOperationException("Webhook transport unavailable on iOS"))
 
+    actual suspend fun sendHttpRequest(
+        url: String,
+        method: String,
+        body: String?,
+    ): Result<String> =
+        Result.failure(UnsupportedOperationException("HTTP lighting transport unavailable on iOS"))
+
     actual fun close() = Unit
 }

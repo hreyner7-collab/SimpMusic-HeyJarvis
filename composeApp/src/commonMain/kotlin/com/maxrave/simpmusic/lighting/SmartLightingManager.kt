@@ -74,8 +74,13 @@ class SmartLightingManager(
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
+    private val _isPairingHue = MutableStateFlow(false)
+    val isPairingHue: StateFlow<Boolean> = _isPairingHue.asStateFlow()
+
     private var loopJob: Job? = null
+    private var huePairJob: Job? = null
     private var collectorRegistered = false
+    private val inFlightDevices = HashSet<String>()
     private val lastSentAtMsById = HashMap<String, Long>()
     private val lastSentColorById = HashMap<String, RgbColor>()
     private val webhookTriggeredThisPlay = HashSet<String>()
@@ -163,15 +168,24 @@ class SmartLightingManager(
                                             _lastColor.value = due.color
                                             _activeCue.value = due.cue
                                             for (device in activeDevices) {
-                                                sendFrameThrottled(
-                                                    device = device,
-                                                    bands = due.bands,
-                                                    color = due.color,
-                                                    dynBrightness = due.dynBrightness,
-                                                    cfg = cfg,
-                                                    nowMs = now,
-                                                    isBeatHit = due.isBeatHit,
-                                                )
+                                                val canLaunch = synchronized(inFlightDevices) { inFlightDevices.add(device.id) }
+                                                if (canLaunch) {
+                                                    launch {
+                                                        try {
+                                                            sendFrameThrottled(
+                                                                device = device,
+                                                                bands = due.bands,
+                                                                color = due.color,
+                                                                dynBrightness = due.dynBrightness,
+                                                                cfg = cfg,
+                                                                nowMs = now,
+                                                                isBeatHit = due.isBeatHit,
+                                                            )
+                                                        } finally {
+                                                            synchronized(inFlightDevices) { inFlightDevices.remove(device.id) }
+                                                        }
+                                                    }
+                                                }
                                             }
                                             delay(12L)
                                         } else {
@@ -222,16 +236,32 @@ class SmartLightingManager(
         if (activeDevices.isEmpty()) return
         _lastColor.value = color
         _activeCue.value = "MANUAL COLOR"
-        val b255 = (_config.value.brightness.coerceIn(0.15f, 1f) * 255f).roundToInt()
+        val brightFactor = _config.value.brightness.coerceIn(0.15f, 1f)
+        val b255 = (brightFactor * 255f).roundToInt()
+        val scaledColor =
+            RgbColor(
+                r = (color.r * brightFactor).roundToInt(),
+                g = (color.g * brightFactor).roundToInt(),
+                b = (color.b * brightFactor).roundToInt(),
+            ).clamped()
         for (device in activeDevices) {
             when (device.protocol) {
                 LightingProtocol.GOVEE_BLE -> {
                     transport.sendGoveeBlePower(device.host, true)
-                    transport.sendGoveeBleColor(device.host, color, b255)
+                    transport.sendGoveeBleColor(device.host, scaledColor, b255)
                 }
                 LightingProtocol.GOVEE_LAN -> {
                     transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanTurnOnPacket())
-                    transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanColorPacket(color))
+                    transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanColorPacket(scaledColor))
+                }
+                LightingProtocol.PHILIPS_HUE -> {
+                    if (device.apiKey.isNotBlank()) {
+                        transport.sendHttpRequest(
+                            url = hueEndpoint(device),
+                            method = "PUT",
+                            body = SmartLightingFrameEncoder.encodeHueStatePayload(scaledColor, b255, transitionDecisec = 2),
+                        )
+                    }
                 }
                 LightingProtocol.WIZ_UDP -> {
                     transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeWizSetPilotPacket(color, (b255 * 100) / 255))
@@ -260,16 +290,36 @@ class SmartLightingManager(
     suspend fun blinkDevice(device: SmartLightDevice): Result<Unit> =
         when (device.protocol) {
             LightingProtocol.GOVEE_BLE -> transport.blinkGoveeBle(device.host)
+            LightingProtocol.PHILIPS_HUE ->
+                if (device.apiKey.isBlank()) {
+                    Result.failure(IllegalStateException("Pair your Hue Bridge first"))
+                } else {
+                    transport.sendHttpRequest(
+                        url = hueEndpoint(device),
+                        method = "PUT",
+                        body = SmartLightingFrameEncoder.encodeHueBlinkPayload(),
+                    ).map { Unit }
+                }
             else -> testFlashDevice(device)
         }
 
+    fun cancelHuePairing() {
+        huePairJob?.cancel()
+        huePairJob = null
+        _isPairingHue.value = false
+    }
+
     fun quickConnectDevice(device: SmartLightDevice) {
+        if (device.protocol == LightingProtocol.PHILIPS_HUE && device.apiKey.isBlank()) {
+            startHueBridgePairing(device)
+            return
+        }
         updateConfig { cfg ->
-            val exists = cfg.devices.any { it.protocol == device.protocol && it.host.equals(device.host, ignoreCase = true) }
+            val exists = cfg.devices.any { it.protocol == device.protocol && it.host.equals(device.host, ignoreCase = true) && it.lightId == device.lightId }
             val updatedList =
                 if (exists) {
                     cfg.devices.map {
-                        if (it.protocol == device.protocol && it.host.equals(device.host, ignoreCase = true)) {
+                        if (it.protocol == device.protocol && it.host.equals(device.host, ignoreCase = true) && it.lightId == device.lightId) {
                             it.copy(enabled = true)
                         } else {
                             it
@@ -288,10 +338,88 @@ class SmartLightingManager(
         }
     }
 
+    private fun startHueBridgePairing(bridge: SmartLightDevice) {
+        huePairJob?.cancel()
+        _isPairingHue.value = true
+        huePairJob =
+            scope.launch {
+                try {
+                    val pairUrl = "http://${bridge.host}/api"
+                    var pairedKey: String? = null
+                    for (attempt in 0 until 20) {
+                        val remainingSec = (20 - attempt) * 1.5f
+                        _statusMessage.value = "Press the round button on your Philips Hue Bridge (${remainingSec.roundToInt()}s)..."
+                        val res = transport.sendHttpRequest(pairUrl, "POST", SmartLightingFrameEncoder.HUE_PAIR_BODY)
+                        val body = res.getOrNull()
+                        if (body != null) {
+                            when (val parsed = SmartLightingFrameEncoder.parseHuePairResponse(body)) {
+                                is HuePairResult.Success -> {
+                                    pairedKey = parsed.apiKey
+                                    break
+                                }
+                                is HuePairResult.Error -> {
+                                    _statusMessage.value = "Hue pairing error: ${parsed.message}"
+                                    return@launch
+                                }
+                                HuePairResult.LinkButtonRequired -> Unit
+                            }
+                        }
+                        delay(1500L)
+                    }
+
+                    val apiKey = pairedKey
+                    if (apiKey.isNullOrBlank()) {
+                        _statusMessage.value = "Hue pairing timed out — press the Bridge button and tap Pair Bridge again"
+                        return@launch
+                    }
+
+                    val lightsRaw = transport.sendHttpRequest("http://${bridge.host}/api/$apiKey/lights", "GET").getOrNull().orEmpty()
+                    val parsedLights = SmartLightingFrameEncoder.parseHueLightsJson(lightsRaw, bridge.host, apiKey)
+                    val toAdd =
+                        if (parsedLights.isNotEmpty()) {
+                            parsedLights
+                        } else {
+                            listOf(bridge.copy(apiKey = apiKey, lightId = "", enabled = true))
+                        }
+
+                    updateConfig { cfg ->
+                        val existingIds = cfg.devices.mapTo(HashSet()) { it.id }
+                        val merged =
+                            cfg.devices.map { existing ->
+                                val replacement = toAdd.firstOrNull { it.id == existing.id }
+                                replacement?.copy(enabled = true) ?: existing
+                            } + toAdd.filter { it.id !in existingIds }
+                        cfg.copy(enabled = true, mode = LightingReactiveMode.DJ_DISCO, devices = merged)
+                    }
+                    _statusMessage.value = "Connected ${toAdd.size} Philips Hue light(s)!"
+                    toAdd.firstOrNull()?.let { testFlashDevice(it) }
+                } finally {
+                    _isPairingHue.value = false
+                }
+            }
+    }
+
     suspend fun turnOffDevice(device: SmartLightDevice): Result<Unit> =
         when (device.protocol) {
             LightingProtocol.GOVEE_BLE -> transport.sendGoveeBlePower(device.host, false)
+            LightingProtocol.PHILIPS_HUE ->
+                if (device.apiKey.isBlank()) {
+                    Result.success(Unit)
+                } else {
+                    transport.sendHttpRequest(
+                        url = hueEndpoint(device),
+                        method = "PUT",
+                        body = SmartLightingFrameEncoder.encodeHueOffPayload(),
+                    ).map { Unit }
+                }
             else -> Result.success(Unit)
+        }
+
+    private fun hueEndpoint(device: SmartLightDevice): String =
+        if (device.lightId.isNotBlank()) {
+            "http://${device.host}/api/${device.apiKey}/lights/${device.lightId}/state"
+        } else {
+            "http://${device.host}/api/${device.apiKey}/groups/0/action"
         }
 
     private fun registerIfNeeded() {
@@ -327,6 +455,13 @@ class SmartLightingManager(
         val minInterval =
             when (device.protocol) {
                 LightingProtocol.GOVEE_BLE -> BLE_MIN_INTERVAL_MS
+                LightingProtocol.PHILIPS_HUE -> {
+                    val hueCount =
+                        cfg.devices.count {
+                            it.enabled && it.protocol == LightingProtocol.PHILIPS_HUE && it.host.equals(device.host, ignoreCase = true)
+                        }.coerceAtLeast(1)
+                    (100L * hueCount).coerceAtLeast(110L)
+                }
                 LightingProtocol.GOVEE_LAN, LightingProtocol.WIZ_UDP, LightingProtocol.YEELIGHT_TCP -> WIFI_BULB_MIN_INTERVAL_MS
                 else -> 0L
             }
@@ -348,6 +483,16 @@ class SmartLightingManager(
 
             LightingProtocol.GOVEE_LAN -> {
                 transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanColorPacket(color))
+            }
+
+            LightingProtocol.PHILIPS_HUE -> {
+                if (device.apiKey.isNotBlank()) {
+                    transport.sendHttpRequest(
+                        url = hueEndpoint(device),
+                        method = "PUT",
+                        body = SmartLightingFrameEncoder.encodeHueStatePayload(color, 255, transitionDecisec = 1),
+                    )
+                }
             }
 
             LightingProtocol.WIZ_UDP -> {
@@ -421,6 +566,18 @@ class SmartLightingManager(
             LightingProtocol.GOVEE_LAN -> {
                 transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanTurnOnPacket())
                 transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanColorPacket(flashColor))
+            }
+
+            LightingProtocol.PHILIPS_HUE -> {
+                if (device.apiKey.isBlank()) {
+                    Result.failure(IllegalStateException("Pair your Hue Bridge first"))
+                } else {
+                    transport.sendHttpRequest(
+                        url = hueEndpoint(device),
+                        method = "PUT",
+                        body = SmartLightingFrameEncoder.encodeHueStatePayload(flashColor, 255, transitionDecisec = 1),
+                    ).map { Unit }
+                }
             }
 
             LightingProtocol.WIZ_UDP -> {

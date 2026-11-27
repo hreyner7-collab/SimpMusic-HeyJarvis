@@ -1,6 +1,10 @@
 package com.maxrave.simpmusic.lighting
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
@@ -15,6 +19,7 @@ enum class LightingProtocol(
 ) {
     GOVEE_BLE("Govee Bluetooth", 0),
     GOVEE_LAN("Govee LAN (Wi-Fi)", 4003),
+    PHILIPS_HUE("Philips Hue", 80),
     WIZ_UDP("WiZ Bulb", 38899),
     YEELIGHT_TCP("Yeelight", 55443),
     LIFX_LAN("LIFX", 56700),
@@ -42,7 +47,17 @@ data class SmartLightDevice(
     val protocol: LightingProtocol = LightingProtocol.WLED_UDP,
     val ledCount: Int = 60,
     val enabled: Boolean = true,
+    val apiKey: String = "",
+    val lightId: String = "",
 )
+
+sealed interface HuePairResult {
+    data class Success(val apiKey: String) : HuePairResult
+
+    data object LinkButtonRequired : HuePairResult
+
+    data class Error(val message: String) : HuePairResult
+}
 
 @Serializable
 data class SmartLightingConfig(
@@ -375,6 +390,96 @@ object SmartLightingFrameEncoder {
     const val YEELIGHT_SSDP_PORT = 1982
     const val YEELIGHT_SEARCH_PAYLOAD =
         "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1982\r\nMAN: \"ssdp:discover\"\r\nST: wifi_bulb\r\n\r\n"
+
+    const val HUE_DISCOVERY_URL = "https://discovery.meethue.com"
+    const val HUE_PAIR_BODY = """{"devicetype":"simpmusic#dj"}"""
+
+    private val hueJson = Json { ignoreUnknownKeys = true }
+
+    fun parseHueDiscoveryJson(rawJson: String): List<SmartLightDevice> =
+        runCatching {
+            val arr = hueJson.parseToJsonElement(rawJson).jsonArray
+            arr.mapNotNull { elem ->
+                val obj = elem.jsonObject
+                val ip = obj["internalipaddress"]?.jsonPrimitive?.content?.trim().orEmpty()
+                if (ip.isBlank()) return@mapNotNull null
+                val id = obj["id"]?.jsonPrimitive?.content?.trim().orEmpty().ifBlank { ip }
+                SmartLightDevice(
+                    id = "hue-bridge-$id",
+                    name = "Philips Hue Bridge ($ip)",
+                    host = ip,
+                    port = 80,
+                    protocol = LightingProtocol.PHILIPS_HUE,
+                    enabled = true,
+                )
+            }
+        }.getOrDefault(emptyList())
+
+    fun parseHuePairResponse(rawJson: String): HuePairResult =
+        runCatching {
+            val arr = hueJson.parseToJsonElement(rawJson).jsonArray
+            for (elem in arr) {
+                val obj = elem.jsonObject
+                val username = obj["success"]?.jsonObject?.get("username")?.jsonPrimitive?.content?.trim()
+                if (!username.isNullOrBlank()) {
+                    return HuePairResult.Success(username)
+                }
+                val errObj = obj["error"]?.jsonObject
+                if (errObj != null) {
+                    val type = errObj["type"]?.jsonPrimitive?.content?.toIntOrNull()
+                    val desc = errObj["description"]?.jsonPrimitive?.content.orEmpty()
+                    if (type == 101 || desc.contains("link button", ignoreCase = true)) {
+                        return HuePairResult.LinkButtonRequired
+                    }
+                    return HuePairResult.Error(desc.ifBlank { "Hue Bridge error $type" })
+                }
+            }
+            HuePairResult.Error("Unexpected Hue Bridge response")
+        }.getOrElse { HuePairResult.Error(it.message ?: "Invalid Hue Bridge response") }
+
+    fun parseHueLightsJson(
+        rawJson: String,
+        bridgeHost: String,
+        apiKey: String,
+    ): List<SmartLightDevice> =
+        runCatching {
+            val root = hueJson.parseToJsonElement(rawJson).jsonObject
+            root.entries
+                .sortedBy { it.key.toIntOrNull() ?: Int.MAX_VALUE }
+                .map { (lightId, value) ->
+                    val name = value.jsonObject["name"]?.jsonPrimitive?.content?.trim().orEmpty().ifBlank { "Light $lightId" }
+                    SmartLightDevice(
+                        id = "hue-$bridgeHost-$lightId",
+                        name = "Hue · $name",
+                        host = bridgeHost,
+                        port = 80,
+                        protocol = LightingProtocol.PHILIPS_HUE,
+                        enabled = true,
+                        apiKey = apiKey,
+                        lightId = lightId,
+                    )
+                }
+        }.getOrDefault(emptyList())
+
+    fun encodeHueStatePayload(
+        color: RgbColor,
+        brightness0To255: Int,
+        transitionDecisec: Int = 1,
+    ): String {
+        val c = color.clamped()
+        val (h16, s16, _) = rgbToHsbk(c)
+        val sat = ((s16 / 65535f) * 254f).roundToInt().coerceIn(0, 254)
+        val maxChannel = max(c.r, max(c.g, c.b))
+        val briFromColor = ((maxChannel / 255f) * 254f).roundToInt()
+        val briFromParam = ((brightness0To255.coerceIn(1, 255) / 255f) * 254f).roundToInt()
+        val bri = min(briFromColor.coerceAtLeast(1), briFromParam.coerceAtLeast(1)).coerceIn(1, 254)
+        val tt = transitionDecisec.coerceIn(0, 10)
+        return """{"on":true,"hue":$h16,"sat":$sat,"bri":$bri,"transitiontime":$tt}"""
+    }
+
+    fun encodeHueOffPayload(): String = """{"on":false,"transitiontime":2}"""
+
+    fun encodeHueBlinkPayload(): String = """{"on":true,"alert":"select"}"""
 
     fun isGoveeBleName(name: String?): Boolean {
         val lower = name?.trim()?.lowercase().orEmpty()

@@ -159,4 +159,29 @@ class SmartLightingEncoderTest {
         assertEquals("frame-2", queue.drainLatestDue(1250L))
         assertNull(queue.drainLatestDue(1300L))
     }
+
+    @Test
+    fun philipsHueDiscoveryPairAndLightsParsersWork() {
+        val bridges = SmartLightingFrameEncoder.parseHueDiscoveryJson("""[{"id":"001788fffe490976","internalipaddress":"192.168.0.165","port":443}]""")
+        assertEquals(1, bridges.size)
+        assertEquals(LightingProtocol.PHILIPS_HUE, bridges.first().protocol)
+        assertEquals("192.168.0.165", bridges.first().host)
+
+        val linkBtn = SmartLightingFrameEncoder.parseHuePairResponse("""[{"error":{"type":101,"address":"","description":"link button not pressed"}}]""")
+        assertEquals(HuePairResult.LinkButtonRequired, linkBtn)
+
+        val paired = SmartLightingFrameEncoder.parseHuePairResponse("""[{"success":{"username":"abc123huekey"}}]""")
+        assertEquals(HuePairResult.Success("abc123huekey"), paired)
+
+        val lights = SmartLightingFrameEncoder.parseHueLightsJson("""{"2":{"name":"Desk"},"1":{"name":"Bedroom"}}""", "192.168.0.165", "abc123huekey")
+        assertEquals(2, lights.size)
+        assertEquals("1", lights[0].lightId)
+        assertEquals("Hue · Bedroom", lights[0].name)
+        assertEquals("2", lights[1].lightId)
+        assertEquals("Hue · Desk", lights[1].name)
+
+        val redPayload = SmartLightingFrameEncoder.encodeHueStatePayload(RgbColor(255, 0, 0), 255, transitionDecisec = 1)
+        assertTrue(redPayload.contains("\"on\":true"))
+        assertTrue(redPayload.contains("\"transitiontime\":1"))
+    }
 }

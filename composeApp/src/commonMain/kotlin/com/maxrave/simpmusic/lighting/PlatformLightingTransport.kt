@@ -39,5 +39,11 @@ expect class PlatformLightingTransport() {
 
     suspend fun triggerWebhook(url: String): Result<Unit>
 
+    suspend fun sendHttpRequest(
+        url: String,
+        method: String = "GET",
+        body: String? = null,
+    ): Result<String>
+
     fun close()
 }
