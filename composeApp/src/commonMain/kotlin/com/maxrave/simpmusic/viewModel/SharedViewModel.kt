@@ -456,6 +456,7 @@ class SharedViewModel(
         runCatching { getKoin().get<com.maxrave.simpmusic.alarm.WakeUpAlarmManager>().start() }
         runCatching { getKoin().get<com.maxrave.simpmusic.hotkeys.GlobalHotkeyManager>().start() }
         runCatching { getKoin().get<com.maxrave.simpmusic.webremote.LanWebRemoteManager>().start() }
+        runCatching { getKoin().get<com.maxrave.simpmusic.lighting.SmartLightingManager>().start() }
         viewModelScope.launch(Dispatchers.IO) {
             delay(6_000L)
             runCatching {

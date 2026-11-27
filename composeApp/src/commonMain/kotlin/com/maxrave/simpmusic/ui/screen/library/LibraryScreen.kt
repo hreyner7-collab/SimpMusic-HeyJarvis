@@ -211,6 +211,7 @@ fun LibraryScreen(
     var showLocalAudioSheet by rememberSaveable { mutableStateOf(false) }
     var showSmartPlaylistsSheet by rememberSaveable { mutableStateOf(false) }
     var showPortabilitySheet by rememberSaveable { mutableStateOf(false) }
+    var showAutoFlowSheet by rememberSaveable { mutableStateOf(false) }
     val yourLibraryListState = rememberLazyListState()
 
     LaunchedEffect(nowPlaying) {
@@ -376,6 +377,10 @@ fun LibraryScreen(
                                             modifier = Modifier.size(18.dp),
                                         )
                                     },
+                                )
+                                AssistChip(
+                                    onClick = { showAutoFlowSheet = true },
+                                    label = { Text("Auto-Flow DJ") },
                                 )
                                 AssistChip(
                                     onClick = { showPortabilitySheet = true },
@@ -793,6 +798,12 @@ fun LibraryScreen(
             SmartPlaylistsSheet(
                 manager = koinInject(),
                 onDismiss = { showSmartPlaylistsSheet = false },
+            )
+        }
+        if (showAutoFlowSheet) {
+            com.maxrave.simpmusic.ui.component.AutoFlowQueueSheet(
+                manager = koinInject(),
+                onDismiss = { showAutoFlowSheet = false },
             )
         }
         if (showPortabilitySheet) {

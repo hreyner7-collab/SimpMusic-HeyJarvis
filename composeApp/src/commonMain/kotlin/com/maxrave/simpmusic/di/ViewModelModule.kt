@@ -157,6 +157,18 @@ val viewModelModule =
             )
         }
         single {
+            com.maxrave.simpmusic.lighting.SmartLightingManager(
+                dataStoreManager = get(),
+                mediaPlayerHandler = get(),
+            )
+        }
+        single {
+            com.maxrave.simpmusic.autoflow.AutoFlowQueueManager(
+                mediaPlayerHandler = get(),
+                songRepository = get(),
+            )
+        }
+        single {
             SharedViewModel(
                 get(),
                 get(),

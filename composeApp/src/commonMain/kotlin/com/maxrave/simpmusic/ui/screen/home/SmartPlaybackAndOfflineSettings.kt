@@ -764,4 +764,7 @@ fun PowerFeaturesAndAudioExtrasSettings() {
     LanWebRemoteSection(
         manager = koinInject(),
     )
+    com.maxrave.simpmusic.ui.component.SmartLightingSection(
+        manager = koinInject(),
+    )
 }

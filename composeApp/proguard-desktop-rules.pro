@@ -420,5 +420,7 @@
 -keep class com.maxrave.simpmusic.hotkeys.** { *; }
 -keep interface com.maxrave.simpmusic.hotkeys.** { *; }
 -keep class com.maxrave.simpmusic.webremote.** { *; }
+-keep class com.maxrave.simpmusic.lighting.** { *; }
+-keep class com.maxrave.simpmusic.autoflow.** { *; }
 -keep class com.maxrave.domain.data.player.KaraokeEffect { *; }
 -keep class com.maxrave.simpmusic.ui.component.VisualizerStyle { *; }
