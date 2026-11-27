@@ -1,7 +1,9 @@
 package com.maxrave.simpmusic.ui.component
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -56,10 +60,13 @@ import com.maxrave.simpmusic.autoflow.AutoFlowArc
 import com.maxrave.simpmusic.autoflow.AutoFlowQueueManager
 import com.maxrave.simpmusic.autoflow.AutoFlowQueueSorter
 import com.maxrave.simpmusic.autoflow.TrackEnergyProfile
+import com.maxrave.simpmusic.expect.ui.rememberBluetoothLightPermission
 import com.maxrave.simpmusic.lighting.LightingProtocol
 import com.maxrave.simpmusic.lighting.LightingReactiveMode
+import com.maxrave.simpmusic.lighting.RgbColor
 import com.maxrave.simpmusic.lighting.SmartLightDevice
 import com.maxrave.simpmusic.lighting.SmartLightingManager
+import com.maxrave.simpmusic.lighting.formatFriendlyLightName
 import com.maxrave.simpmusic.ui.theme.typo
 import kotlinx.coroutines.launch
 import multiplatform.network.cmptoast.ToastDuration
@@ -81,81 +88,116 @@ fun SmartLightingSection(
     val isScanning by manager.isScanning.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showAddDialog by remember { mutableStateOf(false) }
+    var showFineTune by remember { mutableStateOf(false) }
+
+    val permissionRequester =
+        rememberBluetoothLightPermission { granted ->
+            if (granted) {
+                manager.scanForLights()
+            } else {
+                showToast(
+                    "Allow Nearby Devices permission to find Govee lights",
+                    duration = ToastDuration.Short,
+                    gravity = ToastGravity.Bottom,
+                )
+            }
+        }
+
+    val liveColor =
+        if (cfg.enabled && (lastColor.r > 0 || lastColor.g > 0 || lastColor.b > 0)) {
+            Color(lastColor.r, lastColor.g, lastColor.b)
+        } else {
+            MaterialTheme.colorScheme.primary
+        }
 
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier.fillMaxWidth().padding(vertical = 6.dp),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
+            // 1. Live Glowing DJ Header
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = liveColor.copy(alpha = if (cfg.enabled) 0.14f else 0.06f),
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .size(14.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (cfg.enabled) {
-                                        Color(lastColor.r, lastColor.g, lastColor.b)
-                                    } else {
-                                        MaterialTheme.colorScheme.outlineVariant
-                                    },
-                                ),
-                    )
-                    Column {
-                        Text("Smart Room Lighting Sync", style = typo().titleMedium)
-                        Text(
-                            text = activeCue?.let { "DJ Cue: $it" } ?: status ?: "1-Tap Govee Bluetooth & Wi-Fi Disco Sync",
-                            style = typo().bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(16.dp)
+                                    .clip(CircleShape)
+                                    .background(if (cfg.enabled) liveColor else MaterialTheme.colorScheme.outlineVariant),
                         )
+                        Column {
+                            Text("DJ Room Lights", style = typo().titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = activeCue ?: status ?: "Govee Bluetooth & Wi-Fi Disco Sync",
+                                style = typo().bodySmall,
+                                color = if (activeCue != null) liveColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
+                    Switch(
+                        checked = cfg.enabled,
+                        onCheckedChange = { manager.setEnabled(it) },
+                    )
                 }
-                Switch(
-                    checked = cfg.enabled,
-                    onCheckedChange = { manager.setEnabled(it) },
-                )
             }
 
+            // 2. Prominent 1-Tap Find My Lights Button
             Button(
-                onClick = { manager.scanForLights() },
+                onClick = { permissionRequester.requestIfNeeded() },
                 enabled = !isScanning,
-                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(46.dp),
             ) {
-                Text(if (isScanning) "Scanning Bluetooth & Wi-Fi..." else "Scan for Lights (Govee Bluetooth + Wi-Fi)")
+                if (isScanning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text("Scanning Bluetooth & Wi-Fi...")
+                } else {
+                    Text("Find My Lights (1-Tap Connect)")
+                }
             }
 
+            // 3. Discovered Lights
             if (discovered.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Discovered Nearby", style = typo().labelMedium, color = MaterialTheme.colorScheme.primary)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Found Nearby", style = typo().labelMedium, color = MaterialTheme.colorScheme.primary)
                     discovered.forEach { dev ->
                         val alreadyAdded = cfg.devices.any { it.protocol == dev.protocol && it.host.equals(dev.host, ignoreCase = true) }
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(dev.name, style = typo().bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(formatFriendlyLightName(dev.name), style = typo().bodyMedium, fontWeight = FontWeight.SemiBold)
                                     Text(
                                         "${dev.protocol.displayName} • ${dev.host}",
                                         style = typo().labelSmall,
@@ -167,7 +209,7 @@ fun SmartLightingSection(
                                         scope.launch {
                                             val res = manager.blinkDevice(dev)
                                             showToast(
-                                                if (res.isSuccess) "Blinked ${dev.name}" else "Blink failed: ${res.exceptionOrNull()?.message}",
+                                                if (res.isSuccess) "Blinked ${formatFriendlyLightName(dev.name)}" else "Blink failed: ${res.exceptionOrNull()?.message}",
                                                 duration = ToastDuration.Short,
                                                 gravity = ToastGravity.Bottom,
                                             )
@@ -180,7 +222,7 @@ fun SmartLightingSection(
                                     onClick = {
                                         manager.quickConnectDevice(dev)
                                         showToast(
-                                            "Connected ${dev.name} in DJ Disco mode",
+                                            "Connected ${formatFriendlyLightName(dev.name)} in DJ Disco mode",
                                             duration = ToastDuration.Short,
                                             gravity = ToastGravity.Bottom,
                                         )
@@ -194,99 +236,169 @@ fun SmartLightingSection(
                 }
             }
 
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                LightingReactiveMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = cfg.mode == mode,
-                        onClick = { manager.setMode(mode) },
-                        label = { Text(mode.label) },
-                    )
+            // 4. Connected Devices + Quick Color Test Bar
+            if (cfg.devices.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Connected Lights", style = typo().labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    cfg.devices.forEach { dev ->
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(formatFriendlyLightName(dev.name), style = typo().bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${dev.protocol.displayName} • ${dev.host}",
+                                        style = typo().labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(onClick = { scope.launch { manager.blinkDevice(dev) } }) {
+                                    Text("Blink")
+                                }
+                                if (dev.protocol == LightingProtocol.GOVEE_BLE) {
+                                    TextButton(onClick = { scope.launch { manager.turnOffDevice(dev) } }) {
+                                        Text("Off")
+                                    }
+                                }
+                                Switch(
+                                    checked = dev.enabled,
+                                    onCheckedChange = { manager.toggleDevice(dev.id) },
+                                )
+                                TextButton(onClick = { manager.removeDevice(dev.id) }) {
+                                    Text("×")
+                                }
+                            }
+                        }
+                    }
+
+                    // Quick Color Test Palette
+                    val palette =
+                        listOf(
+                            "Red" to RgbColor(255, 10, 20),
+                            "Orange" to RgbColor(255, 115, 0),
+                            "Purple" to RgbColor(200, 0, 255),
+                            "Cyan" to RgbColor(0, 210, 255),
+                            "Green" to RgbColor(0, 255, 90),
+                            "White" to RgbColor(255, 245, 235),
+                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        palette.forEach { (_, rgb) ->
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .size(30.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(rgb.r, rgb.g, rgb.b))
+                                        .border(1.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), CircleShape)
+                                        .clickable { scope.launch { manager.setManualColor(rgb) } },
+                            )
+                        }
+                        FilterChip(
+                            selected = false,
+                            onClick = { scope.launch { manager.turnOffAllDevices() } },
+                            label = { Text("Off") },
+                        )
+                    }
                 }
             }
 
-            Column {
-                Text(
-                    "Brightness: ${(cfg.brightness * 100).roundToInt()}%",
-                    style = typo().bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // 5. 2x2 DJ Mode Grid
+            val modes =
+                listOf(
+                    LightingReactiveMode.DJ_DISCO to ("DJ Disco" to "Bass=Red, Pitch=Colors"),
+                    LightingReactiveMode.BASS_FLASH to ("Bass Flash" to "Punches on beat drops"),
+                    LightingReactiveMode.SPECTRUM_PULSE to ("Spectrum" to "Full RGB frequency mix"),
+                    LightingReactiveMode.AMBIENT_FLOW to ("Ambient" to "Smooth mood transitions"),
                 )
-                Slider(
-                    value = cfg.brightness,
-                    onValueChange = { manager.setBrightness(it) },
-                    valueRange = 0.05f..1.0f,
-                )
-            }
-
-            Column {
-                Text(
-                    "Audio Sensitivity: ${(cfg.sensitivity * 100).roundToInt()}%",
-                    style = typo().bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Slider(
-                    value = cfg.sensitivity,
-                    onValueChange = { manager.setSensitivity(it) },
-                    valueRange = 0.25f..3.0f,
-                )
-            }
-
-            cfg.devices.forEach { dev ->
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                modes.chunked(2).forEach { pair ->
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(dev.name, style = typo().bodyMedium, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "${dev.protocol.displayName} • ${dev.host}:${dev.port}",
-                                style = typo().labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        TextButton(
-                            onClick = {
-                                scope.launch {
-                                    val res = manager.testFlashDevice(dev)
-                                    showToast(
-                                        if (res.isSuccess) "Flashed ${dev.name}" else "Failed: ${res.exceptionOrNull()?.message ?: "unreachable"}",
-                                        duration = ToastDuration.Short,
-                                        gravity = ToastGravity.Bottom,
+                        pair.forEach { (mode, labels) ->
+                            val selected = cfg.mode == mode
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .clickable { manager.setMode(mode) },
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(
+                                        labels.first,
+                                        style = typo().labelLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        labels.second,
+                                        style = typo().labelSmall,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                            },
-                        ) {
-                            Text("Test")
-                        }
-                        if (dev.protocol == LightingProtocol.GOVEE_BLE) {
-                            TextButton(onClick = { scope.launch { manager.turnOffDevice(dev) } }) {
-                                Text("Off")
                             }
-                        }
-                        Switch(
-                            checked = dev.enabled,
-                            onCheckedChange = { manager.toggleDevice(dev.id) },
-                        )
-                        TextButton(onClick = { manager.removeDevice(dev.id) }) {
-                            Text("Remove")
                         }
                     }
                 }
             }
 
-            OutlinedButton(
-                onClick = { showAddDialog = true },
-                modifier = Modifier.fillMaxWidth(),
+            // 6. Collapsible Fine-Tune & Manual Add
+            TextButton(
+                onClick = { showFineTune = !showFineTune },
+                modifier = Modifier.align(Alignment.End),
             ) {
-                Text("+ Add WLED / LIFX / OpenRGB Light")
+                Text(if (showFineTune) "Hide Fine-Tune" else "Fine-Tune & Manual Add")
+            }
+
+            AnimatedVisibility(visible = showFineTune) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column {
+                        Text(
+                            "Brightness: ${(cfg.brightness * 100).roundToInt()}%",
+                            style = typo().bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = cfg.brightness,
+                            onValueChange = { manager.setBrightness(it) },
+                            valueRange = 0.05f..1.0f,
+                        )
+                    }
+                    Column {
+                        Text(
+                            "Bass Sensitivity: ${(cfg.sensitivity * 100).roundToInt()}%",
+                            style = typo().bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = cfg.sensitivity,
+                            onValueChange = { manager.setSensitivity(it) },
+                            valueRange = 0.25f..3.0f,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { showAddDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("+ Add Light Manually")
+                    }
+                }
             }
         }
     }

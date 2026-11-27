@@ -6,6 +6,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
@@ -25,6 +26,7 @@ actual class PlatformLightingTransport actual constructor() {
     @Volatile
     private var udpSocket: DatagramSocket? = null
 
+    private val bleJson = Json { ignoreUnknownKeys = true }
     private val bleMutex = Mutex()
     private var bleProcess: Process? = null
     private var bleWriter: BufferedWriter? = null
@@ -36,25 +38,32 @@ actual class PlatformLightingTransport actual constructor() {
         return DatagramSocket().also { udpSocket = it }
     }
 
-    actual suspend fun discoverLights(timeoutMs: Long): List<SmartLightDevice> =
+    actual suspend fun discoverLights(timeoutMs: Long): LightDiscoveryResult =
         withContext(Dispatchers.IO) {
             val found = mutableListOf<SmartLightDevice>()
+            var bleHint: String? = null
             coroutineScope {
-                val bleJob = async { runCatching { scanGoveeBle(timeoutMs.coerceIn(2500L, 6000L)) }.getOrDefault(emptyList()) }
+                val bleJob = async { scanGoveeBle(timeoutMs.coerceIn(2500L, 6000L)) }
                 val goveeLanJob = async { runCatching { scanGoveeLan(1800L) }.getOrDefault(emptyList()) }
                 val wizJob = async { runCatching { scanWiz(1600L) }.getOrDefault(emptyList()) }
                 val lifxJob = async { runCatching { scanLifx(1600L) }.getOrDefault(emptyList()) }
                 val yeelightJob = async { runCatching { scanYeelight(1600L) }.getOrDefault(emptyList()) }
                 val openRgbJob = async { runCatching { probeOpenRgbLocal() }.getOrNull() }
 
-                found += bleJob.await()
+                val bleRes = bleJob.await()
+                found += bleRes.devices
+                bleHint = bleRes.diagnosticHint
                 found += goveeLanJob.await()
                 found += wizJob.await()
                 found += lifxJob.await()
                 found += yeelightJob.await()
                 openRgbJob.await()?.let { found += it }
             }
-            found.distinctBy { "${it.protocol}:${it.host}" }
+            val unique = found.distinctBy { "${it.protocol}:${it.host}" }
+            LightDiscoveryResult(
+                devices = unique,
+                diagnosticHint = if (unique.isEmpty()) bleHint ?: "Make sure Bluetooth is ON and your Govee strip is plugged in" else null,
+            )
         }
 
     actual suspend fun sendUdpPacket(
@@ -163,27 +172,30 @@ actual class PlatformLightingTransport actual constructor() {
         bleReader = null
     }
 
-    private suspend fun scanGoveeBle(timeoutMs: Long): List<SmartLightDevice> {
+    private suspend fun scanGoveeBle(timeoutMs: Long): LightDiscoveryResult {
         val sec = (timeoutMs / 1000.0).coerceIn(2.0, 6.0)
-        val resp = sendBleCommand("""{"cmd":"scan","timeout":$sec}""").getOrNull() ?: return emptyList()
-        val devices = mutableListOf<SmartLightDevice>()
-        val itemRegex = Regex("""\{"name":"([^"]*)","addr":"([^"]*)"\}""")
-        for (m in itemRegex.findAll(resp)) {
-            val name = m.groupValues[1]
-            val addr = m.groupValues[2]
-            if (addr.isNotBlank()) {
-                devices +=
-                    SmartLightDevice(
-                        id = "govee-ble-$addr",
-                        name = name.ifBlank { "Govee $addr" },
-                        host = addr,
-                        port = 0,
-                        protocol = LightingProtocol.GOVEE_BLE,
-                        enabled = true,
-                    )
-            }
-        }
-        return devices
+        val result = sendBleCommand("""{"cmd":"scan","timeout":$sec}""")
+        return result.fold(
+            onSuccess = { raw ->
+                val parsed = runCatching { bleJson.decodeFromString<BleBridgeResponse>(raw) }.getOrNull()
+                val devices =
+                    parsed?.devices.orEmpty().mapNotNull { dev ->
+                        if (dev.addr.isBlank()) null
+                        else SmartLightDevice(
+                            id = "govee-ble-${dev.addr}",
+                            name = formatFriendlyLightName(dev.name.ifBlank { "Govee ${dev.addr}" }),
+                            host = dev.addr,
+                            port = 0,
+                            protocol = LightingProtocol.GOVEE_BLE,
+                            enabled = true,
+                        )
+                    }
+                LightDiscoveryResult(devices = devices, diagnosticHint = parsed?.error)
+            },
+            onFailure = { err ->
+                LightDiscoveryResult(devices = emptyList(), diagnosticHint = err.message)
+            },
+        )
     }
 
     private suspend fun sendBleCommand(jsonLine: String): Result<String> =
@@ -376,6 +388,7 @@ actual class PlatformLightingTransport actual constructor() {
             WRITE_CHAR = "00010203-0405-0607-0809-0a0b0c0d2b11"
             TOKENS = ("govee", "ihoment", "gbk", "_h6")
             clients = {}
+            last_brightness = {}
 
             def make_frame(head, cmd, payload):
                 b = [0] * 20
@@ -409,13 +422,20 @@ actual class PlatformLightingTransport actual constructor() {
                 cmd = req.get("cmd")
                 if cmd == "scan":
                     timeout = float(req.get("timeout", 4.0))
-                    found = await BleakScanner.discover(timeout=timeout)
+                    try:
+                        found = await BleakScanner.discover(timeout=timeout, return_adv=True)
+                    except Exception as e:
+                        msg = str(e)
+                        if "powered on" in msg.lower() or "not available" in msg.lower():
+                            return {"ok": False, "error": "Turn on Bluetooth in Windows Settings to find Govee lights"}
+                        raise
+                    items = sorted(found.values(), key=lambda pair: pair[1].rssi, reverse=True)
                     out = []
-                    for d in found:
-                        name = (d.name or "").strip()
+                    for d, adv in items:
+                        name = (d.name or adv.local_name or "").strip()
                         low = name.lower()
                         if any(t in low for t in TOKENS):
-                            out.append({"name": name, "addr": d.address})
+                            out.append({"name": name, "addr": d.address, "rssi": int(adv.rssi)})
                     return {"ok": True, "devices": out}
                 elif cmd == "power":
                     addr = req["addr"]
@@ -426,7 +446,9 @@ actual class PlatformLightingTransport actual constructor() {
                     addr = req["addr"]
                     r, g, b = int(req["r"]), int(req["g"]), int(req["b"])
                     bright = int(req.get("brightness", 255))
-                    await write_frame(addr, make_frame(0x33, 0x04, [bright]))
+                    if abs(last_brightness.get(addr, -999) - bright) >= 8:
+                        await write_frame(addr, make_frame(0x33, 0x04, [bright]))
+                        last_brightness[addr] = bright
                     await write_frame(addr, make_frame(0x33, 0x05, [0x02, r, g, b]))
                     return {"ok": True}
                 elif cmd == "blink":

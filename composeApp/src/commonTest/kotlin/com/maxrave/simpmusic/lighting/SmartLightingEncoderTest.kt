@@ -112,4 +112,16 @@ class SmartLightingEncoderTest {
         val lifxReq = SmartLightingFrameEncoder.encodeLifxGetServicePacket()
         assertEquals(36, lifxReq.size)
     }
+
+    @Test
+    fun bleBridgeJsonParsesWithSpacesAndFormatsFriendlyNames() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val raw = """{"ok": true, "devices": [{"name": "ihoment_H6159_DEB4", "addr": "A4:C1:38:E6:DE:B4", "rssi": -65}]}"""
+        val parsed = json.decodeFromString<BleBridgeResponse>(raw)
+        assertTrue(parsed.ok)
+        assertEquals(1, parsed.devices.size)
+        assertEquals("A4:C1:38:E6:DE:B4", parsed.devices.first().addr)
+        assertEquals("Govee H6159 (DEB4)", formatFriendlyLightName(parsed.devices.first().name))
+        assertEquals("Govee H6159 (E77A)", formatFriendlyLightName("ihoment_H6159_E77A"))
+    }
 }

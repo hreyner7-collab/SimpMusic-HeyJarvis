@@ -1,7 +1,8 @@
 package com.maxrave.simpmusic.lighting
 
 actual class PlatformLightingTransport actual constructor() {
-    actual suspend fun discoverLights(timeoutMs: Long): List<SmartLightDevice> = emptyList()
+    actual suspend fun discoverLights(timeoutMs: Long): LightDiscoveryResult =
+        LightDiscoveryResult(emptyList(), "Bluetooth/LAN lighting sync is available on Android & Windows")
 
     actual suspend fun sendUdpPacket(
         host: String,

@@ -52,6 +52,37 @@ data class SmartLightingConfig(
     val devices: List<SmartLightDevice> = emptyList(),
 )
 
+@Serializable
+data class BleBridgeDevice(
+    val name: String = "",
+    val addr: String = "",
+    val rssi: Int = -100,
+)
+
+@Serializable
+data class BleBridgeResponse(
+    val ok: Boolean = false,
+    val devices: List<BleBridgeDevice> = emptyList(),
+    val error: String? = null,
+    val quit: Boolean = false,
+)
+
+data class LightDiscoveryResult(
+    val devices: List<SmartLightDevice>,
+    val diagnosticHint: String? = null,
+)
+
+fun formatFriendlyLightName(rawName: String): String {
+    val trimmed = rawName.trim()
+    if (trimmed.isEmpty()) return "Smart Light"
+    val match = Regex("^(?:ihoment|govee|gbk)[_-]([A-Za-z0-9]+)[_-]([A-Za-z0-9]+)$", RegexOption.IGNORE_CASE).find(trimmed)
+    return if (match != null) {
+        "Govee ${match.groupValues[1].uppercase()} (${match.groupValues[2].uppercase()})"
+    } else {
+        trimmed
+    }
+}
+
 data class RgbColor(
     val r: Int,
     val g: Int,

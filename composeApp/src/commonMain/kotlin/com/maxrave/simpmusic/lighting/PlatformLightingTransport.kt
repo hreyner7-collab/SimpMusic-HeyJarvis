@@ -1,7 +1,7 @@
 package com.maxrave.simpmusic.lighting
 
 expect class PlatformLightingTransport() {
-    suspend fun discoverLights(timeoutMs: Long = 4000L): List<SmartLightDevice>
+    suspend fun discoverLights(timeoutMs: Long = 4000L): LightDiscoveryResult
 
     suspend fun sendUdpPacket(
         host: String,

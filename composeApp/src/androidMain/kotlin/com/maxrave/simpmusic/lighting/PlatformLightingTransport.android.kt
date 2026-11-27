@@ -1,7 +1,9 @@
 package com.maxrave.simpmusic.lighting
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
@@ -9,9 +11,13 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.ParcelUuid
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -36,6 +42,7 @@ actual class PlatformLightingTransport actual constructor() {
 
     private val gattClients = ConcurrentHashMap<String, BluetoothGatt>()
     private val gattWriteChars = ConcurrentHashMap<String, BluetoothGattCharacteristic>()
+    private val lastBrightnessByAddr = ConcurrentHashMap<String, Int>()
 
     private fun getOrCreateSocket(): DatagramSocket {
         val existing = udpSocket
@@ -43,7 +50,7 @@ actual class PlatformLightingTransport actual constructor() {
         return DatagramSocket().also { udpSocket = it }
     }
 
-    actual suspend fun discoverLights(timeoutMs: Long): List<SmartLightDevice> =
+    actual suspend fun discoverLights(timeoutMs: Long): LightDiscoveryResult =
         withContext(Dispatchers.IO) {
             val ctx = runCatching { getKoin().get<Context>() }.getOrNull()
             val multicastLock =
@@ -57,20 +64,27 @@ actual class PlatformLightingTransport actual constructor() {
 
             try {
                 val found = mutableListOf<SmartLightDevice>()
+                var bleHint: String? = null
                 coroutineScope {
-                    val bleJob = async { runCatching { scanGoveeBle(ctx, timeoutMs.coerceIn(2500L, 5000L)) }.getOrDefault(emptyList()) }
+                    val bleJob = async { scanGoveeBle(ctx, timeoutMs.coerceIn(2500L, 5000L)) }
                     val goveeLanJob = async { runCatching { scanGoveeLan(1800L) }.getOrDefault(emptyList()) }
                     val wizJob = async { runCatching { scanWiz(1600L) }.getOrDefault(emptyList()) }
                     val lifxJob = async { runCatching { scanLifx(1600L) }.getOrDefault(emptyList()) }
                     val yeelightJob = async { runCatching { scanYeelight(1600L) }.getOrDefault(emptyList()) }
 
-                    found += bleJob.await()
+                    val bleRes = bleJob.await()
+                    found += bleRes.devices
+                    bleHint = bleRes.diagnosticHint
                     found += goveeLanJob.await()
                     found += wizJob.await()
                     found += lifxJob.await()
                     found += yeelightJob.await()
                 }
-                found.distinctBy { "${it.protocol}:${it.host}" }
+                val unique = found.distinctBy { "${it.protocol}:${it.host}" }
+                LightDiscoveryResult(
+                    devices = unique,
+                    diagnosticHint = if (unique.isEmpty()) bleHint ?: "Make sure Bluetooth is ON and your Govee strip is plugged in" else null,
+                )
             } finally {
                 runCatching {
                     if (multicastLock?.isHeld == true) multicastLock.release()
@@ -134,7 +148,13 @@ actual class PlatformLightingTransport actual constructor() {
     ): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                writeGoveeBleFrame(address, SmartLightingFrameEncoder.encodeGoveeBleBrightness(brightness0To255))
+                val b = brightness0To255.coerceIn(0, 255)
+                val prevB = lastBrightnessByAddr[address]
+                if (prevB == null || kotlin.math.abs(prevB - b) >= 8) {
+                    writeGoveeBleFrame(address, SmartLightingFrameEncoder.encodeGoveeBleBrightness(b))
+                    lastBrightnessByAddr[address] = b
+                    delay(35)
+                }
                 writeGoveeBleFrame(address, SmartLightingFrameEncoder.encodeGoveeBleColor(color))
             }
         }
@@ -197,25 +217,61 @@ actual class PlatformLightingTransport actual constructor() {
     }
 
     @SuppressLint("MissingPermission")
-    private suspend fun scanGoveeBle(context: Context?, timeoutMs: Long): List<SmartLightDevice> {
-        if (context == null) return emptyList()
-        val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager ?: return emptyList()
-        val adapter: BluetoothAdapter = manager.adapter ?: return emptyList()
-        if (!adapter.isEnabled) return emptyList()
-        val scanner = adapter.bluetoothLeScanner ?: return emptyList()
+    private suspend fun scanGoveeBle(context: Context?, timeoutMs: Long): LightDiscoveryResult {
+        if (context == null) return LightDiscoveryResult(emptyList(), "Android context unavailable")
+        val hasPerm =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            } else {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            }
+        if (!hasPerm) {
+            return LightDiscoveryResult(emptyList(), "Allow Nearby Devices (Bluetooth) permission to find Govee lights")
+        }
+        val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            ?: return LightDiscoveryResult(emptyList(), "Bluetooth unavailable on this device")
+        val adapter: BluetoothAdapter = manager.adapter
+            ?: return LightDiscoveryResult(emptyList(), "Bluetooth adapter unavailable")
+        if (!adapter.isEnabled) {
+            return LightDiscoveryResult(emptyList(), "Turn on Bluetooth on your phone to find Govee lights")
+        }
+        val scanner = adapter.bluetoothLeScanner
+            ?: return LightDiscoveryResult(emptyList(), "Bluetooth LE scanner unavailable")
 
+        val goveeServiceUuid = ParcelUuid.fromString(SmartLightingFrameEncoder.GOVEE_BLE_SERVICE_UUID)
         val found = ConcurrentHashMap<String, SmartLightDevice>()
+
+        // Also include already-bonded Govee devices if any.
+        runCatching {
+            adapter.bondedDevices?.forEach { dev ->
+                val name = dev.name
+                if (SmartLightingFrameEncoder.isGoveeBleName(name) && !dev.address.isNullOrBlank()) {
+                    found[dev.address] =
+                        SmartLightDevice(
+                            id = "govee-ble-${dev.address}",
+                            name = formatFriendlyLightName(name ?: "Govee ${dev.address}"),
+                            host = dev.address,
+                            port = 0,
+                            protocol = LightingProtocol.GOVEE_BLE,
+                            enabled = true,
+                        )
+                }
+            }
+        }
+
         val callback =
             object : ScanCallback() {
                 override fun onScanResult(callbackType: Int, result: ScanResult) {
                     val dev = result.device ?: return
-                    val name = runCatching { dev.name }.getOrNull() ?: result.scanRecord?.deviceName
-                    if (SmartLightingFrameEncoder.isGoveeBleName(name)) {
+                    val name = result.scanRecord?.deviceName ?: runCatching { dev.name }.getOrNull()
+                    val hasGoveeUuid = result.scanRecord?.serviceUuids?.any { it == goveeServiceUuid } == true
+                    if (SmartLightingFrameEncoder.isGoveeBleName(name) || hasGoveeUuid) {
                         val addr = dev.address ?: return
                         found[addr] =
                             SmartLightDevice(
                                 id = "govee-ble-$addr",
-                                name = name ?: "Govee $addr",
+                                name = formatFriendlyLightName(name ?: "Govee $addr"),
                                 host = addr,
                                 port = 0,
                                 protocol = LightingProtocol.GOVEE_BLE,
@@ -225,11 +281,15 @@ actual class PlatformLightingTransport actual constructor() {
                 }
             }
         return try {
-            scanner.startScan(callback)
+            val settings =
+                ScanSettings.Builder()
+                    .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                    .build()
+            scanner.startScan(null, settings, callback)
             delay(timeoutMs)
-            found.values.toList()
+            LightDiscoveryResult(found.values.toList())
         } catch (_: SecurityException) {
-            emptyList()
+            LightDiscoveryResult(emptyList(), "Allow Nearby Devices (Bluetooth) permission to find Govee lights")
         } finally {
             runCatching { scanner.stopScan(callback) }
         }
@@ -247,29 +307,28 @@ actual class PlatformLightingTransport actual constructor() {
         var gatt = gattClients[address]
         if (gatt == null || char == null) {
             val device = adapter.getRemoteDevice(address)
-            val connectedGatt =
-                device.connectGatt(
-                    ctx,
-                    false,
-                    object : BluetoothGattCallback() {
-                        override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
-                            if (newState == BluetoothProfile.STATE_CONNECTED) {
-                                runCatching { g.discoverServices() }
-                            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                                gattClients.remove(address)
-                                gattWriteChars.remove(address)
-                            }
+            val gattCallback =
+                object : BluetoothGattCallback() {
+                    override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
+                        if (newState == BluetoothProfile.STATE_CONNECTED) {
+                            runCatching { g.discoverServices() }
+                        } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                            gattClients.remove(address)
+                            gattWriteChars.remove(address)
                         }
+                    }
 
-                        override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-                            val service = g.getService(UUID.fromString(SmartLightingFrameEncoder.GOVEE_BLE_SERVICE_UUID))
-                            val writeChar = service?.getCharacteristic(UUID.fromString(SmartLightingFrameEncoder.GOVEE_BLE_WRITE_CHAR_UUID))
-                            if (writeChar != null) {
-                                gattWriteChars[address] = writeChar
-                            }
+                    override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+                        val service = g.getService(UUID.fromString(SmartLightingFrameEncoder.GOVEE_BLE_SERVICE_UUID))
+                        val writeChar = service?.getCharacteristic(UUID.fromString(SmartLightingFrameEncoder.GOVEE_BLE_WRITE_CHAR_UUID))
+                        if (writeChar != null) {
+                            gattWriteChars[address] = writeChar
                         }
-                    },
-                ) ?: error("Failed to connect GATT to $address")
+                    }
+                }
+            val connectedGatt =
+                device.connectGatt(ctx, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+                    ?: error("Failed to connect GATT to $address")
             gattClients[address] = connectedGatt
             // Wait briefly for service discovery
             repeat(20) {

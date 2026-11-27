@@ -149,20 +149,60 @@ class SmartLightingManager(
     fun scanForLights() {
         if (_isScanning.value) return
         _isScanning.value = true
-        _statusMessage.value = "Scanning Bluetooth & Wi-Fi for lights..."
+        _statusMessage.value = "Scanning Bluetooth & Wi-Fi..."
         scope.launch {
             try {
-                val found = transport.discoverLights(4200L)
-                _discoveredDevices.value = found
+                val res = transport.discoverLights(4200L)
+                _discoveredDevices.value = res.devices
                 _statusMessage.value =
-                    if (found.isEmpty()) {
-                        "No lights found — make sure Bluetooth is ON or strip is powered"
+                    if (res.devices.isEmpty()) {
+                        res.diagnosticHint ?: "No lights found — make sure Bluetooth is ON or strip is powered"
                     } else {
-                        "Found ${found.size} light(s)! Tap Connect to link to music"
+                        "Found ${res.devices.size} light(s) — tap Connect!"
                     }
             } finally {
                 _isScanning.value = false
             }
+        }
+    }
+
+    suspend fun setManualColor(color: RgbColor) {
+        val activeDevices = _config.value.devices.filter { it.enabled && it.host.isNotBlank() }
+        if (activeDevices.isEmpty()) return
+        _lastColor.value = color
+        _activeCue.value = "MANUAL COLOR"
+        val b255 = (_config.value.brightness.coerceIn(0.15f, 1f) * 255f).roundToInt()
+        for (device in activeDevices) {
+            when (device.protocol) {
+                LightingProtocol.GOVEE_BLE -> {
+                    transport.sendGoveeBlePower(device.host, true)
+                    transport.sendGoveeBleColor(device.host, color, b255)
+                }
+                LightingProtocol.GOVEE_LAN -> {
+                    transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanTurnOnPacket())
+                    transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeGoveeLanColorPacket(color))
+                }
+                LightingProtocol.WIZ_UDP -> {
+                    transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeWizSetPilotPacket(color, (b255 * 100) / 255))
+                }
+                LightingProtocol.YEELIGHT_TCP -> {
+                    transport.sendTcpLine(device.host, device.port, SmartLightingFrameEncoder.encodeYeelightSetRgbCommand(color))
+                }
+                LightingProtocol.LIFX_LAN -> {
+                    transport.sendUdpPacket(device.host, device.port, SmartLightingFrameEncoder.encodeLifxSetColorPacket(color, 80))
+                }
+                LightingProtocol.OPENRGB_TCP -> {
+                    transport.sendOpenRgbColor(device.host, device.port, color, device.ledCount)
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    suspend fun turnOffAllDevices() {
+        val devices = _config.value.devices
+        for (device in devices) {
+            turnOffDevice(device)
         }
     }
 
