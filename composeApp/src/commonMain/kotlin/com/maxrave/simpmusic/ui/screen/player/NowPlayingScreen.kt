@@ -19,16 +19,25 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +52,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -87,13 +97,19 @@ import com.maxrave.simpmusic.ui.component.InfoPlayerBottomSheet
 import com.maxrave.domain.data.model.browse.album.Track
 import com.maxrave.domain.utils.YouTubeLikeStatus
 import com.maxrave.domain.utils.toSongEntity
+import com.maxrave.simpmusic.bookmarks.TrackBookmarkManager
+import com.maxrave.simpmusic.ui.component.LiveAudioVisualizer
 import com.maxrave.simpmusic.ui.component.NowPlayingBottomSheet
 import com.maxrave.simpmusic.ui.component.QueueBottomSheet
 import com.maxrave.simpmusic.ui.component.QueuePosition
+import com.maxrave.simpmusic.ui.component.TrackBookmarksSheet
 import com.maxrave.simpmusic.ui.component.VoteLyricsDialog
 import com.maxrave.simpmusic.ui.component.YouTubeDislikeState
+import com.maxrave.simpmusic.ui.component.rememberVisualizerStyle
 import com.maxrave.simpmusic.ui.icon.KeyboardArrowDown
+import com.maxrave.simpmusic.ui.icon.PushPin
 import com.maxrave.simpmusic.ui.icon.SimpIcons
+import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.ui.navigation.destination.home.ListenTogetherDestination
 import com.maxrave.simpmusic.ui.navigation.destination.list.ArtistDestination
 import com.maxrave.simpmusic.ui.navigation.destination.login.LoginDestination
@@ -439,6 +455,13 @@ fun NowPlayingScreenContent(
     var showVoteDialog by rememberSaveable {
         mutableStateOf(false)
     }
+
+    var showBookmarksSheet by rememberSaveable {
+        mutableStateOf(false)
+    }
+    val dataStoreManager: DataStoreManager = koinInject()
+    val bookmarkManager: TrackBookmarkManager = koinInject()
+    val visualizerStyle by rememberVisualizerStyle(dataStoreManager)
 
     // NEW: Add to Playlist state
     var showAddToPlaylistDirectly by rememberSaveable {
@@ -1007,29 +1030,84 @@ fun NowPlayingScreenContent(
         )
     }
 
-    when (nowPlayingStyle) {
-        DataStoreManager.NOW_PLAYING_STYLE_M3_EXPRESSIVE ->
-            NowPlayingContentM3Expressive(
-                state = state,
-                actions = actions,
-            )
+    if (showBookmarksSheet && !commentsVideoId.isNullOrBlank()) {
+        TrackBookmarksSheet(
+            manager = bookmarkManager,
+            videoId = commentsVideoId,
+            songTitle = screenDataState.nowPlayingTitle,
+            currentPositionMs = timelineState.current,
+            onDismiss = { showBookmarksSheet = false },
+        )
+    }
 
-        DataStoreManager.NOW_PLAYING_STYLE_APPLE_MUSIC ->
-            NowPlayingContentAppleMusic(
-                state = state,
-                actions = actions,
-            )
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (nowPlayingStyle) {
+            DataStoreManager.NOW_PLAYING_STYLE_M3_EXPRESSIVE ->
+                NowPlayingContentM3Expressive(
+                    state = state,
+                    actions = actions,
+                )
 
-        DataStoreManager.NOW_PLAYING_STYLE_SOUNDCLOUD ->
-            NowPlayingContentSoundCloud(
-                state = state,
-                actions = actions,
-            )
+            DataStoreManager.NOW_PLAYING_STYLE_APPLE_MUSIC ->
+                NowPlayingContentAppleMusic(
+                    state = state,
+                    actions = actions,
+                )
 
-        else ->
-            NowPlayingContentSpotify(
-                state = state,
-                actions = actions,
-            )
+            DataStoreManager.NOW_PLAYING_STYLE_SOUNDCLOUD ->
+                NowPlayingContentSoundCloud(
+                    state = state,
+                    actions = actions,
+                )
+
+            else ->
+                NowPlayingContentSpotify(
+                    state = state,
+                    actions = actions,
+                )
+        }
+
+        LiveAudioVisualizer(
+            style = visualizerStyle,
+            isPlaying = controllerState.isPlaying,
+            accentColor = startColor.value,
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+        )
+
+        if (!commentsVideoId.isNullOrBlank()) {
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = Color.Black.copy(alpha = 0.35f),
+                contentColor = Color.White,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(top = 56.dp, end = 16.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .clickable { showBookmarksSheet = true },
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(
+                        imageVector = SimpIcons.PushPin,
+                        contentDescription = "Bookmarks",
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text = "Bookmarks",
+                        style = typo().labelSmall,
+                        color = Color.White,
+                    )
+                }
+            }
+        }
     }
 }

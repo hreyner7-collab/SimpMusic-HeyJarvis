@@ -190,11 +190,18 @@ android {
     }
 }
 
+composeCompiler {
+    stabilityConfigurationFiles.add(
+        rootProject.layout.projectDirectory.file("composeApp/compose-stability.conf"),
+    )
+}
+
 dependencies {
     coreLibraryDesugaring(libs.desugaring)
     val debugImplementation = "debugImplementation"
     debugImplementation(libs.ui.tooling)
     implementation(libs.activity.compose)
+    implementation(libs.androidx.profileinstaller)
 
     // Custom Activity On Crash
     implementation(libs.customactivityoncrash)

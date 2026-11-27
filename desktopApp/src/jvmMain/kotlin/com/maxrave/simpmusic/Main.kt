@@ -1,12 +1,12 @@
 package com.maxrave.simpmusic
 
-import com.maxrave.simpmusic.jerry.DesktopJarvis
+import com.maxrave.simpmusic.utils.DEFAULT_TWO_CORE_AFFINITY_MASK
+import com.maxrave.simpmusic.utils.selectTwoCoreMask
 import com.sun.jna.Library
 import com.sun.jna.Memory
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import java.awt.Toolkit
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Thin entry point for SimpMusic Desktop.
@@ -51,29 +51,18 @@ private fun forceLinuxWmClass(appName: String = "SimpMusic") {
 }
 
 /**
- * Windows-only CPU affinity and working-set governor using JNA (`kernel32` / `psapi`).
+ * Windows-only 2-core CPU affinity governor using JNA (`kernel32`).
  *
- * Pins the JVM process (and its jpackage launcher parent, if present) to 2 logical processors
- * (`mask = 3L`: CPU 0 and CPU 1), sets a 32 MB..240 MB working-set cap, and trims cold pages
- * back to the Windows Standby List without touching C heap locks or stalling audio/UI.
+ * Pins the JVM process (and its jpackage launcher parent, if present) to 2 available logical
+ * processors via `GetProcessAffinityMask` + `SetProcessAffinityMask` (default `0x3L`: CPU 0 and
+ * CPU 1, or the first 2 set bits of the system mask).
+ *
+ * Intentionally applies ZERO hard working-set RAM cap and ZERO `EmptyWorkingSet` calls so hot
+ * JVM/Skia/voice-model pages never incur page-fault stalls, and spawns no background polling thread.
  */
-private object WindowsProcessOptimizer {
-    private const val TARGET_CPU_AFFINITY_MASK = 3L // CPU 0 + CPU 1
-    private const val MIN_WORKING_SET_BYTES = 32L * 1024 * 1024
-    private const val MAX_WORKING_SET_BYTES = 240L * 1024 * 1024
-    private const val TRIM_THRESHOLD_BYTES = Long.MAX_VALUE // never trim: trimming evicted hot model pages
-    private const val PARENT_MIN_WS_BYTES = 1L * 1024 * 1024
-    private const val PARENT_MAX_WS_BYTES = 16L * 1024 * 1024
-
-    private const val QUOTA_LIMITS_HARDWS_MIN_DISABLE = 0x00000002
-    private const val QUOTA_LIMITS_HARDWS_MAX_ENABLE = 0x00000004
-
-    private const val PROCESS_SET_QUOTA = 0x0100
+internal object WindowsProcessOptimizer {
     private const val PROCESS_SET_INFORMATION = 0x0200
     private const val PROCESS_QUERY_INFORMATION = 0x0400
-
-    private const val WATCHDOG_INTERVAL_MS = 3_000L
-    private const val COMMAND_TRIM_COOLDOWN_MS = 5_000L
 
     private interface WinKernel32 : Library {
         fun GetCurrentProcess(): Pointer
@@ -86,40 +75,15 @@ private object WindowsProcessOptimizer {
 
         fun CloseHandle(hObject: Pointer): Boolean
 
+        fun GetProcessAffinityMask(
+            hProcess: Pointer,
+            lpProcessAffinityMask: Pointer,
+            lpSystemAffinityMask: Pointer,
+        ): Boolean
+
         fun SetProcessAffinityMask(
             hProcess: Pointer,
             dwProcessAffinityMask: Long,
-        ): Boolean
-
-        fun SetProcessWorkingSetSizeEx(
-            hProcess: Pointer,
-            dwMinimumWorkingSetSize: Long,
-            dwMaximumWorkingSetSize: Long,
-            flags: Int,
-        ): Boolean
-
-        fun SetProcessWorkingSetSize(
-            hProcess: Pointer,
-            dwMinimumWorkingSetSize: Long,
-            dwMaximumWorkingSetSize: Long,
-        ): Boolean
-
-        fun K32EmptyWorkingSet(hProcess: Pointer): Boolean
-
-        fun K32GetProcessMemoryInfo(
-            hProcess: Pointer,
-            ppsmemCounters: Pointer,
-            cb: Int,
-        ): Boolean
-    }
-
-    private interface WinPsapi : Library {
-        fun EmptyWorkingSet(hProcess: Pointer): Boolean
-
-        fun GetProcessMemoryInfo(
-            hProcess: Pointer,
-            ppsmemCounters: Pointer,
-            cb: Int,
         ): Boolean
     }
 
@@ -130,12 +94,9 @@ private object WindowsProcessOptimizer {
         if (!isWindows) null else runCatching { Native.load("kernel32", WinKernel32::class.java) }.getOrNull()
     }
 
-    private val psapi: WinPsapi? by lazy {
-        if (!isWindows) null else runCatching { Native.load("psapi", WinPsapi::class.java) }.getOrNull()
-    }
-
-    private val lastTrimAtMs = AtomicLong(0L)
     @Volatile private var installed = false
+
+    internal fun computeTwoCoreMask(systemMask: Long): Long = selectTwoCoreMask(systemMask)
 
     fun install() {
         if (!isWindows || installed) return
@@ -143,67 +104,33 @@ private object WindowsProcessOptimizer {
         installed = true
 
         val currentProc = k32.GetCurrentProcess()
-        configureProcess(k32, currentProc, MIN_WORKING_SET_BYTES, MAX_WORKING_SET_BYTES)
+        configureProcess(k32, currentProc)
         applyToParentLauncherIfSimpMusic(k32)
-
-        DesktopJarvis.onMemoryTrimRequested = { reason ->
-            trimWorkingSet(reason)
-        }
-
-        Thread({
-            val countersSize = if (Native.POINTER_SIZE == 8) 72 else 40
-            val counters = Memory(countersSize.toLong())
-            val wsOffset = if (Native.POINTER_SIZE == 8) 16L else 12L
-            while (!Thread.currentThread().isInterrupted) {
-                try {
-                    Thread.sleep(WATCHDOG_INTERVAL_MS)
-                } catch (_: InterruptedException) {
-                    break
-                }
-                val now = System.currentTimeMillis()
-                val wsBytes = queryWorkingSetBytes(k32, currentProc, counters, countersSize, wsOffset)
-                if (wsBytes > TRIM_THRESHOLD_BYTES) {
-                    val prev = lastTrimAtMs.get()
-                    if (now - prev >= WATCHDOG_INTERVAL_MS && lastTrimAtMs.compareAndSet(prev, now)) {
-                        emptyWorkingSet(k32, currentProc)
-                    }
-                }
-            }
-        }, "win-ws-trimmer").apply {
-            isDaemon = true
-            priority = Thread.MIN_PRIORITY
-            start()
-        }
-    }
-
-    fun trimWorkingSet(reason: String) {
-        // Disabled for speed: EmptyWorkingSet pushed Vosk/Parakeet/JVM pages to standby and made the
-        // next voice command or page pay page-fault latency.
-        if (true) return
-        if (!isWindows) return
-        val k32 = kernel32 ?: return
-        val now = System.currentTimeMillis()
-        if (reason != "models-ready") {
-            val prev = lastTrimAtMs.get()
-            if (prev != 0L && now - prev < COMMAND_TRIM_COOLDOWN_MS) return
-            if (!lastTrimAtMs.compareAndSet(prev, now)) return
-        } else {
-            lastTrimAtMs.set(now)
-        }
-        emptyWorkingSet(k32, k32.GetCurrentProcess())
-        if (reason == "models-ready") {
-            applyToParentLauncherIfSimpMusic(k32)
-        }
     }
 
     private fun configureProcess(
         k32: WinKernel32,
         hProc: Pointer,
-        minWsBytes: Long,
-        maxWsBytes: Long,
     ) {
-        // Speed: no CPU-affinity pinning and no hard working-set cap. Both throttled JIT, GC, Skia,
-        // Coil decoding and the voice models, and the cap forced constant page-faults.
+        runCatching {
+            val ptrSize = Native.POINTER_SIZE.toLong()
+            val procMaskBuf = Memory(ptrSize).apply { clear() }
+            val sysMaskBuf = Memory(ptrSize).apply { clear() }
+            val systemMask =
+                if (k32.GetProcessAffinityMask(hProc, procMaskBuf, sysMaskBuf)) {
+                    if (Native.POINTER_SIZE == 8) {
+                        sysMaskBuf.getLong(0L)
+                    } else {
+                        sysMaskBuf.getInt(0L).toLong() and 0xffffffffL
+                    }
+                } else {
+                    DEFAULT_TWO_CORE_AFFINITY_MASK
+                }
+            val targetMask = computeTwoCoreMask(systemMask)
+            if (targetMask != 0L) {
+                k32.SetProcessAffinityMask(hProc, targetMask)
+            }
+        }
     }
 
     private fun applyToParentLauncherIfSimpMusic(k32: WinKernel32) {
@@ -211,50 +138,19 @@ private object WindowsProcessOptimizer {
             val parent = ProcessHandle.current().parent().orElse(null) ?: return
             val cmd = parent.info().command().orElse("")
             if (!cmd.endsWith("SimpMusic.exe", ignoreCase = true)) return
-            val hParent = k32.OpenProcess(
-                PROCESS_SET_QUOTA or PROCESS_SET_INFORMATION or PROCESS_QUERY_INFORMATION,
-                false,
-                parent.pid().toInt(),
-            ) ?: return
+            val hParent =
+                k32.OpenProcess(
+                    PROCESS_SET_INFORMATION or PROCESS_QUERY_INFORMATION,
+                    false,
+                    parent.pid().toInt(),
+                ) ?: return
             try {
-                configureProcess(k32, hParent, PARENT_MIN_WS_BYTES, PARENT_MAX_WS_BYTES)
-                emptyWorkingSet(k32, hParent)
+                configureProcess(k32, hParent)
             } finally {
                 k32.CloseHandle(hParent)
             }
         }
     }
-
-    private fun emptyWorkingSet(
-        k32: WinKernel32,
-        hProc: Pointer,
-    ) {
-        runCatching {
-            if (!k32.K32EmptyWorkingSet(hProc)) {
-                psapi?.EmptyWorkingSet(hProc)
-            }
-        }
-    }
-
-    private fun queryWorkingSetBytes(
-        k32: WinKernel32,
-        hProc: Pointer,
-        counters: Memory,
-        countersSize: Int,
-        wsOffset: Long,
-    ): Long =
-        runCatching {
-            counters.clear()
-            counters.setInt(0L, countersSize)
-            val ok =
-                k32.K32GetProcessMemoryInfo(hProc, counters, countersSize) ||
-                    (psapi?.GetProcessMemoryInfo(hProc, counters, countersSize) == true)
-            if (ok) {
-                if (Native.POINTER_SIZE == 8) counters.getLong(wsOffset) else counters.getInt(wsOffset).toLong() and 0xffffffffL
-            } else {
-                -1L
-            }
-        }.getOrDefault(-1L)
 }
 
 private fun applyPreferredRenderer() {

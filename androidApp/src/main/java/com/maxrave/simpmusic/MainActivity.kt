@@ -44,8 +44,10 @@ import com.maxrave.simpmusic.service.test.notification.NotifyWork
 import com.maxrave.simpmusic.utils.ComposeResUtils
 import com.maxrave.simpmusic.utils.VersionManager
 import com.maxrave.simpmusic.viewModel.SharedViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import org.koin.core.context.loadKoinModules
 import org.koin.core.context.unloadKoinModules
@@ -136,7 +138,6 @@ class MainActivity : AppCompatActivity() {
             loadKoinModules(viewModelModule)
         }
         VersionManager.initialize()
-        checkForUpdate()
         if (viewModel.recreateActivity.value || viewModel.isServiceRunning) {
             viewModel.activityRecreateDone()
         } else {
@@ -155,49 +156,6 @@ class MainActivity : AppCompatActivity() {
         }
         Logger.d("Italy", "Key: ${Locale.ITALY.toLanguageTag()}")
 
-        // Check if the migration has already been done or not
-        if (getString(FIRST_TIME_MIGRATION) != STATUS_DONE) {
-            Logger.d("Locale Key", "onCreate: ${Locale.getDefault().toLanguageTag()}")
-            if (SUPPORTED_LANGUAGE.codes.contains(Locale.getDefault().toLanguageTag())) {
-                Logger.d(
-                    "Contains",
-                    "onCreate: ${
-                        SUPPORTED_LANGUAGE.codes.contains(
-                            Locale.getDefault().toLanguageTag(),
-                        )
-                    }",
-                )
-                putString(SELECTED_LANGUAGE, Locale.getDefault().toLanguageTag())
-                if (SUPPORTED_LOCATION.items.contains(Locale.getDefault().country)) {
-                    putString("location", Locale.getDefault().country)
-                } else {
-                    putString("location", "US")
-                }
-            } else {
-                putString(SELECTED_LANGUAGE, "en-US")
-            }
-            // Fetch the selected language from wherever it was stored. In this case its SharedPref
-            getString(SELECTED_LANGUAGE)?.let {
-                Logger.d("Locale Key", "getString: $it")
-                // Set this locale using the AndroidX library that will handle the storage itself
-                val localeList = LocaleListCompat.forLanguageTags(it)
-                AppCompatDelegate.setApplicationLocales(localeList)
-                // Set the migration flag to ensure that this is executed only once
-                putString(FIRST_TIME_MIGRATION, STATUS_DONE)
-            }
-        }
-        if (AppCompatDelegate.getApplicationLocales().toLanguageTags() !=
-            getString(
-                SELECTED_LANGUAGE,
-            )
-        ) {
-            Logger.d(
-                "Locale Key",
-                "onCreate: ${AppCompatDelegate.getApplicationLocales().toLanguageTags()}",
-            )
-            putString(SELECTED_LANGUAGE, AppCompatDelegate.getApplicationLocales().toLanguageTags())
-        }
-
         enableEdgeToEdge(
             navigationBarStyle =
                 SystemBarStyle.dark(
@@ -208,62 +166,101 @@ class MainActivity : AppCompatActivity() {
                     scrim = Color.Transparent.toArgb(),
                 ),
         )
-        viewModel.checkIsRestoring()
-        val request =
-            PeriodicWorkRequestBuilder<NotifyWork>(
-                12L,
-                TimeUnit.HOURS,
-            ).addTag("Worker Test")
-                .setConstraints(
-                    Constraints
-                        .Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build(),
-                ).build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "Artist Worker",
-            ExistingPeriodicWorkPolicy.KEEP,
-            request,
-        )
-        lifecycleScope.launch {
-            dataStoreManager.blogNotificationEnabled.collect { enabled ->
-                if (enabled == DataStoreManager.TRUE) {
-                    val rssRequest =
-                        PeriodicWorkRequestBuilder<RssFeedNotifyWork>(
-                            24L,
-                            TimeUnit.HOURS,
-                        ).addTag("Blog RSS Worker")
-                            .setConstraints(
-                                Constraints
-                                    .Builder()
-                                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                                    .build(),
-                            ).build()
-                    WorkManager.getInstance(this@MainActivity).enqueueUniquePeriodicWork(
-                        "Blog RSS Worker",
-                        ExistingPeriodicWorkPolicy.KEEP,
-                        rssRequest,
-                    )
-                } else {
-                    WorkManager.getInstance(this@MainActivity).cancelUniqueWork("Blog RSS Worker")
-                }
-            }
+
+        // Official-build check disabled so custom / community forks run cleanly.
+        // Draw Frame 1 immediately before any DataStore or WorkManager I/O runs.
+        setContent {
+            App(viewModel)
         }
 
-        if (!EasyPermissions.hasPermissions(this, Manifest.permission.POST_NOTIFICATIONS)) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val doNotAsk = getString("notification_permission_do_not_ask")
+        viewModel.checkIsRestoring()
+        lifecycleScope.launch {
+            val shouldCheckUpdate =
+                withContext(Dispatchers.IO) {
+                    dataStoreManager.autoCheckForUpdates.first() == DataStoreManager.TRUE
+                }
+            if (shouldCheckUpdate) {
+                viewModel.checkForUpdate()
+            }
+
+            // Locale migration & sync (DataStore on IO, AppCompatDelegate on Main)
+            val localeToApply =
+                withContext(Dispatchers.IO) {
+                    if (dataStoreManager.getString(FIRST_TIME_MIGRATION).first() != STATUS_DONE) {
+                        val defaultTag = Locale.getDefault().toLanguageTag()
+                        Logger.d("Locale Key", "onCreate: $defaultTag")
+                        if (SUPPORTED_LANGUAGE.codes.contains(defaultTag)) {
+                            Logger.d("Contains", "onCreate: true")
+                            dataStoreManager.putString(SELECTED_LANGUAGE, defaultTag)
+                            val country = Locale.getDefault().country
+                            if (SUPPORTED_LOCATION.items.contains(country)) {
+                                dataStoreManager.putString("location", country)
+                            } else {
+                                dataStoreManager.putString("location", "US")
+                            }
+                        } else {
+                            dataStoreManager.putString(SELECTED_LANGUAGE, "en-US")
+                        }
+                        val selectedLang = dataStoreManager.getString(SELECTED_LANGUAGE).first()
+                        if (selectedLang != null) {
+                            Logger.d("Locale Key", "getString: $selectedLang")
+                            dataStoreManager.putString(FIRST_TIME_MIGRATION, STATUS_DONE)
+                        }
+                        selectedLang
+                    } else {
+                        null
+                    }
+                }
+            if (localeToApply != null) {
+                val localeList = LocaleListCompat.forLanguageTags(localeToApply)
+                AppCompatDelegate.setApplicationLocales(localeList)
+            }
+            val currentLocalesTag = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+            withContext(Dispatchers.IO) {
+                if (currentLocalesTag != dataStoreManager.getString(SELECTED_LANGUAGE).first()) {
+                    Logger.d("Locale Key", "onCreate: $currentLocalesTag")
+                    dataStoreManager.putString(SELECTED_LANGUAGE, currentLocalesTag)
+                }
+                viewModel.getLocation()
+                val request =
+                    PeriodicWorkRequestBuilder<NotifyWork>(
+                        12L,
+                        TimeUnit.HOURS,
+                    ).addTag("Worker Test")
+                        .setConstraints(
+                            Constraints
+                                .Builder()
+                                .setRequiredNetworkType(NetworkType.CONNECTED)
+                                .build(),
+                        ).build()
+                WorkManager.getInstance(this@MainActivity).enqueueUniquePeriodicWork(
+                    "Artist Worker",
+                    ExistingPeriodicWorkPolicy.KEEP,
+                    request,
+                )
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                !EasyPermissions.hasPermissions(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS)
+            ) {
+                val (doNotAsk, wasAsked) =
+                    withContext(Dispatchers.IO) {
+                        dataStoreManager.getString("notification_permission_do_not_ask").first() to
+                            dataStoreManager.getString("notification_permission_asked").first()
+                    }
                 if (doNotAsk != "true") {
-                    val wasAsked = getString("notification_permission_asked")
                     if (wasAsked != "true") {
-                        // First time: request system permission
+                        val rationale =
+                            ComposeResUtils.getResString(ComposeResUtils.StringType.NOTIFICATION_REQUEST)
                         EasyPermissions.requestPermissions(
-                            this,
-                            runBlocking { ComposeResUtils.getResString(ComposeResUtils.StringType.NOTIFICATION_REQUEST) },
+                            this@MainActivity,
+                            rationale,
                             1,
                             Manifest.permission.POST_NOTIFICATIONS,
                         )
-                        putString("notification_permission_asked", "true")
+                        withContext(Dispatchers.IO) {
+                            dataStoreManager.putString("notification_permission_asked", "true")
+                        }
                     } else {
                         // Already asked before: show custom dialog with "Don't show again"
                         viewModel.showNotificationPermissionDialog()
@@ -271,11 +268,31 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        viewModel.getLocation()
-
-        // Official-build check disabled so custom / community forks run cleanly.
-        setContent {
-            App(viewModel)
+        lifecycleScope.launch {
+            dataStoreManager.blogNotificationEnabled.collect { enabled ->
+                withContext(Dispatchers.IO) {
+                    if (enabled == DataStoreManager.TRUE) {
+                        val rssRequest =
+                            PeriodicWorkRequestBuilder<RssFeedNotifyWork>(
+                                24L,
+                                TimeUnit.HOURS,
+                            ).addTag("Blog RSS Worker")
+                                .setConstraints(
+                                    Constraints
+                                        .Builder()
+                                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                                        .build(),
+                                ).build()
+                        WorkManager.getInstance(this@MainActivity).enqueueUniquePeriodicWork(
+                            "Blog RSS Worker",
+                            ExistingPeriodicWorkPolicy.KEEP,
+                            rssRequest,
+                        )
+                    } else {
+                        WorkManager.getInstance(this@MainActivity).cancelUniqueWork("Blog RSS Worker")
+                    }
+                }
+            }
         }
     }
 
@@ -305,41 +322,28 @@ class MainActivity : AppCompatActivity() {
             pushPlayerError(it)
         }
         mediaPlayerHandler.showToast = { type ->
-            viewModel.makeToast(
-                when (type) {
-                    is ToastType.ExplicitContent -> {
-                        runBlocking { ComposeResUtils.getResString(ComposeResUtils.StringType.EXPLICIT_CONTENT_BLOCKED) }
-                    }
+            lifecycleScope.launch {
+                val message =
+                    when (type) {
+                        is ToastType.ExplicitContent -> {
+                            ComposeResUtils.getResString(ComposeResUtils.StringType.EXPLICIT_CONTENT_BLOCKED)
+                        }
 
-                    is ToastType.PlayerError -> {
-                        runBlocking { ComposeResUtils.getResString(ComposeResUtils.StringType.TIME_OUT_ERROR, type.error) }
-                    }
+                        is ToastType.PlayerError -> {
+                            ComposeResUtils.getResString(ComposeResUtils.StringType.TIME_OUT_ERROR, type.error)
+                        }
 
-                    is ToastType.SponsorBlockSkip -> {
-                        runBlocking { ComposeResUtils.getResString(ComposeResUtils.StringType.SPONSOR_BLOCK_SKIP, type.category) }
+                        is ToastType.SponsorBlockSkip -> {
+                            ComposeResUtils.getResString(ComposeResUtils.StringType.SPONSOR_BLOCK_SKIP, type.category)
+                        }
                     }
-                },
-            )
+                viewModel.makeToast(message)
+            }
         }
         viewModel.isServiceRunning = true
         shouldUnbind = true
         Logger.d("Service", "Service started")
     }
-
-    private fun checkForUpdate() {
-        if (viewModel.shouldCheckForUpdate()) {
-            viewModel.checkForUpdate()
-        }
-    }
-
-    private fun putString(
-        key: String,
-        value: String,
-    ) {
-        viewModel.putString(key, value)
-    }
-
-    private fun getString(key: String): String? = viewModel.getString(key)
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)

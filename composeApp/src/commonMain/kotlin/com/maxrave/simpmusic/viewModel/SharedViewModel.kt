@@ -433,23 +433,29 @@ class SharedViewModel(
 //            controllerStateJob.join()
         }
 
-        runBlocking {
-            dataStoreManager.getString("miniplayer_guide").first().let {
-                isFirstMiniplayer = it != STATUS_DONE
-            }
-            dataStoreManager.getString("suggest_guide").first().let {
-                isFirstSuggestions = it != STATUS_DONE
-            }
-            dataStoreManager.getString("liked_guide").first().let {
-                isFirstLiked = it != STATUS_DONE
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                dataStoreManager.getString("miniplayer_guide").first().let {
+                    isFirstMiniplayer = it != STATUS_DONE
+                }
+                dataStoreManager.getString("suggest_guide").first().let {
+                    isFirstSuggestions = it != STATUS_DONE
+                }
+                dataStoreManager.getString("liked_guide").first().let {
+                    isFirstLiked = it != STATUS_DONE
+                }
             }
         }
         // Start Per-Device Audio Profiles, Playback Handoff, Collaborative Rooms, Whole-Home Audio,
-        // background Wi-Fi Playlist Auto-Sync, and Scheduled Automated Cloud Backup.
+        // Wake-Up Alarm, Global Hotkeys, LAN Web Remote, background Wi-Fi Playlist Auto-Sync,
+        // and Scheduled Automated Cloud Backup.
         runCatching { getKoin().get<com.maxrave.simpmusic.utils.DeviceAudioProfileController>().start() }
         runCatching { getKoin().get<com.maxrave.simpmusic.handoff.PlaybackHandoffManager>().start() }
         runCatching { getKoin().get<com.maxrave.simpmusic.collab.CollaborativeRoomManager>().start() }
         runCatching { getKoin().get<com.maxrave.simpmusic.smarthome.WholeHomeAudioManager>().start() }
+        runCatching { getKoin().get<com.maxrave.simpmusic.alarm.WakeUpAlarmManager>().start() }
+        runCatching { getKoin().get<com.maxrave.simpmusic.hotkeys.GlobalHotkeyManager>().start() }
+        runCatching { getKoin().get<com.maxrave.simpmusic.webremote.LanWebRemoteManager>().start() }
         viewModelScope.launch(Dispatchers.IO) {
             delay(6_000L)
             runCatching {

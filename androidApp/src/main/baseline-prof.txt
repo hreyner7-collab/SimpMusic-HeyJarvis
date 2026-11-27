@@ -1,0 +1,102 @@
+# SimpMusic Android Baseline Profile (ART HRF)
+# Covers cold startup, primary navigation screens, playback pipeline, persistence, and UI toolkits.
+
+# Application & Activity startup
+Lcom/maxrave/simpmusic/SimpMusicApplication;
+HSPLcom/maxrave/simpmusic/SimpMusicApplication;->**(**)**
+Lcom/maxrave/simpmusic/MainActivity;
+HSPLcom/maxrave/simpmusic/MainActivity;->**(**)**
+Lcom/maxrave/simpmusic/MainActivity$*;
+HSPLcom/maxrave/simpmusic/MainActivity$*;->**(**)**
+
+# Compose root & ViewModels
+Lcom/maxrave/simpmusic/AppKt;
+Lcom/maxrave/simpmusic/AppKt$*;
+HSPLcom/maxrave/simpmusic/AppKt;->**(**)**
+HSPLcom/maxrave/simpmusic/AppKt$*;->**(**)**
+Lcom/maxrave/simpmusic/viewModel/SharedViewModel;
+Lcom/maxrave/simpmusic/viewModel/SharedViewModel$*;
+HSPLcom/maxrave/simpmusic/viewModel/SharedViewModel;->**(**)**
+HSPLcom/maxrave/simpmusic/viewModel/SharedViewModel$*;->**(**)**
+Lcom/maxrave/simpmusic/viewModel/HomeViewModel;
+Lcom/maxrave/simpmusic/viewModel/HomeViewModel$*;
+HSPLcom/maxrave/simpmusic/viewModel/HomeViewModel;->**(**)**
+HSPLcom/maxrave/simpmusic/viewModel/HomeViewModel$*;->**(**)**
+
+# Core UI screens & player surfaces
+Lcom/maxrave/simpmusic/ui/screen/home/HomeScreenKt;
+Lcom/maxrave/simpmusic/ui/screen/home/HomeScreenKt$*;
+HSPLcom/maxrave/simpmusic/ui/screen/home/HomeScreenKt;->**(**)**
+HSPLcom/maxrave/simpmusic/ui/screen/home/HomeScreenKt$*;->**(**)**
+Lcom/maxrave/simpmusic/ui/screen/MiniPlayerKt;
+Lcom/maxrave/simpmusic/ui/screen/MiniPlayerKt$*;
+HSPLcom/maxrave/simpmusic/ui/screen/MiniPlayerKt;->**(**)**
+HSPLcom/maxrave/simpmusic/ui/screen/MiniPlayerKt$*;->**(**)**
+Lcom/maxrave/simpmusic/ui/screen/player/NowPlayingScreenKt;
+Lcom/maxrave/simpmusic/ui/screen/player/NowPlayingScreenKt$*;
+HSPLcom/maxrave/simpmusic/ui/screen/player/NowPlayingScreenKt;->**(**)**
+HSPLcom/maxrave/simpmusic/ui/screen/player/NowPlayingScreenKt$*;->**(**)**
+Lcom/maxrave/simpmusic/ui/screen/library/LocalPlaylistScreenKt;
+Lcom/maxrave/simpmusic/ui/screen/library/LocalPlaylistScreenKt$*;
+HSPLcom/maxrave/simpmusic/ui/screen/library/LocalPlaylistScreenKt;->**(**)**
+HSPLcom/maxrave/simpmusic/ui/screen/library/LocalPlaylistScreenKt$*;->**(**)**
+Lcom/maxrave/simpmusic/ui/screen/other/PlaylistScreenKt;
+Lcom/maxrave/simpmusic/ui/screen/other/PlaylistScreenKt$*;
+HSPLcom/maxrave/simpmusic/ui/screen/other/PlaylistScreenKt;->**(**)**
+HSPLcom/maxrave/simpmusic/ui/screen/other/PlaylistScreenKt$*;->**(**)**
+Lcom/maxrave/simpmusic/ui/screen/other/AlbumScreenKt;
+Lcom/maxrave/simpmusic/ui/screen/other/AlbumScreenKt$*;
+HSPLcom/maxrave/simpmusic/ui/screen/other/AlbumScreenKt;->**(**)**
+HSPLcom/maxrave/simpmusic/ui/screen/other/AlbumScreenKt$*;->**(**)**
+Lcom/maxrave/simpmusic/ui/screen/library/LibraryScreenKt;
+Lcom/maxrave/simpmusic/ui/screen/library/LibraryScreenKt$*;
+HSPLcom/maxrave/simpmusic/ui/screen/library/LibraryScreenKt;->**(**)**
+HSPLcom/maxrave/simpmusic/ui/screen/library/LibraryScreenKt$*;->**(**)**
+
+# Caching, DataStore, Room DB, Streaming & Playback Engine
+Lcom/maxrave/simpmusic/utils/FastPageCache;
+HSPLcom/maxrave/simpmusic/utils/FastPageCache;->**(**)**
+Lcom/maxrave/simpmusic/utils/cache/**;
+HSPLcom/maxrave/simpmusic/utils/cache/**;->**(**)**
+Lcom/maxrave/data/dataStore/DataStoreManagerImpl;
+Lcom/maxrave/data/dataStore/DataStoreManagerImpl$*;
+HSPLcom/maxrave/data/dataStore/DataStoreManagerImpl;->**(**)**
+HSPLcom/maxrave/data/dataStore/DataStoreManagerImpl$*;->**(**)**
+Lcom/maxrave/data/db/MusicDatabase;
+Lcom/maxrave/data/db/MusicDatabase_Impl;
+HSPLcom/maxrave/data/db/MusicDatabase**;->**(**)**
+Lcom/maxrave/data/repository/StreamRepositoryImpl;
+Lcom/maxrave/data/repository/StreamRepositoryImpl$*;
+HSPLcom/maxrave/data/repository/StreamRepositoryImpl;->**(**)**
+HSPLcom/maxrave/data/repository/StreamRepositoryImpl$*;->**(**)**
+Lcom/maxrave/media3/exoplayer/ExoPlayerAdapter;
+Lcom/maxrave/media3/exoplayer/ExoPlayerAdapter$*;
+HSPLcom/maxrave/media3/exoplayer/ExoPlayerAdapter;->**(**)**
+HSPLcom/maxrave/media3/exoplayer/ExoPlayerAdapter$*;->**(**)**
+Lcom/maxrave/media3/exoplayer/CrossfadeExoPlayerAdapter;
+Lcom/maxrave/media3/exoplayer/CrossfadeExoPlayerAdapter$*;
+HSPLcom/maxrave/media3/exoplayer/CrossfadeExoPlayerAdapter;->**(**)**
+HSPLcom/maxrave/media3/exoplayer/CrossfadeExoPlayerAdapter$*;->**(**)**
+Lcom/maxrave/data/mediaservice/MediaServiceHandlerImpl;
+Lcom/maxrave/data/mediaservice/MediaServiceHandlerImpl$*;
+HSPLcom/maxrave/data/mediaservice/MediaServiceHandlerImpl;->**(**)**
+HSPLcom/maxrave/data/mediaservice/MediaServiceHandlerImpl$*;->**(**)**
+
+# Jetpack Compose Runtime / UI / Foundation / Material3
+HSPLandroidx/compose/runtime/**;->**(**)**
+HSPLandroidx/compose/ui/**;->**(**)**
+HSPLandroidx/compose/foundation/**;->**(**)**
+HSPLandroidx/compose/material3/**;->**(**)**
+
+# Coil3 Image Loading
+HSPLcoil3/**;->**(**)**
+
+# Koin Dependency Injection
+HSPLorg/koin/**;->**(**)**
+
+# Room & SQLite
+HSPLandroidx/room/**;->**(**)**
+HSPLandroidx/sqlite/**;->**(**)**
+
+# Media3 / ExoPlayer
+HSPLandroidx/media3/**;->**(**)**

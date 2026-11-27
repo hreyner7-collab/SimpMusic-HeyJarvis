@@ -76,10 +76,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import multiplatform.network.cmptoast.ToastHost
 import multiplatform.network.cmptoast.showToast
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
-import okio.FileSystem
+import okio.Path.Companion.toOkioPath
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -106,6 +108,7 @@ import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import javax.swing.Timer
 
 private const val SENTRY_APP_OPEN = "app.open"
@@ -238,6 +241,11 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
 
     VersionManager.initialize()
     DesktopJarvis.restoreIfEnabled()
+    runCatching {
+        getKoin().get<com.maxrave.simpmusic.hotkeys.GlobalHotkeyManager>().onTriggerJarvis = {
+            DesktopJarvis.triggerManualWake()
+        }
+    }
     configLastfm(BuildKonfig.lastfmApiKey, BuildKonfig.lastfmSecret)
     if (BuildKonfig.sentryDsn.isNotEmpty()) {
         val installationId = machineId()
@@ -258,24 +266,29 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
     }
 
     val mediaPlayerHandler by inject<MediaPlayerHandler>(MediaPlayerHandler::class.java)
+    val toastScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     mediaPlayerHandler.showToast = { type ->
-        showToast(
-            when (type) {
-                ToastType.ExplicitContent -> {
-                    runBlocking { getString(Res.string.explicit_content_blocked) }
-                }
+        toastScope.launch {
+            val message =
+                when (type) {
+                    ToastType.ExplicitContent -> {
+                        getString(Res.string.explicit_content_blocked)
+                    }
 
-                is ToastType.PlayerError -> {
-                    // Desktop playback errors come from mpv with its own reason, not from a network
-                    // timeout, so the toast names that reason instead of blaming the connection.
-                    runBlocking { getString(Res.string.playback_failed_reason, type.error) }
-                }
+                    is ToastType.PlayerError -> {
+                        // Desktop playback errors come from mpv with its own reason, not from a network
+                        // timeout, so the toast names that reason instead of blaming the connection.
+                        getString(Res.string.playback_failed_reason, type.error)
+                    }
 
-                is ToastType.SponsorBlockSkip -> {
-                    runBlocking { ComposeResUtils.getResString(ComposeResUtils.StringType.SPONSOR_BLOCK_SKIP, type.category) }
+                    is ToastType.SponsorBlockSkip -> {
+                        ComposeResUtils.getResString(ComposeResUtils.StringType.SPONSOR_BLOCK_SKIP, type.category)
+                    }
                 }
-            },
-        )
+            withContext(Dispatchers.Main) {
+                showToast(message)
+            }
+        }
     }
     mediaPlayerHandler.pushPlayerError = { error ->
         Sentry.withScope { scope ->
@@ -382,6 +395,8 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
             }
             Divider()
             Item(quitAppString) {
+                runCatching { getKoin().get<com.maxrave.simpmusic.hotkeys.GlobalHotkeyManager>().stop() }
+                runCatching { getKoin().get<com.maxrave.simpmusic.webremote.LanWebRemoteManager>().stop() }
                 mediaPlayerHandler.release()
                 Sentry.endSession()
                 exitApplication()
@@ -507,8 +522,25 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
 
                 val context = LocalPlatformContext.current
                 val perfSettings = PerformanceRuntime.current
+                val isWindowsHost = System.getProperty("os.name", "").contains("Win", ignoreCase = true)
                 setSingletonImageLoaderFactory {
                     lateinit var imageLoader: ImageLoader
+                    val imageCacheDir =
+                        File(getHomeFolderPath(listOf(".simpmusic", "cache", "image_cache"))).apply {
+                            mkdirs()
+                        }
+                    val maxReqs =
+                        if (isWindowsHost) {
+                            perfSettings.imageMaxConcurrentRequests.coerceAtMost(12)
+                        } else {
+                            perfSettings.imageMaxConcurrentRequests
+                        }
+                    val maxReqsPerHost =
+                        if (isWindowsHost) {
+                            (maxReqs / 2).coerceIn(4, 6)
+                        } else {
+                            (maxReqs / 2).coerceAtLeast(4)
+                        }
                     imageLoader =
                         ImageLoader
                             .Builder(context)
@@ -519,10 +551,11 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                                         callFactory = {
                                             OkHttpClient
                                                 .Builder()
+                                                .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
                                                 .dispatcher(
                                                     okhttp3.Dispatcher().apply {
-                                                        maxRequests = perfSettings.imageMaxConcurrentRequests
-                                                        maxRequestsPerHost = (perfSettings.imageMaxConcurrentRequests / 2).coerceAtLeast(4)
+                                                        maxRequests = maxReqs
+                                                        maxRequestsPerHost = maxReqsPerHost
                                                     },
                                                 ).build()
                                         },
@@ -538,7 +571,7 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                             .diskCache(
                                 DiskCache
                                     .Builder()
-                                    .directory(FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "image_cache")
+                                    .directory(imageCacheDir.toOkioPath())
                                     .maxSizeBytes(256L * 1024 * 1024)
                                     .build(),
                             ).crossfade(!perfSettings.reduceAnimations)

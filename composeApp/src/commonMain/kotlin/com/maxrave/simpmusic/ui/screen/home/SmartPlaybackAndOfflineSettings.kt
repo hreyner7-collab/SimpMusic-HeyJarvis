@@ -56,7 +56,11 @@ import com.maxrave.simpmusic.handoff.PlaybackHandoffSettings.setPlaybackHandoffE
 import com.maxrave.simpmusic.smarthome.SmartSpeakerManager
 import com.maxrave.simpmusic.smarthome.WholeHomeAudioManager
 import com.maxrave.simpmusic.smarthome.WholeHomeRole
+import com.maxrave.simpmusic.ui.component.GlobalHotkeysSection
+import com.maxrave.simpmusic.ui.component.KaraokeAndVisualizerSection
+import com.maxrave.simpmusic.ui.component.LanWebRemoteSection
 import com.maxrave.simpmusic.ui.component.SettingItem
+import com.maxrave.simpmusic.ui.component.WakeUpAlarmSection
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.utils.DeviceAudioProfileController
 import com.maxrave.simpmusic.utils.WifiPlaylistAutoSyncManager
@@ -741,4 +745,23 @@ fun SmartHomeAndWholeHomeAudioSettings() {
             }
         }
     }
+}
+
+@Composable
+fun PowerFeaturesAndAudioExtrasSettings() {
+    KaraokeAndVisualizerSection(
+        dataStoreManager = koinInject(),
+        mediaPlayerHandler = koinInject(),
+    )
+    WakeUpAlarmSection(
+        manager = koinInject(),
+    )
+    if (getPlatform() == Platform.Desktop) {
+        GlobalHotkeysSection(
+            manager = koinInject(),
+        )
+    }
+    LanWebRemoteSection(
+        manager = koinInject(),
+    )
 }

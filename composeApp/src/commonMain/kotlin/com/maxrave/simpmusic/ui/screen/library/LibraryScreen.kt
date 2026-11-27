@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +71,7 @@ import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
 import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.expect.ui.layerBackdrop
 import com.maxrave.simpmusic.expect.ui.rememberBackdrop
+import com.maxrave.simpmusic.extension.LocalIsScrolling
 import com.maxrave.simpmusic.extension.copy
 import com.maxrave.simpmusic.extension.isScrollingUp
 import com.maxrave.simpmusic.extension.ultraThinBarStyle
@@ -83,8 +86,11 @@ import com.maxrave.simpmusic.ui.component.LibraryItem
 import com.maxrave.simpmusic.ui.component.LibraryItemState
 import com.maxrave.simpmusic.ui.component.LibraryItemType
 import com.maxrave.simpmusic.ui.component.LibraryTilingBox
+import com.maxrave.simpmusic.ui.component.LocalAudioLibrarySheet
 import com.maxrave.simpmusic.ui.component.PinnedLibraryKind
 import com.maxrave.simpmusic.ui.component.PinnedLibrarySection
+import com.maxrave.simpmusic.ui.component.PlaylistPortabilitySheet
+import com.maxrave.simpmusic.ui.component.SmartPlaylistsSheet
 import com.maxrave.simpmusic.ui.component.SpotifyLibraryTab
 import com.maxrave.simpmusic.ui.component.SpotifyOwnAppDialog
 import com.maxrave.simpmusic.ui.component.pinnedLibraryItemsFlow
@@ -97,9 +103,11 @@ import com.maxrave.simpmusic.ui.component.selection.SelectedSongsBottomSheet
 import com.maxrave.simpmusic.ui.component.selection.SongSelectionTopAppBar
 import com.maxrave.simpmusic.ui.component.selection.rememberSongSelectionState
 import com.maxrave.simpmusic.ui.icon.Groups
+import com.maxrave.simpmusic.ui.icon.LibraryMusic
 import com.maxrave.simpmusic.ui.icon.PeopleAlt
 import com.maxrave.simpmusic.ui.icon.PlaylistAdd
 import com.maxrave.simpmusic.ui.icon.SimpIcons
+import com.maxrave.simpmusic.ui.icon.Tune
 import com.maxrave.simpmusic.ui.navigation.destination.dj.DjDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.ListenTogetherDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.SettingsDestination
@@ -200,6 +208,10 @@ fun LibraryScreen(
         mutableStateOf(0.dp)
     }
     var showAddSheet by remember { mutableStateOf(false) }
+    var showLocalAudioSheet by rememberSaveable { mutableStateOf(false) }
+    var showSmartPlaylistsSheet by rememberSaveable { mutableStateOf(false) }
+    var showPortabilitySheet by rememberSaveable { mutableStateOf(false) }
+    val yourLibraryListState = rememberLazyListState()
 
     LaunchedEffect(nowPlaying) {
         Logger.w("LibraryScreen", "Check nowPlaying: $nowPlaying")
@@ -281,13 +293,16 @@ fun LibraryScreen(
     // The floating chip row refracts the page scrolling under it, so the page is the glass source and
     // the row its sibling (nesting the row inside the source is the RuntimeShader feedback loop).
     val chipBackdrop = rememberBackdrop(MaterialTheme.colorScheme.background)
+    CompositionLocalProvider(
+        LocalIsScrolling provides (currentFilter == LibraryChipType.YOUR_LIBRARY && yourLibraryListState.isScrollInProgress),
+    ) {
     Crossfade(
         modifier = Modifier.then(if (LocalLiquidGlassEnabled.current) Modifier.layerBackdrop(chipBackdrop) else Modifier).hazeSource(hazeState),
         targetState = currentFilter,
     ) { filter ->
         when (filter) {
             LibraryChipType.YOUR_LIBRARY -> {
-                val state = rememberLazyListState()
+                val state = yourLibraryListState
                 val isScrollingUp by state.isScrollingUp()
                 LaunchedEffect(state) {
                     snapshotFlow { state.firstVisibleItemIndex }
@@ -329,6 +344,51 @@ fun LibraryScreen(
                                     navController.navigate(com.maxrave.simpmusic.ui.navigation.destination.dj.DjDestination)
                                 },
                             )
+                        }
+
+                        item(key = "power_tools", contentType = "power_tools") {
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                AssistChip(
+                                    onClick = { showLocalAudioSheet = true },
+                                    label = { Text("Local Audio") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = SimpIcons.LibraryMusic,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    },
+                                )
+                                AssistChip(
+                                    onClick = { showSmartPlaylistsSheet = true },
+                                    label = { Text("Smart Playlists") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = SimpIcons.Tune,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    },
+                                )
+                                AssistChip(
+                                    onClick = { showPortabilitySheet = true },
+                                    label = { Text("Import / Export") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = SimpIcons.PlaylistAdd,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    },
+                                )
+                            }
                         }
 
                         item(key = "pinned_section", contentType = "pinned_section") {
@@ -723,6 +783,26 @@ fun LibraryScreen(
                 },
             )
         }
+        if (showLocalAudioSheet) {
+            LocalAudioLibrarySheet(
+                manager = koinInject(),
+                onDismiss = { showLocalAudioSheet = false },
+            )
+        }
+        if (showSmartPlaylistsSheet) {
+            SmartPlaylistsSheet(
+                manager = koinInject(),
+                onDismiss = { showSmartPlaylistsSheet = false },
+            )
+        }
+        if (showPortabilitySheet) {
+            PlaylistPortabilitySheet(
+                manager = koinInject(),
+                playlists = yourLocalPlaylist.data.orEmpty(),
+                onDismiss = { showPortabilitySheet = false },
+            )
+        }
+    }
     }
 }
 

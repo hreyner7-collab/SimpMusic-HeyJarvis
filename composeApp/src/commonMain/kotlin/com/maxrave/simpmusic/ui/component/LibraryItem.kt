@@ -66,8 +66,6 @@ import com.maxrave.simpmusic.ui.theme.ArtworkShape
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.viewModel.LibraryViewModel
 import com.maxrave.simpmusic.viewModel.SharedViewModel
-import kotlinx.coroutines.runBlocking
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -107,6 +105,7 @@ fun LibraryItem(
             is LibraryItemType.CanvasSong -> stringResource(Res.string.most_played)
             else -> return
         }
+    val radioString = stringResource(Res.string.radio)
     Box {
         if (showBottomSheet) {
             NowPlayingBottomSheet(
@@ -164,7 +163,7 @@ fun LibraryItem(
                                                         listTracks = arrayListOf(item.toTrack()),
                                                         firstPlayedTrack = item.toTrack(),
                                                         playlistId = "RDAMVM${item.videoId}",
-                                                        playlistName = "\"${item.title}\" ${runBlocking { getString(Res.string.radio) }}",
+                                                        playlistName = "\"${item.title}\" $radioString",
                                                         playlistType = DomainPlaylistType.RADIO,
                                                         continuation = null,
                                                     ),
@@ -262,7 +261,7 @@ fun LibraryItem(
                                                     listTracks = arrayListOf(firstQueue),
                                                     firstPlayedTrack = firstQueue,
                                                     playlistId = "RDAMVM${firstQueue.videoId}",
-                                                    playlistName = "\"${song.title}\" ${runBlocking { getString(Res.string.radio) }}",
+                                                    playlistName = "\"${song.title}\" $radioString",
                                                     playlistType = DomainPlaylistType.RADIO,
                                                     continuation = null,
                                                 ),

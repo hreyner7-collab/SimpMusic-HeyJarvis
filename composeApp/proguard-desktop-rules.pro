@@ -408,3 +408,17 @@
 # JNA references the signature-polymorphic java.lang.invoke.MethodHandle.invoke(...) overloads, which
 # ProGuard can't resolve as concrete methods. JNA itself is kept above; suppress these warnings.
 -dontwarn com.sun.jna.**
+
+# Keep KMP serializable models, cache DTOs, local audio, smart playlists, portability, bookmarks,
+# karaoke/visualizer, wake-up alarms, Win32 JNA global hotkeys, and LAN web remote models.
+-keep class com.maxrave.simpmusic.utils.cache.** { *; }
+-keep class com.maxrave.simpmusic.localaudio.** { *; }
+-keep class com.maxrave.simpmusic.smartplaylist.** { *; }
+-keep class com.maxrave.simpmusic.portability.** { *; }
+-keep class com.maxrave.simpmusic.bookmarks.** { *; }
+-keep class com.maxrave.simpmusic.alarm.** { *; }
+-keep class com.maxrave.simpmusic.hotkeys.** { *; }
+-keep interface com.maxrave.simpmusic.hotkeys.** { *; }
+-keep class com.maxrave.simpmusic.webremote.** { *; }
+-keep class com.maxrave.domain.data.player.KaraokeEffect { *; }
+-keep class com.maxrave.simpmusic.ui.component.VisualizerStyle { *; }

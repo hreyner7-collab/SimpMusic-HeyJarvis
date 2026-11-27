@@ -62,6 +62,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -127,6 +128,7 @@ import com.maxrave.simpmusic.expect.ui.HorizontalScrollBar
 import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.expect.ui.layerBackdrop
 import com.maxrave.simpmusic.expect.ui.rememberBackdrop
+import com.maxrave.simpmusic.extension.LocalIsScrolling
 import com.maxrave.simpmusic.extension.angledGradientBackground
 import com.maxrave.simpmusic.extension.artworkScrimBrush
 import com.maxrave.simpmusic.extension.getScreenSizeInfo
@@ -739,6 +741,7 @@ fun HomeScreen(
         )
     }
 
+    CompositionLocalProvider(LocalIsScrolling provides scrollState.isScrollInProgress) {
     Box {
         PullToRefreshBox(
             modifier =
@@ -1183,6 +1186,7 @@ fun HomeScreen(
                 }
             }
         }
+    }
     }
 }
 

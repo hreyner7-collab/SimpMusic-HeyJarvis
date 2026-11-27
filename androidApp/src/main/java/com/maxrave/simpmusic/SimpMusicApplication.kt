@@ -14,6 +14,7 @@ import coil3.SingletonImageLoader
 import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.preferEndFirstIntrinsicSize
 import coil3.disk.DiskCache
+import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.CachePolicy
 import coil3.request.crossfade
@@ -31,8 +32,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import multiplatform.network.cmptoast.AppContext
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
-import okio.FileSystem
+import okio.Path.Companion.toOkioPath
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.component.KoinComponent
@@ -46,6 +48,7 @@ import org.simpmusic.discord.configDiscord
 import org.simpmusic.lastfm.configLastfm
 import java.io.File
 import java.lang.reflect.Field
+import java.util.concurrent.TimeUnit
 
 class SimpMusicApplication :
     Application(),
@@ -54,7 +57,8 @@ class SimpMusicApplication :
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val dataStoreManager: DataStoreManager by inject()
-    private lateinit var autoBackupScheduler: AutoBackupScheduler
+    @Volatile
+    private var autoBackupScheduler: AutoBackupScheduler? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -65,7 +69,9 @@ class SimpMusicApplication :
         // Before Koin: DiscordRepository is created at start and reads which login this build uses.
         configDiscord(BuildKonfig.discordClientId)
         startKoin {
-            androidLogger(level = Level.DEBUG)
+            if (BuildConfig.DEBUG) {
+                androidLogger(level = Level.DEBUG)
+            }
             androidContext(this@SimpMusicApplication)
             loadAllModules(
                 AppIdentity(
@@ -87,15 +93,14 @@ class SimpMusicApplication :
         // initialize WorkManager
         WorkManager.initialize(this, workConfig)
 
-        // Initialize and start AutoBackupScheduler
-        autoBackupScheduler = AutoBackupScheduler(this, dataStoreManager)
-        applicationScope.launch {
-            autoBackupScheduler.observeAndSchedule()
-        }
+        // Instantiate and schedule background workers off the main Application.onCreate() path.
+        applicationScope.launch(Dispatchers.Default) {
+            val backupScheduler = AutoBackupScheduler(this@SimpMusicApplication, dataStoreManager)
+            autoBackupScheduler = backupScheduler
+            launch { backupScheduler.observeAndSchedule() }
 
-        val librarySyncScheduler = LibrarySyncScheduler(this, get<LibrarySyncPhoneRepository>())
-        applicationScope.launch {
-            librarySyncScheduler.observeAndSchedule()
+            val librarySyncScheduler = LibrarySyncScheduler(this@SimpMusicApplication, get<LibrarySyncPhoneRepository>())
+            launch { librarySyncScheduler.observeAndSchedule() }
         }
 
         CaocConfig.Builder
@@ -131,6 +136,7 @@ class SimpMusicApplication :
     @OptIn(ExperimentalCoilApi::class)
     override fun newImageLoader(context: PlatformContext): ImageLoader {
         lateinit var imageLoader: ImageLoader
+        val imageCacheDir = cacheDir.resolve("image_cache").apply { mkdirs() }
         imageLoader =
             ImageLoader
                 .Builder(context)
@@ -141,6 +147,7 @@ class SimpMusicApplication :
                             callFactory = {
                                 OkHttpClient
                                     .Builder()
+                                    .connectionPool(ConnectionPool(12, 5, TimeUnit.MINUTES))
                                     .dispatcher(
                                         okhttp3.Dispatcher().apply {
                                             maxRequests = 64
@@ -150,12 +157,17 @@ class SimpMusicApplication :
                             },
                         ),
                     )
+                }.memoryCache {
+                    MemoryCache
+                        .Builder()
+                        .maxSizePercent(context, 0.25)
+                        .build()
                 }.diskCachePolicy(CachePolicy.ENABLED)
                 .networkCachePolicy(CachePolicy.ENABLED)
                 .diskCache(
                     DiskCache
                         .Builder()
-                        .directory(FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "image_cache")
+                        .directory(imageCacheDir.toOkioPath())
                         .maxSizeBytes(512L * 1024 * 1024)
                         .build(),
                 ).crossfade(true)

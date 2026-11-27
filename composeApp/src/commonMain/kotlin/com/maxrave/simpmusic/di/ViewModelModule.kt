@@ -1,11 +1,18 @@
 package com.maxrave.simpmusic.di
 
 import com.maxrave.simpmusic.viewModel.AlbumViewModel
+import com.maxrave.simpmusic.alarm.WakeUpAlarmManager
 import com.maxrave.simpmusic.backup.CloudBackupManager
+import com.maxrave.simpmusic.bookmarks.TrackBookmarkManager
 import com.maxrave.simpmusic.collab.CollaborativeRoomManager
 import com.maxrave.simpmusic.handoff.PlaybackHandoffManager
+import com.maxrave.simpmusic.hotkeys.GlobalHotkeyManager
+import com.maxrave.simpmusic.localaudio.LocalAudioLibraryManager
+import com.maxrave.simpmusic.portability.PlaylistPortabilityManager
+import com.maxrave.simpmusic.smartplaylist.SmartPlaylistManager
 import com.maxrave.simpmusic.smarthome.SmartSpeakerManager
 import com.maxrave.simpmusic.smarthome.WholeHomeAudioManager
+import com.maxrave.simpmusic.webremote.LanWebRemoteManager
 import com.maxrave.simpmusic.utils.DeviceAudioProfileController
 import com.maxrave.simpmusic.utils.StreamPrewarmer
 import com.maxrave.simpmusic.utils.VersionManager
@@ -101,6 +108,52 @@ val viewModelModule =
             WholeHomeAudioManager(
                 mediaPlayerHandler = get(),
                 handoffManager = get(),
+            )
+        }
+        single {
+            LocalAudioLibraryManager(
+                dataStoreManager = get(),
+                mediaPlayerHandler = get(),
+            )
+        }
+        single {
+            SmartPlaylistManager(
+                dataStoreManager = get(),
+                songRepository = get(),
+                analyticsRepository = get(),
+                mediaPlayerHandler = get(),
+            )
+        }
+        single {
+            PlaylistPortabilityManager(
+                localPlaylistRepository = get(),
+                searchRepository = get(),
+            )
+        }
+        single {
+            TrackBookmarkManager(
+                dataStoreManager = get(),
+                mediaPlayerHandler = get(),
+            )
+        }
+        single {
+            WakeUpAlarmManager(
+                dataStoreManager = get(),
+                mediaPlayerHandler = get(),
+                songRepository = get(),
+                localPlaylistRepository = get(),
+            )
+        }
+        single {
+            GlobalHotkeyManager(
+                dataStoreManager = get(),
+                mediaPlayerHandler = get(),
+            )
+        }
+        single {
+            LanWebRemoteManager(
+                dataStoreManager = get(),
+                mediaPlayerHandler = get(),
             )
         }
         single {

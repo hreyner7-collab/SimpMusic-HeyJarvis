@@ -1909,6 +1909,7 @@ fun SettingScreen(
                 DeviceAudioProfilesSettings()
                 PlaybackHandoffSettings()
                 SmartHomeAndWholeHomeAudioSettings()
+                PowerFeaturesAndAudioExtrasSettings()
                 AiDjSettings()
                 MusicOnlyAndBlocklistSettings()
                 SettingItem(

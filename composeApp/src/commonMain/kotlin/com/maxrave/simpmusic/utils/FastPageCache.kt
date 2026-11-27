@@ -8,6 +8,7 @@ import com.maxrave.domain.data.model.browse.playlist.PlaylistBrowse
 import com.maxrave.domain.data.model.home.HomeItem
 import com.maxrave.domain.data.model.home.chart.Chart
 import com.maxrave.domain.data.model.mood.Mood
+import com.maxrave.simpmusic.utils.cache.HomeDiskCache
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -86,6 +87,15 @@ object FastPageCache {
         key: String,
         snapshot: HomeSnapshot,
     ) = putBounded(homeCache, key, snapshot)
+
+    suspend fun loadHomeFromDisk(key: String): HomeDiskCache.ReadResult? = HomeDiskCache.load(key)
+
+    suspend fun saveHomeToDisk(
+        key: String,
+        snapshot: HomeSnapshot,
+    ) = HomeDiskCache.save(key, snapshot)
+
+    suspend fun clearHomeDisk() = HomeDiskCache.clear()
 
     fun getAlbum(browseId: String): AlbumBrowse? = getValid(albumCache, browseId, DETAIL_TTL_MS)
 

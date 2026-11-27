@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -729,12 +730,20 @@ fun rememberPaletteColor(
  * A plain function, not remembered: `HazeBlurStyle { }` records its writes into a list and compares
  * by them, so an unchanged tint recomposes into an equal Style and leaves the node alone.
  */
+/**
+ * Provided by scrolling screens so chrome surfaces ([barBlurStyle], [ultraThinBarStyle]) can skip
+ * expensive GPU blur passes during active scroll/fling gestures and paint a clean translucent scrim.
+ */
+val LocalIsScrolling = compositionLocalOf { false }
+
 @Composable
 fun barBlurStyle(
     tint: Color,
     tintAlpha: Float,
 ): HazeBlurStyle {
-    val enableBlur = com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableBlur
+    val enableBlur =
+        com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableBlur &&
+            !LocalIsScrolling.current
     return if (enableBlur) {
         HazeBlurStyle {
             blurRadius(24.dp)
@@ -756,7 +765,10 @@ fun barBlurStyle(
 @Composable
 fun ultraThinBarStyle(): HazeBlurStyle {
     val surface = MaterialTheme.colorScheme.surface
-    return if (com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableBlur) {
+    val enableBlur =
+        com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableBlur &&
+            !LocalIsScrolling.current
+    return if (enableBlur) {
         HazeMaterials.ultraThin(surface).then { fallbackColorEffect(HazeColorEffect.tint(surface)) }
     } else {
         HazeBlurStyle {

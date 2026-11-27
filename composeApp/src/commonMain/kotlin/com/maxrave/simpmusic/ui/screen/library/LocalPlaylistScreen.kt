@@ -138,6 +138,7 @@ import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.ui.layerBackdrop
 import com.maxrave.simpmusic.expect.ui.rememberBackdrop
 import com.maxrave.simpmusic.expect.ui.toImageBitmap
+import com.maxrave.simpmusic.extension.LocalIsScrolling
 import com.maxrave.simpmusic.extension.artworkScrimBrush
 import com.maxrave.simpmusic.extension.displayNameRes
 import com.maxrave.simpmusic.extension.getColorFromPalette
@@ -476,6 +477,7 @@ fun LocalPlaylistScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
 //    Box {
+    CompositionLocalProvider(LocalIsScrolling provides lazyState.isScrollInProgress) {
     LazyColumn(
         modifier =
             Modifier
@@ -1626,8 +1628,7 @@ fun LocalPlaylistScreen(
             onYTPlaylistClick = {},
         )
     }
-    if (itemBottomSheetShow && currentItem != null) {
-        val track = currentItem ?: return
+    currentItem?.takeIf { itemBottomSheetShow }?.let { track ->
         NowPlayingBottomSheet(
             onDelete = { viewModel.deleteItem(uiState.id, track) },
             onDismiss = {
@@ -1917,5 +1918,6 @@ fun LocalPlaylistScreen(
             modifier =
                 Modifier.hazeBlur(HazeInput.Sources(hazeState), barBlurStyle(mutedPaletteBg, 0.55f)),
         )
+    }
     }
 }

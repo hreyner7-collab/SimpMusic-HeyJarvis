@@ -62,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.maxrave.common.Config.MAIN_PLAYER
+import com.maxrave.domain.manager.DataStoreManager
+import com.maxrave.simpmusic.bookmarks.TrackBookmarkManager
 import com.maxrave.simpmusic.expect.ui.MediaPlayerViewWithSubtitle
 import com.maxrave.simpmusic.extension.LeftToRight
 import com.maxrave.simpmusic.extension.artworkScrimBrush
@@ -71,8 +73,11 @@ import com.maxrave.simpmusic.extension.lengthLabel
 import com.maxrave.simpmusic.extension.rememberIsInPipMode
 import com.maxrave.simpmusic.extension.smoothScrimBrush
 import com.maxrave.simpmusic.ui.component.AddLyricsSheet
+import com.maxrave.simpmusic.ui.component.LiveAudioVisualizer
 import com.maxrave.simpmusic.ui.component.NowPlayingBottomSheet
 import com.maxrave.simpmusic.ui.component.RippleIconButton
+import com.maxrave.simpmusic.ui.component.TrackBookmarksSheet
+import com.maxrave.simpmusic.ui.component.rememberVisualizerStyle
 import com.maxrave.simpmusic.ui.icon.ArrowBackIosNew
 import com.maxrave.simpmusic.ui.icon.Forward5
 import com.maxrave.simpmusic.ui.icon.FullscreenExit
@@ -81,6 +86,7 @@ import com.maxrave.simpmusic.ui.icon.KeyboardDoubleArrowRight
 import com.maxrave.simpmusic.ui.icon.MoreVert
 import com.maxrave.simpmusic.ui.icon.Pause
 import com.maxrave.simpmusic.ui.icon.PlayArrow
+import com.maxrave.simpmusic.ui.icon.PushPin
 import com.maxrave.simpmusic.ui.icon.Replay5
 import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.icon.SkipNext
@@ -125,8 +131,13 @@ fun FullscreenPlayer(
     )
 
     val nowPlayingState by sharedViewModel.nowPlayingScreenData.collectAsStateWithLifecycle()
+    val nowPlayingTrackState by sharedViewModel.nowPlayingState.collectAsStateWithLifecycle()
     val controllerState by sharedViewModel.controllerState.collectAsStateWithLifecycle()
     val timelineState by sharedViewModel.timeline.collectAsStateWithLifecycle()
+    val dataStoreManager: DataStoreManager = koinInject()
+    val bookmarkManager: TrackBookmarkManager = koinInject()
+    val visualizerStyle by rememberVisualizerStyle(dataStoreManager)
+    var showBookmarksSheet by rememberSaveable { mutableStateOf(false) }
 
     var showBottom by rememberSaveable { mutableStateOf(false) }
     // The song Add lyrics was opened for, as its id, title and artist; see NowPlayingScreen.
@@ -370,6 +381,13 @@ fun FullscreenPlayer(
                                 }
                             },
                             actions = {
+                                if (!nowPlayingTrackState?.songEntity?.videoId.isNullOrBlank()) {
+                                    RippleIconButton(
+                                        SimpIcons.PushPin,
+                                    ) {
+                                        showBookmarksSheet = true
+                                    }
+                                }
                                 RippleIconButton(
                                     SimpIcons.MoreVert,
                                 ) {
@@ -788,6 +806,25 @@ fun FullscreenPlayer(
                     onDismiss = { addLyricsFor = null },
                 )
             }
+            val currentVideoId = nowPlayingTrackState?.songEntity?.videoId.orEmpty()
+            if (showBookmarksSheet && currentVideoId.isNotBlank()) {
+                TrackBookmarksSheet(
+                    manager = bookmarkManager,
+                    videoId = currentVideoId,
+                    songTitle = nowPlayingState.nowPlayingTitle,
+                    currentPositionMs = timelineState.current,
+                    onDismiss = { showBookmarksSheet = false },
+                )
+            }
+            LiveAudioVisualizer(
+                style = visualizerStyle,
+                isPlaying = controllerState.isPlaying,
+                accentColor = Color.White,
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 32.dp, vertical = 12.dp),
+            )
         }
     }
 }

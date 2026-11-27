@@ -15,6 +15,8 @@ import com.maxrave.domain.utils.Resource
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.utils.FastPageCache
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -175,6 +177,7 @@ class HomeViewModel(
                 regionCode = resolvedRegion
                 val cookieValue = dataStoreManager.cookie.first()
                 val cacheKey = "${params.orEmpty()}|$resolvedRegion|$resolvedLang|${cookieValue.hashCode()}"
+                var servedFromDisk = false
                 if (!forceRefresh) {
                     FastPageCache.getHome(cacheKey)?.let { cached ->
                         _continuation.value = cached.continuation
@@ -192,9 +195,31 @@ class HomeViewModel(
                         loading.value = false
                         return@launch
                     }
+
+                    // Stale-while-revalidate disk cache: render cached Home immediately on cold start,
+                    // then fall through to silently refresh live data from network in the background.
+                    FastPageCache.loadHomeFromDisk(cacheKey)?.let { diskResult ->
+                        val cached = diskResult.snapshot
+                        _continuation.value = cached.continuation
+                        _homeItemList.value = cached.homeItems
+                        _homeBackground.value = cached.homeBackground
+                        _homeListState.value =
+                            if (cached.continuation.isNullOrEmpty()) {
+                                ListState.PAGINATION_EXHAUST
+                            } else {
+                                ListState.IDLE
+                            }
+                        if (cached.newRelease.isNotEmpty()) {
+                            _newRelease.value = cached.newRelease
+                        }
+                        loading.value = false
+                        servedFromDisk = true
+                    }
                 }
-                loading.value = true
-                _homeListState.value = ListState.LOADING
+                if (!servedFromDisk) {
+                    loading.value = true
+                    _homeListState.value = ListState.LOADING
+                }
                 // If user only switched a mood chip on Home and secondary shelves are already loaded,
                 // only fetch getHomeData(params) instead of re-fetching Moods, Charts, and NewRelease.
                 if (!params.isNullOrEmpty() && !forceRefresh && _exploreMoodItem.value != null) {
@@ -223,9 +248,11 @@ class HomeViewModel(
                                 }
 
                                 is Resource.Error -> {
-                                    _continuation.value = null
-                                    _homeItemList.value = listOf()
-                                    home.message?.let { showSnackBarErrorState.emit(it) }
+                                    if (!servedFromDisk) {
+                                        _continuation.value = null
+                                        _homeItemList.value = listOf()
+                                        home.message?.let { showSnackBarErrorState.emit(it) }
+                                    }
                                 }
                             }
                             _homeListState.value =
@@ -261,8 +288,10 @@ class HomeViewModel(
                         }
 
                         else -> {
-                            _continuation.value = null
-                            _homeItemList.value = listOf()
+                            if (!servedFromDisk) {
+                                _continuation.value = null
+                                _homeItemList.value = listOf()
+                            }
                         }
                     }
                     if (continuation.value.isNullOrEmpty()) {
@@ -276,7 +305,9 @@ class HomeViewModel(
                         }
 
                         else -> {
-                            _chart.value = null
+                            if (!servedFromDisk) {
+                                _chart.value = null
+                            }
                         }
                     }
                     when (newRelease) {
@@ -285,7 +316,9 @@ class HomeViewModel(
                         }
 
                         else -> {
-                            _newRelease.value = arrayListOf()
+                            if (!servedFromDisk) {
+                                _newRelease.value = arrayListOf()
+                            }
                         }
                     }
                     when (exploreMoodItem) {
@@ -294,13 +327,14 @@ class HomeViewModel(
                         }
 
                         else -> {
-                            _exploreMoodItem.value = null
+                            if (!servedFromDisk) {
+                                _exploreMoodItem.value = null
+                            }
                         }
                     }
                     regionCodeChart.value = dataStoreManager.chartKey.first()
                     if (home is Resource.Success) {
-                        FastPageCache.putHome(
-                            cacheKey,
+                        val snapshot =
                             FastPageCache.HomeSnapshot(
                                 homeItems = _homeItemList.value,
                                 continuation = _continuation.value,
@@ -308,8 +342,13 @@ class HomeViewModel(
                                 mood = _exploreMoodItem.value,
                                 chart = _chart.value,
                                 newRelease = _newRelease.value,
-                            ),
-                        )
+                            )
+                        FastPageCache.putHome(cacheKey, snapshot)
+                        if (params.isNullOrEmpty() && snapshot.homeItems.isNotEmpty()) {
+                            launch(Dispatchers.IO) {
+                                FastPageCache.saveHomeToDisk(cacheKey, snapshot)
+                            }
+                        }
                     }
                     if (cookieValue.isNotEmpty()) {
                         _accountInfo.emit(
@@ -325,7 +364,9 @@ class HomeViewModel(
                         chart is Resource.Error -> chart.message
                         else -> null
                     }?.let {
-                        showSnackBarErrorState.emit(it)
+                        if (!servedFromDisk) {
+                            showSnackBarErrorState.emit(it)
+                        }
                         Logger.w("Error", "getHomeItemList: ${home.message}")
                         Logger.w("Error", "getHomeItemList: ${exploreMoodItem.message}")
                         Logger.w("Error", "getHomeItemList: ${chart.message}")
