@@ -1,6 +1,8 @@
 package com.maxrave.simpmusic.lighting
 
 expect class PlatformLightingTransport() {
+    val defaultSyncDelayMs: Int
+
     suspend fun discoverLights(timeoutMs: Long = 4000L): LightDiscoveryResult
 
     suspend fun sendUdpPacket(

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +19,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
@@ -31,10 +34,18 @@ class SmartLightingManager(
 ) {
     companion object {
         private const val PREF_KEY = "smart_lighting_v1"
-        private const val BLE_MIN_INTERVAL_MS = 85L
-        private const val WIFI_BULB_MIN_INTERVAL_MS = 120L
-        private const val MIN_RGB_DELTA = 6
+        private const val BLE_MIN_INTERVAL_MS = 40L
+        private const val WIFI_BULB_MIN_INTERVAL_MS = 95L
+        private const val MIN_RGB_DELTA = 4
     }
+
+    private data class QueuedLightFrame(
+        val bands: FloatArray,
+        val color: RgbColor,
+        val dynBrightness: Float,
+        val cue: String,
+        val isBeatHit: Boolean,
+    )
 
     private val json =
         Json {
@@ -45,7 +56,7 @@ class SmartLightingManager(
     private val transport = PlatformLightingTransport()
     private val djEngine = DjDiscoLightEngine()
 
-    private val _config = MutableStateFlow(SmartLightingConfig())
+    private val _config = MutableStateFlow(SmartLightingConfig(syncDelayMs = transport.defaultSyncDelayMs))
     val config: StateFlow<SmartLightingConfig> = _config.asStateFlow()
 
     private val _statusMessage = MutableStateFlow<String?>(null)
@@ -78,7 +89,14 @@ class SmartLightingManager(
             if (!raw.isNullOrBlank()) {
                 runCatching { json.decodeFromString<SmartLightingConfig>(raw) }
                     .getOrNull()
-                    ?.let { _config.value = it }
+                    ?.let { loaded ->
+                        _config.value =
+                            if (raw.contains("\"syncDelayMs\"")) {
+                                loaded
+                            } else {
+                                loaded.copy(syncDelayMs = transport.defaultSyncDelayMs)
+                            }
+                    }
             }
         }
         loopJob =
@@ -106,31 +124,59 @@ class SmartLightingManager(
 
                         registerIfNeeded()
                         _statusMessage.value = "Syncing ${activeDevices.size} light(s) • ${cfg.mode.label}"
-                        val intervalMs = (1000L / cfg.maxFps.coerceIn(5, 30)).coerceAtLeast(33L)
+                        val queue = DelayedLightQueue<QueuedLightFrame>()
+                        val queueMutex = Mutex()
+                        var lastAnalysisMs = nowMs()
                         try {
-                            while (true) {
-                                val bands = AudioVisualizerBus.bands.value
-                                val (color, dynBright, cue) =
-                                    if (cfg.mode == LightingReactiveMode.DJ_DISCO) {
-                                        val frame = djEngine.step(bands, cfg.brightness, cfg.sensitivity)
-                                        Triple(frame.color, frame.brightness, frame.activeCue)
-                                    } else {
-                                        val c =
-                                            SmartLightingFrameEncoder.computeRgbFromSpectrum(
-                                                bands = bands,
-                                                mode = cfg.mode,
-                                                brightness = cfg.brightness,
-                                                sensitivity = cfg.sensitivity,
-                                            )
-                                        Triple(c, cfg.brightness, cfg.mode.label)
+                            coroutineScope {
+                                launch {
+                                    AudioVisualizerBus.bands.collect { bands ->
+                                        val now = nowMs()
+                                        val dtMs = (now - lastAnalysisMs).coerceIn(15L, 200L)
+                                        lastAnalysisMs = now
+                                        val queued =
+                                            if (cfg.mode == LightingReactiveMode.DJ_DISCO) {
+                                                val frame = djEngine.step(bands, cfg.brightness, cfg.sensitivity, dtMs)
+                                                QueuedLightFrame(bands, frame.color, frame.brightness, frame.activeCue, frame.isBeatHit)
+                                            } else {
+                                                val raw =
+                                                    SmartLightingFrameEncoder.computeRgbFromSpectrum(
+                                                        bands = bands,
+                                                        mode = cfg.mode,
+                                                        brightness = cfg.brightness,
+                                                        sensitivity = cfg.sensitivity,
+                                                    )
+                                                val c = applyLedGamma(raw, gamma = 1.85f)
+                                                QueuedLightFrame(bands, c, cfg.brightness, cfg.mode.label, isBeatHit = false)
+                                            }
+                                        val deliverAt = now + cfg.syncDelayMs.coerceIn(0, 600)
+                                        queueMutex.withLock {
+                                            queue.enqueue(deliverAt, queued)
+                                        }
                                     }
-                                _lastColor.value = color
-                                _activeCue.value = cue
-                                val now = nowMs()
-                                for (device in activeDevices) {
-                                    sendFrameThrottled(device, bands, color, dynBright, cfg, now)
                                 }
-                                delay(intervalMs)
+                                launch {
+                                    while (true) {
+                                        val now = nowMs()
+                                        val due = queueMutex.withLock { queue.drainLatestDue(now) }
+                                        if (due != null) {
+                                            _lastColor.value = due.color
+                                            _activeCue.value = due.cue
+                                            for (device in activeDevices) {
+                                                sendFrameThrottled(
+                                                    device = device,
+                                                    bands = due.bands,
+                                                    color = due.color,
+                                                    dynBrightness = due.dynBrightness,
+                                                    cfg = cfg,
+                                                    nowMs = now,
+                                                    isBeatHit = due.isBeatHit,
+                                                )
+                                            }
+                                        }
+                                        delay(12L)
+                                    }
+                                }
                             }
                         } finally {
                             unregisterIfNeeded()
@@ -264,6 +310,7 @@ class SmartLightingManager(
         dynBrightness: Float,
         cfg: SmartLightingConfig,
         nowMs: Long,
+        isBeatHit: Boolean = false,
     ) {
         if (device.protocol == LightingProtocol.ALEXA_WEBHOOK) {
             if (webhookTriggeredThisPlay.add(device.id)) {
@@ -280,9 +327,10 @@ class SmartLightingManager(
             }
         if (minInterval > 0L) {
             val prevAt = lastSentAtMsById[device.id] ?: 0L
-            if (nowMs - prevAt < minInterval) return
+            val effectiveInterval = if (isBeatHit) minInterval / 2L else minInterval
+            if (nowMs - prevAt < effectiveInterval) return
             val prevColor = lastSentColorById[device.id]
-            if (prevColor != null && prevColor.maxChannelDelta(color) < MIN_RGB_DELTA) return
+            if (!isBeatHit && prevColor != null && prevColor.maxChannelDelta(color) < MIN_RGB_DELTA) return
         }
 
         lastSentAtMsById[device.id] = nowMs
@@ -290,8 +338,7 @@ class SmartLightingManager(
 
         when (device.protocol) {
             LightingProtocol.GOVEE_BLE -> {
-                val b255 = (dynBrightness.coerceIn(0.15f, 1f) * 255f).roundToInt()
-                transport.sendGoveeBleColor(device.host, color, b255)
+                transport.sendGoveeBleColor(device.host, color, 255)
             }
 
             LightingProtocol.GOVEE_LAN -> {
@@ -339,6 +386,8 @@ class SmartLightingManager(
     fun setBrightness(brightness: Float) = updateConfig { it.copy(brightness = brightness.coerceIn(0.05f, 1f)) }
 
     fun setSensitivity(sensitivity: Float) = updateConfig { it.copy(sensitivity = sensitivity.coerceIn(0.25f, 3f)) }
+
+    fun setSyncDelayMs(delayMs: Int) = updateConfig { it.copy(syncDelayMs = delayMs.coerceIn(0, 600)) }
 
     fun addDevice(device: SmartLightDevice) =
         updateConfig { cfg ->

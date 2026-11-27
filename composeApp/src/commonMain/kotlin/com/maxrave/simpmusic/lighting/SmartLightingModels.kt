@@ -2,8 +2,10 @@ package com.maxrave.simpmusic.lighting
 
 import kotlinx.serialization.Serializable
 import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 @Serializable
@@ -48,7 +50,8 @@ data class SmartLightingConfig(
     val mode: LightingReactiveMode = LightingReactiveMode.DJ_DISCO,
     val brightness: Float = 0.90f,
     val sensitivity: Float = 1.15f,
-    val maxFps: Int = 20,
+    val maxFps: Int = 25,
+    val syncDelayMs: Int = 180,
     val devices: List<SmartLightDevice> = emptyList(),
 )
 
@@ -103,25 +106,100 @@ data class DjLightFrame(
     val color: RgbColor,
     val brightness: Float,
     val activeCue: String,
+    val isBeatHit: Boolean = false,
 )
 
+fun applyLedGamma(color: RgbColor, gamma: Float = 2.0f): RgbColor {
+    val g = gamma.coerceIn(1.0f, 3.0f)
+    fun mapChannel(c: Int): Int =
+        ((c.coerceIn(0, 255) / 255f).pow(g) * 255f).roundToInt().coerceIn(0, 255)
+    return RgbColor(mapChannel(color.r), mapChannel(color.g), mapChannel(color.b))
+}
+
 /**
- * Stateful DJ lighting engine that maps live 24-band audio energy to club-style lighting:
- * - Heavy Bass / Beat Drops -> Fiery Deep Red
- * - Low-Mid / Groove -> Hot Orange / Gold
- * - Vocals / Lead Synth -> Electric Magenta / Club Purple
+ * Timestamped delay ring buffer that holds light frames until `deliverAtMs` (audio output time)
+ * and drops superseded frames so BLE/Wi-Fi latency never accumulates.
+ */
+class DelayedLightQueue<T>(
+    private val maxCapacity: Int = 64,
+) {
+    private data class Entry<T>(
+        val deliverAtMs: Long,
+        val item: T,
+    )
+
+    private val entries = ArrayDeque<Entry<T>>()
+
+    fun enqueue(deliverAtMs: Long, item: T) {
+        entries.addLast(Entry(deliverAtMs, item))
+        while (entries.size > maxCapacity) {
+            entries.removeFirst()
+        }
+    }
+
+    fun drainLatestDue(nowMs: Long): T? {
+        var latest: T? = null
+        while (entries.isNotEmpty() && entries.first().deliverAtMs <= nowMs) {
+            latest = entries.removeFirst().item
+        }
+        return latest
+    }
+
+    fun nextDeliverAtMs(): Long? = entries.firstOrNull()?.deliverAtMs
+
+    fun clear() {
+        entries.clear()
+    }
+}
+
+/**
+ * Stateful DJ lighting engine using linear transient expansion, spectral-flux onset detection,
+ * adaptive AGC, and LED gamma correction for club-grade beat-locked visuals:
+ * - Heavy Bass / Kick Drops -> Fiery Deep Red
+ * - Vocals / Snare / Lead Synth -> Electric Magenta / Club Purple
  * - High Pitch / Hi-Hats / Cymbals -> Laser Blue / Electric Cyan
+ * - Groove / Low-Mid -> Hot Orange / Gold
  */
 class DjDiscoLightEngine {
-    private var bassAvg = 0.18f
-    private var energyAvg = 0.22f
+    private var bassMean = 0.12f
+    private var midMean = 0.12f
+    private var highMean = 0.12f
+    private var energyMean = 0.12f
+
+    private var prevSubBass = 0f
+    private var prevSnareVocal = 0f
+    private var prevHiHatSpark = 0f
+
+    private var bassFluxAvg = 0.02f
+    private var midFluxAvg = 0.02f
+    private var highFluxAvg = 0.02f
+
+    private var msSinceKick = 200L
+    private var msSinceAccent = 200L
+    private var punchEnv = 0f
+    private var currentTarget = RgbColor(255, 110, 0)
+    private var currentCue = "GROOVE → ORANGE"
+
     private var smoothR = 0f
     private var smoothG = 0f
     private var smoothB = 0f
 
     fun reset() {
-        bassAvg = 0.18f
-        energyAvg = 0.22f
+        bassMean = 0.12f
+        midMean = 0.12f
+        highMean = 0.12f
+        energyMean = 0.12f
+        prevSubBass = 0f
+        prevSnareVocal = 0f
+        prevHiHatSpark = 0f
+        bassFluxAvg = 0.02f
+        midFluxAvg = 0.02f
+        highFluxAvg = 0.02f
+        msSinceKick = 200L
+        msSinceAccent = 200L
+        punchEnv = 0f
+        currentTarget = RgbColor(255, 110, 0)
+        currentCue = "GROOVE → ORANGE"
         smoothR = 0f
         smoothG = 0f
         smoothB = 0f
@@ -131,75 +209,150 @@ class DjDiscoLightEngine {
         bands: FloatArray,
         userBrightness: Float,
         sensitivity: Float,
+        dtMs: Long = 40L,
     ): DjLightFrame {
         val safeBright = if (userBrightness.isFinite()) userBrightness.coerceIn(0.05f, 1f) else 0.9f
         val safeSens = if (sensitivity.isFinite()) sensitivity.coerceIn(0.25f, 3f) else 1.15f
+        val dt = dtMs.coerceIn(10L, 250L)
 
         if (bands.isEmpty()) {
             reset()
-            return DjLightFrame(RgbColor(0, 0, 0), 0f, "Idle")
+            return DjLightFrame(RgbColor(0, 0, 0), 0f, "Idle", isBeatHit = false)
         }
 
-        val bass = (avgRange(bands, 0, 4) * safeSens).coerceIn(0f, 1.5f)
-        val lowMid = (avgRange(bands, 5, 9) * safeSens).coerceIn(0f, 1.5f)
-        val vocalMid = (avgRange(bands, 10, 15) * safeSens).coerceIn(0f, 1.5f)
-        val highPitch = (avgRange(bands, 16, 23) * safeSens).coerceIn(0f, 1.5f)
+        // Decompress dB-compressed spectrum bands so drum transients pop above sustained pads.
+        val subBass = (expandedAvg(bands, 0, 3) * safeSens).coerceIn(0f, 1.5f)
+        val lowGroove = (expandedAvg(bands, 4, 8) * safeSens).coerceIn(0f, 1.5f)
+        val snareVocal = (expandedAvg(bands, 9, 15) * safeSens).coerceIn(0f, 1.5f)
+        val hiHatSpark = (expandedAvg(bands, 16, 23) * safeSens).coerceIn(0f, 1.5f)
 
-        val totalEnergy = (bass + lowMid + vocalMid + highPitch) / 4f
-        if (!totalEnergy.isFinite() || totalEnergy < 0.015f) {
-            smoothR *= 0.7f
-            smoothG *= 0.7f
-            smoothB *= 0.7f
+        val totalEnergy = (subBass + lowGroove + snareVocal + hiHatSpark) / 4f
+        if (!totalEnergy.isFinite() || totalEnergy < 0.008f) {
+            smoothR *= 0.68f
+            smoothG *= 0.68f
+            smoothB *= 0.68f
+            punchEnv *= 0.68f
+            prevSubBass = 0f
+            prevSnareVocal = 0f
+            prevHiHatSpark = 0f
+            val quietRgb =
+                applyLedGamma(
+                    RgbColor(smoothR.roundToInt(), smoothG.roundToInt(), smoothB.roundToInt()).clamped(),
+                    gamma = 1.85f,
+                )
             return DjLightFrame(
-                color = RgbColor(smoothR.roundToInt(), smoothG.roundToInt(), smoothB.roundToInt()).clamped(),
-                brightness = 0.15f * safeBright,
+                color = quietRgb,
+                brightness = 0.14f * safeBright,
                 activeCue = "Quiet",
+                isBeatHit = false,
             )
         }
 
-        bassAvg = bassAvg * 0.88f + bass * 0.12f
-        energyAvg = energyAvg * 0.88f + totalEnergy * 0.12f
+        msSinceKick += dt
+        msSinceAccent += dt
 
-        val isBassDrop =
-            (bass > bassAvg * 1.24f && bass > 0.20f) ||
-                (bass >= lowMid * 1.15f && bass >= vocalMid * 1.15f && bass >= highPitch * 1.15f && bass > 0.18f)
+        val bassFlux = max(0f, subBass - prevSubBass)
+        val midFlux = max(0f, snareVocal - prevSnareVocal)
+        val highFlux = max(0f, hiHatSpark - prevHiHatSpark)
 
-        val sum = (bass + lowMid + vocalMid + highPitch).coerceAtLeast(0.001f)
-        val centroid = (lowMid * 0.30f + vocalMid * 0.62f + highPitch * 0.95f) / sum
+        prevSubBass = subBass
+        prevSnareVocal = snareVocal
+        prevHiHatSpark = hiHatSpark
 
-        val (target, cue, attackBoost) =
-            when {
-                isBassDrop -> Triple(RgbColor(255, 8, 20), "HEAVY BASS → RED", 0.85f)
-                highPitch >= vocalMid * 1.10f && highPitch >= lowMid * 1.15f || centroid > 0.68f ->
-                    Triple(RgbColor(0, 210, 255), "HIGH PITCH → CYAN", 0.72f)
-                vocalMid >= lowMid * 1.05f || centroid in 0.42f..0.68f ->
-                    Triple(RgbColor(205, 0, 255), "VOCALS → PURPLE", 0.68f)
-                else -> Triple(RgbColor(255, 115, 0), "GROOVE → ORANGE", 0.68f)
+        bassMean = bassMean * 0.90f + subBass * 0.10f
+        midMean = midMean * 0.90f + snareVocal * 0.10f
+        highMean = highMean * 0.90f + hiHatSpark * 0.10f
+        energyMean = energyMean * 0.90f + totalEnergy * 0.10f
+
+        bassFluxAvg = bassFluxAvg * 0.88f + bassFlux * 0.12f
+        midFluxAvg = midFluxAvg * 0.88f + midFlux * 0.12f
+        highFluxAvg = highFluxAvg * 0.88f + highFlux * 0.12f
+
+        val isKick =
+            (bassFlux > max(0.035f, bassFluxAvg * 1.45f) && subBass > max(0.08f, bassMean * 1.08f) && msSinceKick >= 120L) ||
+                (subBass > 0.25f && subBass >= snareVocal * 1.35f && subBass >= hiHatSpark * 1.35f && msSinceKick >= 150L)
+
+        val isHighHit =
+            !isKick && (
+                (highFlux > max(0.03f, highFluxAvg * 1.50f) && hiHatSpark > max(0.07f, highMean * 1.10f) && msSinceAccent >= 100L) ||
+                    (hiHatSpark > 0.22f && hiHatSpark >= subBass * 1.25f && hiHatSpark >= snareVocal * 1.15f)
+            )
+
+        val isMidHit =
+            !isKick && !isHighHit &&
+                (midFlux > max(0.03f, midFluxAvg * 1.50f) && snareVocal > max(0.08f, midMean * 1.10f) && msSinceAccent >= 110L)
+
+        var beatHit = false
+        when {
+            isKick -> {
+                msSinceKick = 0L
+                punchEnv = 1.0f
+                currentTarget = RgbColor(255, 4, 12)
+                currentCue = "HEAVY BASS → RED"
+                beatHit = true
             }
+            isHighHit -> {
+                msSinceAccent = 0L
+                punchEnv = max(punchEnv, 0.88f)
+                currentTarget = RgbColor(0, 225, 255)
+                currentCue = "HIGH PITCH → CYAN"
+                beatHit = true
+            }
+            isMidHit -> {
+                msSinceAccent = 0L
+                punchEnv = max(punchEnv, 0.90f)
+                currentTarget = RgbColor(220, 0, 255)
+                currentCue = "VOCALS → PURPLE"
+                beatHit = true
+            }
+            else -> {
+                punchEnv *= exp(-dt / 165f)
+                if (punchEnv < 0.25f) {
+                    val (grooveColor, grooveCue) =
+                        when {
+                            subBass >= snareVocal * 1.20f && subBass >= hiHatSpark * 1.20f && subBass > 0.14f ->
+                                RgbColor(255, 8, 16) to "HEAVY BASS → RED"
+                            hiHatSpark >= snareVocal * 1.10f && hiHatSpark >= lowGroove ->
+                                RgbColor(0, 210, 255) to "HIGH PITCH → CYAN"
+                            snareVocal >= lowGroove ->
+                                RgbColor(195, 0, 255) to "VOCALS → PURPLE"
+                            else ->
+                                RgbColor(255, 110, 0) to "GROOVE → ORANGE"
+                        }
+                    currentTarget = grooveColor
+                    currentCue = grooveCue
+                }
+            }
+        }
 
-        val loudnessNorm = (totalEnergy / energyAvg.coerceAtLeast(0.10f)).coerceIn(0.35f, 1.35f)
-        val dynamicLevel = (0.28f + 0.72f * (loudnessNorm / 1.35f)).coerceIn(0.22f, 1f) * safeBright
+        val floorLevel = 0.18f + 0.20f * (totalEnergy / energyMean.coerceAtLeast(0.05f)).coerceIn(0f, 1.2f)
+        val level = (floorLevel + (1f - floorLevel) * punchEnv).coerceIn(0.14f, 1f) * safeBright
 
-        val tr = target.r * dynamicLevel
-        val tg = target.g * dynamicLevel
-        val tb = target.b * dynamicLevel
+        val tr = currentTarget.r * level
+        val tg = currentTarget.g * level
+        val tb = currentTarget.b * level
 
-        smoothR += (tr - smoothR) * (if (tr > smoothR) attackBoost else 0.28f)
-        smoothG += (tg - smoothG) * (if (tg > smoothG) attackBoost else 0.28f)
-        smoothB += (tb - smoothB) * (if (tb > smoothB) attackBoost else 0.28f)
+        val attackR = if (beatHit) 1.0f else if (tr > smoothR) 0.65f else 0.38f
+        val attackG = if (beatHit) 1.0f else if (tg > smoothG) 0.65f else 0.38f
+        val attackB = if (beatHit) 1.0f else if (tb > smoothB) 0.65f else 0.38f
 
-        val out = RgbColor(smoothR.roundToInt(), smoothG.roundToInt(), smoothB.roundToInt()).clamped()
-        return DjLightFrame(color = out, brightness = dynamicLevel, activeCue = cue)
+        smoothR += (tr - smoothR) * attackR
+        smoothG += (tg - smoothG) * attackG
+        smoothB += (tb - smoothB) * attackB
+
+        val rawRgb = RgbColor(smoothR.roundToInt(), smoothG.roundToInt(), smoothB.roundToInt()).clamped()
+        val gammaRgb = applyLedGamma(rawRgb, gamma = 1.85f)
+        return DjLightFrame(color = gammaRgb, brightness = level, activeCue = currentCue, isBeatHit = beatHit)
     }
 
-    private fun avgRange(bands: FloatArray, start: Int, endInclusive: Int): Float {
+    private fun expandedAvg(bands: FloatArray, start: Int, endInclusive: Int): Float {
         var sum = 0f
         var count = 0
         for (i in start..endInclusive) {
             if (i in bands.indices) {
                 val v = bands[i]
                 if (v.isFinite()) {
-                    sum += v.coerceIn(0f, 1f)
+                    sum += v.coerceIn(0f, 1f).pow(2.4f)
                     count++
                 }
             }

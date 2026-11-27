@@ -37,12 +37,15 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 actual class PlatformLightingTransport actual constructor() {
+    actual val defaultSyncDelayMs: Int = 180
+
     @Volatile
     private var udpSocket: DatagramSocket? = null
 
     private val gattClients = ConcurrentHashMap<String, BluetoothGatt>()
     private val gattWriteChars = ConcurrentHashMap<String, BluetoothGattCharacteristic>()
-    private val lastBrightnessByAddr = ConcurrentHashMap<String, Int>()
+    private val initializedHardwareByAddr = ConcurrentHashMap<String, Boolean>()
+    private val writeInFlightUntilMs = ConcurrentHashMap<String, Long>()
 
     private fun getOrCreateSocket(): DatagramSocket {
         val existing = udpSocket
@@ -148,12 +151,11 @@ actual class PlatformLightingTransport actual constructor() {
     ): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val b = brightness0To255.coerceIn(0, 255)
-                val prevB = lastBrightnessByAddr[address]
-                if (prevB == null || kotlin.math.abs(prevB - b) >= 8) {
-                    writeGoveeBleFrame(address, SmartLightingFrameEncoder.encodeGoveeBleBrightness(b))
-                    lastBrightnessByAddr[address] = b
-                    delay(35)
+                if (initializedHardwareByAddr.putIfAbsent(address, true) == null) {
+                    writeGoveeBleFrame(address, SmartLightingFrameEncoder.encodeGoveeBlePower(true))
+                    delay(25)
+                    writeGoveeBleFrame(address, SmartLightingFrameEncoder.encodeGoveeBleBrightness(255))
+                    delay(25)
                 }
                 writeGoveeBleFrame(address, SmartLightingFrameEncoder.encodeGoveeBleColor(color))
             }
@@ -166,6 +168,14 @@ actual class PlatformLightingTransport actual constructor() {
         withContext(Dispatchers.IO) {
             runCatching {
                 writeGoveeBleFrame(address, SmartLightingFrameEncoder.encodeGoveeBlePower(on))
+                if (on) {
+                    delay(25)
+                    writeGoveeBleFrame(address, SmartLightingFrameEncoder.encodeGoveeBleBrightness(255))
+                    initializedHardwareByAddr[address] = true
+                } else {
+                    initializedHardwareByAddr.remove(address)
+                }
+                Unit
             }
         }
 
@@ -214,6 +224,8 @@ actual class PlatformLightingTransport actual constructor() {
         }
         gattClients.clear()
         gattWriteChars.clear()
+        initializedHardwareByAddr.clear()
+        writeInFlightUntilMs.clear()
     }
 
     @SuppressLint("MissingPermission")
@@ -315,15 +327,26 @@ actual class PlatformLightingTransport actual constructor() {
                         } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                             gattClients.remove(address)
                             gattWriteChars.remove(address)
+                            initializedHardwareByAddr.remove(address)
+                            writeInFlightUntilMs.remove(address)
                         }
                     }
 
                     override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+                        runCatching { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) }
                         val service = g.getService(UUID.fromString(SmartLightingFrameEncoder.GOVEE_BLE_SERVICE_UUID))
                         val writeChar = service?.getCharacteristic(UUID.fromString(SmartLightingFrameEncoder.GOVEE_BLE_WRITE_CHAR_UUID))
                         if (writeChar != null) {
                             gattWriteChars[address] = writeChar
                         }
+                    }
+
+                    override fun onCharacteristicWrite(
+                        g: BluetoothGatt,
+                        characteristic: BluetoothGattCharacteristic,
+                        status: Int,
+                    ) {
+                        writeInFlightUntilMs.remove(address)
                     }
                 }
             val connectedGatt =
@@ -338,6 +361,13 @@ actual class PlatformLightingTransport actual constructor() {
             gatt = connectedGatt
             char = gattWriteChars[address] ?: error("Govee GATT characteristic not ready")
         }
+
+        var waitMs = 0
+        while (waitMs < 75 && (writeInFlightUntilMs[address] ?: 0L) > System.currentTimeMillis()) {
+            delay(8)
+            waitMs += 8
+        }
+        writeInFlightUntilMs[address] = System.currentTimeMillis() + 85L
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             gatt.writeCharacteristic(char, frame, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)

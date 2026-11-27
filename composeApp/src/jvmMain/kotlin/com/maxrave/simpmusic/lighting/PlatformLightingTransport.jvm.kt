@@ -23,6 +23,8 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 
 actual class PlatformLightingTransport actual constructor() {
+    actual val defaultSyncDelayMs: Int = 0
+
     @Volatile
     private var udpSocket: DatagramSocket? = null
 
@@ -388,7 +390,7 @@ actual class PlatformLightingTransport actual constructor() {
             WRITE_CHAR = "00010203-0405-0607-0809-0a0b0c0d2b11"
             TOKENS = ("govee", "ihoment", "gbk", "_h6")
             clients = {}
-            last_brightness = {}
+            initialized_addrs = set()
 
             def make_frame(head, cmd, payload):
                 b = [0] * 20
@@ -409,6 +411,7 @@ actual class PlatformLightingTransport actual constructor() {
                 c = BleakClient(addr, timeout=8.0)
                 await c.connect()
                 clients[addr] = c
+                initialized_addrs.discard(addr)
                 return c
 
             async def write_frame(addr, frame):
@@ -441,14 +444,15 @@ actual class PlatformLightingTransport actual constructor() {
                     addr = req["addr"]
                     on = bool(req.get("on", True))
                     await write_frame(addr, make_frame(0x33, 0x01, [0x01 if on else 0x00]))
+                    if not on:
+                        initialized_addrs.discard(addr)
                     return {"ok": True}
                 elif cmd == "color":
                     addr = req["addr"]
                     r, g, b = int(req["r"]), int(req["g"]), int(req["b"])
-                    bright = int(req.get("brightness", 255))
-                    if abs(last_brightness.get(addr, -999) - bright) >= 8:
-                        await write_frame(addr, make_frame(0x33, 0x04, [bright]))
-                        last_brightness[addr] = bright
+                    if addr not in initialized_addrs:
+                        await write_frame(addr, make_frame(0x33, 0x04, [0xFF]))
+                        initialized_addrs.add(addr)
                     await write_frame(addr, make_frame(0x33, 0x05, [0x02, r, g, b]))
                     return {"ok": True}
                 elif cmd == "blink":

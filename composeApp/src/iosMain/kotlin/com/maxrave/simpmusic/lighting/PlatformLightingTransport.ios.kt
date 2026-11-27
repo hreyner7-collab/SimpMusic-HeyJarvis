@@ -1,6 +1,8 @@
 package com.maxrave.simpmusic.lighting
 
 actual class PlatformLightingTransport actual constructor() {
+    actual val defaultSyncDelayMs: Int = 180
+
     actual suspend fun discoverLights(timeoutMs: Long): LightDiscoveryResult =
         LightDiscoveryResult(emptyList(), "Bluetooth/LAN lighting sync is available on Android & Windows")
 

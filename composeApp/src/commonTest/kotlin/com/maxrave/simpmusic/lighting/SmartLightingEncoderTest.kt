@@ -2,6 +2,8 @@ package com.maxrave.simpmusic.lighting
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SmartLightingEncoderTest {
@@ -123,5 +125,38 @@ class SmartLightingEncoderTest {
         assertEquals("A4:C1:38:E6:DE:B4", parsed.devices.first().addr)
         assertEquals("Govee H6159 (DEB4)", formatFriendlyLightName(parsed.devices.first().name))
         assertEquals("Govee H6159 (E77A)", formatFriendlyLightName("ihoment_H6159_E77A"))
+    }
+
+    @Test
+    fun djDiscoEngineDetectsKickTransientOverCompressedBackground() {
+        val engine = DjDiscoLightEngine()
+        val background = FloatArray(24) { 0.60f }
+        var prevFrame = engine.step(background, userBrightness = 1f, sensitivity = 1f, dtMs = 40L)
+        repeat(11) {
+            prevFrame = engine.step(background, userBrightness = 1f, sensitivity = 1f, dtMs = 40L)
+        }
+        val kick = FloatArray(24) { if (it <= 3) 0.94f else 0.60f }
+        val kickFrame = engine.step(kick, userBrightness = 1f, sensitivity = 1f, dtMs = 40L)
+        assertTrue(kickFrame.isBeatHit)
+        assertEquals("HEAVY BASS → RED", kickFrame.activeCue)
+        assertTrue(kickFrame.color.r > prevFrame.color.r + 60)
+    }
+
+    @Test
+    fun ledGammaDeepensMidtonesWhilePreservingExtremes() {
+        val gamma = applyLedGamma(RgbColor(0, 128, 255), gamma = 2.0f)
+        assertEquals(0, gamma.r)
+        assertTrue(gamma.g in 60..68)
+        assertEquals(255, gamma.b)
+    }
+
+    @Test
+    fun delayedLightQueueHoldsUntilDueAndDropsSupersededFrames() {
+        val queue = DelayedLightQueue<String>()
+        queue.enqueue(1200L, "frame-1")
+        queue.enqueue(1240L, "frame-2")
+        assertNull(queue.drainLatestDue(1199L))
+        assertEquals("frame-2", queue.drainLatestDue(1250L))
+        assertNull(queue.drainLatestDue(1300L))
     }
 }

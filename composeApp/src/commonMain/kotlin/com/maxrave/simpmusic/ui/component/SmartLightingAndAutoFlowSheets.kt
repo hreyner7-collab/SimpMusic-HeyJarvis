@@ -358,7 +358,55 @@ fun SmartLightingSection(
                 }
             }
 
-            // 6. Collapsible Fine-Tune & Manual Add
+            // 6. Beat Sync Timing (aligns light flashes with speaker / Bluetooth earbuds)
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Audio Sync Offset", style = typo().labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "${cfg.syncDelayMs} ms",
+                            style = typo().labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(
+                            ("PC / Wired" to 0) to (cfg.syncDelayMs in 0..40),
+                            ("Phone Speaker" to 180) to (cfg.syncDelayMs in 140..220),
+                            ("BT Earbuds" to 320) to (cfg.syncDelayMs in 280..380),
+                        ).forEach { (preset, selected) ->
+                            FilterChip(
+                                selected = selected,
+                                onClick = { manager.setSyncDelayMs(preset.second) },
+                                label = { Text(preset.first, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                    Slider(
+                        value = cfg.syncDelayMs.toFloat(),
+                        onValueChange = { manager.setSyncDelayMs((it / 10f).roundToInt() * 10) },
+                        valueRange = 0f..600f,
+                    )
+                }
+            }
+
+            // 7. Collapsible Fine-Tune & Manual Add
             TextButton(
                 onClick = { showFineTune = !showFineTune },
                 modifier = Modifier.align(Alignment.End),
