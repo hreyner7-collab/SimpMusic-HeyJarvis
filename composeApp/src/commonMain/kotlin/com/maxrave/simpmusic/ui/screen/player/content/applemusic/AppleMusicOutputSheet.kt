@@ -37,7 +37,10 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -188,9 +191,12 @@ internal fun AppleMusicOutputSheet(
                     color = colors.content,
                     modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 6.dp),
                 )
+                var connectingBtIds by remember { mutableStateOf(emptySet<String>()) }
                 outputs.forEach { output ->
-                    val isSecondary = mediaPlayer.multiOutputSupported && output.id in secondaryOutputIds
-                    val playingHere = (output.isActive || isSecondary) && !castState.isRemote
+                    val isDisconnectedBt = output.id.startsWith("bt-connect:")
+                    val isConnectingBt = output.id in connectingBtIds
+                    val isSecondary = !isDisconnectedBt && mediaPlayer.multiOutputSupported && output.id in secondaryOutputIds
+                    val playingHere = !isDisconnectedBt && (output.isActive || isSecondary) && !castState.isRemote
                     val canMultiAdd =
                         mediaPlayer.multiOutputSupported &&
                             output.id != "auto" &&
@@ -200,6 +206,8 @@ internal fun AppleMusicOutputSheet(
                         name = output.displayName(),
                         status =
                             when {
+                                isConnectingBt -> "Connecting via Bluetooth…"
+                                isDisconnectedBt -> "Paired Bluetooth · Tap Connect"
                                 isSecondary -> "Synced Multi-Speaker (${outputDelaysMs[output.id] ?: 0} ms)"
                                 playingHere -> stringResource(Res.string.audio_output_playing_here)
                                 else -> output.kindLabel()
@@ -207,7 +215,39 @@ internal fun AppleMusicOutputSheet(
                         selected = playingHere,
                         colors = colors,
                         trailingAction =
-                            if (canMultiAdd) {
+                            if (isDisconnectedBt) {
+                                {
+                                    FilledTonalButton(
+                                        enabled = !isConnectingBt,
+                                        onClick = {
+                                            connectingBtIds = connectingBtIds + output.id
+                                            mediaPlayer.toggleSecondaryAudioOutput(output.id)
+                                            scope.launch {
+                                                kotlinx.coroutines.delay(5_800L)
+                                                connectingBtIds = connectingBtIds - output.id
+                                                if (outputs.any { it.id == output.id }) {
+                                                    showToast(
+                                                        "Couldn't connect ${output.name}. For Alexa/Echo, say \"Alexa, disconnect\" then \"Alexa, connect to my computer\".",
+                                                        duration = ToastDuration.Long,
+                                                        gravity = ToastGravity.Bottom,
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        colors =
+                                            ButtonDefaults.filledTonalButtonColors(
+                                                containerColor = Color.White.copy(alpha = 0.14f),
+                                                contentColor = colors.content,
+                                            ),
+                                        modifier = Modifier.padding(end = 6.dp),
+                                    ) {
+                                        Text(
+                                            text = if (isConnectingBt) "Connecting…" else "Connect",
+                                            style = typo().labelSmall,
+                                        )
+                                    }
+                                }
+                            } else if (canMultiAdd) {
                                 {
                                     FilledTonalButton(
                                         onClick = { mediaPlayer.toggleSecondaryAudioOutput(output.id) },
@@ -233,7 +273,23 @@ internal fun AppleMusicOutputSheet(
                                 null
                             },
                         onClick = {
-                            if (isSecondary) {
+                            if (isDisconnectedBt) {
+                                if (!isConnectingBt) {
+                                    connectingBtIds = connectingBtIds + output.id
+                                    onSelectOutput(output)
+                                    scope.launch {
+                                        kotlinx.coroutines.delay(5_800L)
+                                        connectingBtIds = connectingBtIds - output.id
+                                        if (outputs.any { it.id == output.id }) {
+                                            showToast(
+                                                "Couldn't connect ${output.name}. For Alexa/Echo, say \"Alexa, disconnect\" then \"Alexa, connect to my computer\".",
+                                                duration = ToastDuration.Long,
+                                                gravity = ToastGravity.Bottom,
+                                            )
+                                        }
+                                    }
+                                }
+                            } else if (isSecondary) {
                                 mediaPlayer.toggleSecondaryAudioOutput(output.id)
                             } else {
                                 // Coming back from a receiver: end the Cast session first, or the pick
