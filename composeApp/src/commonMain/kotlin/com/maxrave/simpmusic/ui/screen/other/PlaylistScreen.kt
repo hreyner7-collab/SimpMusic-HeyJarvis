@@ -88,6 +88,8 @@ import com.kmpalette.rememberPaletteState
 import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
 import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.extension.barBlurStyle
+import com.maxrave.simpmusic.extension.optionalBarBlur
+import com.maxrave.simpmusic.extension.optionalHazeSource
 import com.maxrave.simpmusic.ui.component.DownloadingIndicator
 import com.maxrave.domain.data.entities.DownloadState
 import com.maxrave.domain.data.model.offline.AutoSyncPlaylistKind
@@ -383,7 +385,7 @@ fun PlaylistScreen(
                         Modifier
                             .fillMaxWidth()
                             .background(mutedPaletteBg)
-                            .hazeSource(hazeState),
+                            .optionalHazeSource(hazeState),
                     state = lazyState,
                 ) {
                     if (!showSearchBar) {
@@ -1192,7 +1194,7 @@ fun PlaylistScreen(
                         Modifier
                             .fillMaxWidth()
                             .onGloballyPositioned { searchBarHeightPx = it.size.height }
-                            .hazeBlur(HazeInput.Sources(hazeState), barBlurStyle(mutedPaletteBg, 0.55f)),
+                            .optionalBarBlur(hazeState, mutedPaletteBg, 0.55f),
                     ) {
                         Row(
                             modifier =
@@ -1262,7 +1264,7 @@ fun PlaylistScreen(
                         },
                         onOpenActions = { showSelectionSheet = true },
                         modifier =
-                            Modifier.hazeBlur(HazeInput.Sources(hazeState), barBlurStyle(mutedPaletteBg, 0.55f)),
+                            Modifier.optionalBarBlur(hazeState, mutedPaletteBg, 0.55f),
                     )
                 }
                 if (showSelectionSheet) {
@@ -1428,7 +1430,7 @@ fun PlaylistScreen(
                                 containerColor = Color.Transparent,
                             ),
                         modifier =
-                            Modifier.hazeBlur(HazeInput.Sources(hazeState), barBlurStyle(mutedPaletteBg, 0.55f)),
+                            Modifier.optionalBarBlur(hazeState, mutedPaletteBg, 0.55f),
                     )
                 }
             }

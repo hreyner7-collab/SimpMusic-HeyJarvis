@@ -85,7 +85,8 @@ import com.maxrave.simpmusic.expect.ui.PlatformBackdrop
 import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.expect.ui.layerBackdrop
 import com.maxrave.simpmusic.expect.ui.rememberBackdrop
-import com.maxrave.simpmusic.extension.barBlurStyle
+import com.maxrave.simpmusic.extension.optionalBarBlur
+import com.maxrave.simpmusic.extension.optionalHazeSource
 import com.maxrave.simpmusic.extension.mouseDragScroll
 import com.maxrave.simpmusic.ui.icon.Close
 import com.maxrave.simpmusic.ui.icon.FormatListBulleted
@@ -261,7 +262,7 @@ fun DesktopSidebar(
         if (LocalLiquidGlassEnabled.current) Box(Modifier.matchParentSize().layerBackdrop(backdrop))
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().hazeSource(hazeState),
+            modifier = Modifier.fillMaxSize().optionalHazeSource(hazeState),
             // The capsule player floats over the panel's bottom (60dp tall, 20dp above the window's
             // edge, i.e. 72dp above this panel's), so the last row can scroll up clear of it.
             contentPadding = PaddingValues(top = with(LocalDensity.current) { headerHeightPx.toDp() }, bottom = 80.dp),
@@ -321,7 +322,7 @@ fun DesktopSidebar(
                     Modifier
                         .matchParentSize()
                         .graphicsLayer { alpha = blurAlpha }
-                        .hazeBlur(HazeInput.Sources(hazeState), barBlurStyle(containerColor, 0.3f)),
+                        .optionalBarBlur(hazeState, containerColor, 0.3f),
                 )
             }
             Column(

@@ -83,7 +83,11 @@ import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.ui.theme.LocalAppColors
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.blur.HazeColorEffect
 import dev.chrisbanes.haze.blur.materials.HazeMaterials
 import kotlinx.coroutines.runBlocking
@@ -779,6 +783,39 @@ fun ultraThinBarStyle(): HazeBlurStyle {
         }
     }
 }
+
+/**
+ * Zero-overhead Haze bypass when blur is disabled (e.g. Windows / Ultra Light mode): skips
+ * `hazeSource` offscreen GraphicsLayer recording and replaces `hazeBlur` with a flat translucent
+ * background so scrolling and page transitions never trigger full-screen Direct3D copies.
+ */
+@Composable
+fun Modifier.optionalHazeSource(state: HazeState): Modifier =
+    if (com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableBlur) {
+        this.hazeSource(state)
+    } else {
+        this
+    }
+
+@Composable
+fun Modifier.optionalBarBlur(
+    state: HazeState,
+    tint: Color,
+    tintAlpha: Float,
+): Modifier =
+    if (com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableBlur) {
+        this.hazeBlur(HazeInput.Sources(state), barBlurStyle(tint, tintAlpha))
+    } else {
+        this.background(tint.copy(alpha = tintAlpha.coerceAtLeast(0.94f)))
+    }
+
+@Composable
+fun Modifier.optionalUltraThinBarBlur(state: HazeState): Modifier =
+    if (com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.enableBlur) {
+        this.hazeBlur(HazeInput.Sources(state), ultraThinBarStyle())
+    } else {
+        this.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+    }
 
 /**
  * Vertical scrim from [from] to [to] that fades without showing an edge.

@@ -74,6 +74,8 @@ import com.maxrave.simpmusic.expect.ui.rememberBackdrop
 import com.maxrave.simpmusic.extension.LocalIsScrolling
 import com.maxrave.simpmusic.extension.copy
 import com.maxrave.simpmusic.extension.isScrollingUp
+import com.maxrave.simpmusic.extension.optionalHazeSource
+import com.maxrave.simpmusic.extension.optionalUltraThinBarBlur
 import com.maxrave.simpmusic.extension.ultraThinBarStyle
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.ui.component.AddToPlaylistModalBottomSheet
@@ -298,7 +300,7 @@ fun LibraryScreen(
         LocalIsScrolling provides (currentFilter == LibraryChipType.YOUR_LIBRARY && yourLibraryListState.isScrollInProgress),
     ) {
     Crossfade(
-        modifier = Modifier.then(if (LocalLiquidGlassEnabled.current) Modifier.layerBackdrop(chipBackdrop) else Modifier).hazeSource(hazeState),
+        modifier = Modifier.then(if (LocalLiquidGlassEnabled.current) Modifier.layerBackdrop(chipBackdrop) else Modifier).optionalHazeSource(hazeState),
         targetState = currentFilter,
     ) { filter ->
         when (filter) {
@@ -606,7 +608,7 @@ fun LibraryScreen(
     Column(
         Modifier
             .background(Color.Transparent)
-            .hazeBlur(HazeInput.Sources(hazeState), ultraThinBarStyle()).onGloballyPositioned { coordinates ->
+            .optionalUltraThinBarBlur(hazeState).onGloballyPositioned { coordinates ->
                 topAppBarHeight = with(density) { coordinates.size.height.toDp() }
             },
     ) {

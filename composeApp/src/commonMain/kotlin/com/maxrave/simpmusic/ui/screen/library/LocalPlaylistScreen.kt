@@ -56,6 +56,8 @@ import androidx.compose.material3.HorizontalDivider
 import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
 import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.extension.barBlurStyle
+import com.maxrave.simpmusic.extension.optionalBarBlur
+import com.maxrave.simpmusic.extension.optionalHazeSource
 import com.maxrave.simpmusic.ui.component.DownloadingIndicator
 import com.maxrave.simpmusic.ui.icon.Search
 import com.maxrave.simpmusic.ui.icon.Close
@@ -483,7 +485,7 @@ fun LocalPlaylistScreen(
             Modifier
                 .fillMaxWidth()
                 .background(mutedPaletteBg)
-                .hazeSource(hazeState)
+                .optionalHazeSource(hazeState)
                 .pointerInput(changingOrder) {
                     if (!changingOrder) return@pointerInput
                     val onDrag: (change: androidx.compose.ui.input.pointer.PointerInputChange, offset: Offset) -> Unit =
@@ -1574,7 +1576,7 @@ fun LocalPlaylistScreen(
             },
             onOpenActions = { showSelectionSheet = true },
             modifier =
-                Modifier.hazeBlur(HazeInput.Sources(hazeState), barBlurStyle(mutedPaletteBg, 0.55f)),
+                Modifier.optionalBarBlur(hazeState, mutedPaletteBg, 0.55f),
         )
     }
     if (showSelectionSheet) {
@@ -1792,7 +1794,7 @@ fun LocalPlaylistScreen(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .hazeBlur(HazeInput.Sources(hazeState), barBlurStyle(mutedPaletteBg, 0.55f)),
+                    .optionalBarBlur(hazeState, mutedPaletteBg, 0.55f),
             ) {
                 Row(
                     modifier =
@@ -1916,7 +1918,7 @@ fun LocalPlaylistScreen(
                     containerColor = Color.Transparent,
                 ),
             modifier =
-                Modifier.hazeBlur(HazeInput.Sources(hazeState), barBlurStyle(mutedPaletteBg, 0.55f)),
+                Modifier.optionalBarBlur(hazeState, mutedPaletteBg, 0.55f),
         )
     }
     }

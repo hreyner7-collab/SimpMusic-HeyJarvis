@@ -199,6 +199,8 @@ import com.maxrave.simpmusic.viewModel.HomeViewModel.Companion.HOME_PARAMS_WORKO
 import com.maxrave.simpmusic.viewModel.ListState
 import com.maxrave.simpmusic.viewModel.SharedViewModel
 import dev.chrisbanes.haze.HazeInput
+import com.maxrave.simpmusic.extension.optionalHazeSource
+import com.maxrave.simpmusic.extension.optionalUltraThinBarBlur
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -747,7 +749,7 @@ fun HomeScreen(
             modifier =
                 Modifier
                     .then(if (LocalLiquidGlassEnabled.current) Modifier.layerBackdrop(chipBackdrop) else Modifier)
-                    .then(if (!atTop) Modifier.hazeSource(hazeState) else Modifier),
+                    .then(if (!atTop) Modifier.optionalHazeSource(hazeState) else Modifier),
             state = pullToRefreshState,
             onRefresh = onRefresh,
             isRefreshing = isRefreshing,
@@ -1086,7 +1088,7 @@ fun HomeScreen(
                                 Modifier.background(Color.Transparent)
                             } else {
                                 Modifier
-                                    .hazeBlur(HazeInput.Sources(hazeState), ultraThinBarStyle())
+                                    .optionalUltraThinBarBlur(hazeState)
                             },
                         ).onGloballyPositioned { coordinates ->
                             topAppBarHeightPx = coordinates.size.height
