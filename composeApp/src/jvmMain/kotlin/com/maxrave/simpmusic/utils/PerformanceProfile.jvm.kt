@@ -32,7 +32,11 @@ private fun writeTrimmedConfig(
 }
 
 actual fun detectHardwareProfile(): HardwareProfile {
-    val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+    val rawCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+    // WindowsProcessOptimizer pins SimpMusic.exe to 2 logical cores on Windows, so reflect the
+    // actual process budget here: AUTO resolves to ULTRA_LIGHT (no full-screen Skiko D3D blur/mesh
+    // passes starving scroll & navigation) while users can still override to Balanced/Full Visuals.
+    val cores = if (isWindowsHost()) rawCores.coerceAtMost(2) else rawCores
     val osBytes =
         runCatching {
             val bean = ManagementFactory.getOperatingSystemMXBean()

@@ -1,5 +1,7 @@
 package com.maxrave.simpmusic.ui.navigation.graph
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -38,20 +40,21 @@ fun AppNavigationGraph(
     showNowPlayingSheet: () -> Unit = {},
     onScrolling: (onTop: Boolean) -> Unit = {},
 ) {
+    val reduceAnimations = com.maxrave.simpmusic.utils.LocalPerformanceSettings.current.reduceAnimations
     NavHost(
         navController,
         startDestination = startDestination,
         enterTransition = {
-            fadeIn(animationSpec = tween(80))
+            if (reduceAnimations) EnterTransition.None else fadeIn(animationSpec = tween(80))
         },
         exitTransition = {
-            fadeOut(animationSpec = tween(80))
+            if (reduceAnimations) ExitTransition.None else fadeOut(animationSpec = tween(80))
         },
         popEnterTransition = {
-            fadeIn(animationSpec = tween(80))
+            if (reduceAnimations) EnterTransition.None else fadeIn(animationSpec = tween(80))
         },
         popExitTransition = {
-            fadeOut(animationSpec = tween(80))
+            if (reduceAnimations) ExitTransition.None else fadeOut(animationSpec = tween(80))
         },
     ) {
         // Bottom bar destinations

@@ -534,13 +534,13 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                         }
                     val maxReqs =
                         if (isWindowsHost) {
-                            perfSettings.imageMaxConcurrentRequests.coerceAtMost(12)
+                            perfSettings.imageMaxConcurrentRequests.coerceAtMost(8)
                         } else {
                             perfSettings.imageMaxConcurrentRequests
                         }
                     val maxReqsPerHost =
                         if (isWindowsHost) {
-                            (maxReqs / 2).coerceIn(4, 6)
+                            (maxReqs / 2).coerceIn(3, 4)
                         } else {
                             (maxReqs / 2).coerceAtLeast(4)
                         }
@@ -548,13 +548,17 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                         ImageLoader
                             .Builder(context)
                             .components {
-                                add(NetworkFirstInterceptor(staleWhileRevalidate = true) { imageLoader })
+                                // Skip stale-while-revalidate network churn in reduced-animation/Windows mode
+                                // so cached covers render instantaneously while scrolling or switching pages.
+                                if (!isWindowsHost && !perfSettings.reduceAnimations) {
+                                    add(NetworkFirstInterceptor(staleWhileRevalidate = true) { imageLoader })
+                                }
                                 add(
                                     OkHttpNetworkFetcherFactory(
                                         callFactory = {
                                             OkHttpClient
                                                 .Builder()
-                                                .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+                                                .connectionPool(ConnectionPool(6, 5, TimeUnit.MINUTES))
                                                 .dispatcher(
                                                     okhttp3.Dispatcher().apply {
                                                         maxRequests = maxReqs
@@ -575,7 +579,7 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                                 DiskCache
                                     .Builder()
                                     .directory(imageCacheDir.toOkioPath())
-                                    .maxSizeBytes(256L * 1024 * 1024)
+                                    .maxSizeBytes(if (isWindowsHost) 128L * 1024 * 1024 else 256L * 1024 * 1024)
                                     .build(),
                             ).crossfade(!perfSettings.reduceAnimations)
                             // CrossfadePainter otherwise sizes itself as max(placeholder, image) once and keeps it,

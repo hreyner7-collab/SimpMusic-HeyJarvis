@@ -1257,7 +1257,11 @@ object DesktopJarvis {
         runCatching {
             val dir = File(System.getProperty("user.home"), ".simpmusic")
             dir.mkdirs()
-            File(dir, "jarvis.log").appendText("${java.time.Instant.now()} $message\n")
+            val logFile = File(dir, "jarvis.log")
+            if (logFile.length() > 256L * 1024L) {
+                logFile.writeText("")
+            }
+            logFile.appendText("${java.time.Instant.now()} $message\n")
         }
     }
 
