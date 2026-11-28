@@ -15,6 +15,22 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 @Serializable
+data class RemoteSpeakerOutput(
+    val id: String,
+    val name: String,
+    val isActive: Boolean = false,
+    val isSecondary: Boolean = false,
+    val delayMs: Int = 0,
+)
+
+@Serializable
+data class RemoteSpeakerCommand(
+    val action: String,
+    val id: String,
+    val delayMs: Int = 0,
+)
+
+@Serializable
 data class HandoffBeacon(
     val deviceId: String,
     val deviceName: String,
@@ -25,6 +41,7 @@ data class HandoffBeacon(
     val isPlaying: Boolean = false,
     val activeRoomCode: String? = null,
     val wholeHomeGroupId: String? = null,
+    val speakers: List<RemoteSpeakerOutput> = emptyList(),
 )
 
 @Serializable
@@ -40,6 +57,7 @@ data class HandoffPeer(
     val lastSeenMs: Long = 0L,
     val activeRoomCode: String? = null,
     val wholeHomeGroupId: String? = null,
+    val speakers: List<RemoteSpeakerOutput> = emptyList(),
 )
 
 @Serializable
@@ -110,6 +128,7 @@ object PlaybackHandoffWire {
     const val DEFAULT_HTTP_PORT = 49878
     const val DISCOVER_PING = "SIMPMUSIC_HANDOFF_PING_V1"
     const val BEACON_PREFIX = "SIMPMUSIC_HANDOFF_BEACON_V1:"
+    const val REMOTE_SPEAKER_PATH = "/remote-speaker"
 
     val json =
         Json {

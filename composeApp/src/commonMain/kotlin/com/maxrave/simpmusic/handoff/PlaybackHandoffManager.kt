@@ -120,6 +120,19 @@ class PlaybackHandoffManager(
         body: String,
     ): Boolean = runCatching { transport.sendCustomPost(peer, path, body) }.getOrDefault(false)
 
+    suspend fun sendRemoteSpeakerCommand(
+        peer: HandoffPeer,
+        command: RemoteSpeakerCommand,
+    ): Boolean {
+        val body = PlaybackHandoffWire.json.encodeToString(RemoteSpeakerCommand.serializer(), command)
+        val ok = sendCustomPostToPeer(peer, PlaybackHandoffWire.REMOTE_SPEAKER_PATH, body)
+        if (ok) {
+            delay(250L)
+            runCatching { transport.broadcastDiscoverPing() }
+        }
+        return ok
+    }
+
     private var lifecycleJob: Job? = null
     private var pruneJob: Job? = null
 
@@ -284,9 +297,13 @@ class PlaybackHandoffManager(
                         }
                     },
                     onReceiveCustomPost = { path, body ->
-                        val handler =
-                            customPostHandlers.entries.firstOrNull { (prefix, _) -> path.startsWith(prefix) }?.value
-                        handler?.invoke(body) ?: false
+                        if (path.startsWith(PlaybackHandoffWire.REMOTE_SPEAKER_PATH)) {
+                            handleRemoteSpeakerPost(body)
+                        } else {
+                            val handler =
+                                customPostHandlers.entries.firstOrNull { (prefix, _) -> path.startsWith(prefix) }?.value
+                            handler?.invoke(body) ?: false
+                        }
                     },
                 )
             }.getOrDefault(0)
@@ -312,10 +329,50 @@ class PlaybackHandoffManager(
         _peers.value = emptyList()
     }
 
+    private fun handleRemoteSpeakerPost(rawBody: String): Boolean {
+        val cmd =
+            runCatching {
+                PlaybackHandoffWire.json.decodeFromString(RemoteSpeakerCommand.serializer(), rawBody)
+            }.getOrNull() ?: return false
+        val player = mediaPlayerHandler.player
+        if (!player.multiOutputSupported) return false
+        when (cmd.action) {
+            "toggle" -> player.toggleSecondaryAudioOutput(cmd.id)
+            "select" -> player.selectAudioOutput(cmd.id)
+            "delay" -> player.setAudioOutputDelayMs(cmd.id, cmd.delayMs)
+            else -> return false
+        }
+        scope.launch {
+            delay(200L)
+            runCatching { transport.broadcastDiscoverPing() }
+        }
+        return true
+    }
+
     private fun buildLocalBeacon(): HandoffBeacon {
         val np = mediaPlayerHandler.nowPlayingState.value
         val title = np.songEntity?.title ?: np.track?.title ?: ""
         val artist = np.songEntity?.artistName?.joinToString(", ") ?: np.track?.artists?.joinToString(", ") { it.name } ?: ""
+        val player = mediaPlayerHandler.player
+        val remoteSpeakers =
+            if (player.multiOutputSupported) {
+                val secIds = player.secondaryAudioOutputIds.value
+                val delays = player.audioOutputDelaysMs.value
+                player.audioOutputs.value
+                    .filter { it.id != "auto" && it.name.isNotBlank() }
+                    .take(10)
+                    .map { out ->
+                        RemoteSpeakerOutput(
+                            id = out.id,
+                            name = out.name,
+                            isActive = out.isActive,
+                            isSecondary = out.id in secIds,
+                            delayMs = delays[out.id] ?: 0,
+                        )
+                    }
+            } else {
+                emptyList()
+            }
         return HandoffBeacon(
             deviceId = localDeviceId,
             deviceName = cachedDeviceName,
@@ -326,6 +383,7 @@ class PlaybackHandoffManager(
             isPlaying = mediaPlayerHandler.controlState.value.isPlaying,
             activeRoomCode = runCatching { activeRoomCodeProvider() }.getOrNull(),
             wholeHomeGroupId = runCatching { wholeHomeGroupIdProvider() }.getOrNull(),
+            speakers = remoteSpeakers,
         )
     }
 

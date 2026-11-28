@@ -58,6 +58,7 @@ import com.maxrave.simpmusic.expect.ui.rememberDeviceVolumeController
 import com.maxrave.simpmusic.expect.ui.rememberSystemMultiSpeakerLauncher
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.handoff.PlaybackHandoffManager
+import com.maxrave.simpmusic.handoff.RemoteSpeakerCommand
 import com.maxrave.simpmusic.smarthome.SmartSpeakerManager
 import com.maxrave.simpmusic.smarthome.WholeHomeAudioManager
 import com.maxrave.simpmusic.smarthome.WholeHomeRole
@@ -269,22 +270,135 @@ internal fun AppleMusicOutputSheet(
                         }
                     }
                 }
-                if (systemMultiSpeakerLauncher != null) {
-                    OutputRow(
-                        icon = SimpIcons.Speaker,
-                        name = "Multi-Speaker (Dual Audio / Auracast)",
-                        status = "Play on JBL Go 4 + Alexa or multiple Bluetooth speakers",
-                        selected = outputs.count { it.isActive } > 1,
-                        colors = colors,
-                        onClick = {
-                            if (castState.isRemote) cast.disconnect()
-                            // Clear single-speaker pin so Samsung Dual Audio / Auracast controls all BT speakers.
-                            mediaPlayer.selectAudioOutput(null)
-                            systemMultiSpeakerLauncher()
-                            closeSheet()
-                        },
-                    )
-                }
+                    if (systemMultiSpeakerLauncher != null) {
+                        val hubPeers = handoffPeers.filter { it.speakers.isNotEmpty() }
+                        hubPeers.forEach { hub ->
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                                thickness = 1.dp,
+                                color = Color.White.copy(alpha = 0.10f),
+                            )
+                            Text(
+                                text = "${hub.deviceName} · Multi-Speaker Hub",
+                                style = typo().bodySmall,
+                                color = colors.subtitle,
+                                modifier = Modifier.fillMaxWidth().padding(start = 32.dp, end = 20.dp, top = 4.dp),
+                            )
+                            hub.speakers.forEach { spk ->
+                                val active = spk.isActive || spk.isSecondary
+                                OutputRow(
+                                    icon = SimpIcons.Speaker,
+                                    name = spk.name,
+                                    status =
+                                        when {
+                                            spk.isSecondary -> "Synced Multi-Speaker (${spk.delayMs} ms)"
+                                            spk.isActive -> "Primary PC Speaker"
+                                            else -> "Ready on ${hub.deviceName}"
+                                        },
+                                    selected = active,
+                                    colors = colors,
+                                    trailingAction = {
+                                        FilledTonalButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    if (!wholeHomeState.isActive && !hub.isPlaying) {
+                                                        wholeHomeManager.startWholeHomePlayback(setOf(hub.deviceId))
+                                                    }
+                                                    val ok =
+                                                        handoffManager.sendRemoteSpeakerCommand(
+                                                            hub,
+                                                            RemoteSpeakerCommand("toggle", spk.id),
+                                                        )
+                                                    if (!ok) {
+                                                        showToast(
+                                                            "Could not reach ${hub.deviceName}",
+                                                            duration = ToastDuration.Short,
+                                                            gravity = ToastGravity.Bottom,
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                            colors =
+                                                ButtonDefaults.filledTonalButtonColors(
+                                                    containerColor =
+                                                        if (spk.isSecondary) {
+                                                            Color(0xFF1DB954).copy(alpha = 0.25f)
+                                                        } else {
+                                                            Color.White.copy(alpha = 0.12f)
+                                                        },
+                                                    contentColor = colors.content,
+                                                ),
+                                            modifier = Modifier.padding(end = 6.dp),
+                                        ) {
+                                            Text(
+                                                text = if (spk.isSecondary) "✓ Added" else "+ Add",
+                                                style = typo().labelSmall,
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        scope.launch {
+                                            if (!wholeHomeState.isActive && !hub.isPlaying) {
+                                                wholeHomeManager.startWholeHomePlayback(setOf(hub.deviceId))
+                                            }
+                                            handoffManager.sendRemoteSpeakerCommand(
+                                                hub,
+                                                RemoteSpeakerCommand(if (spk.isActive) "toggle" else "select", spk.id),
+                                            )
+                                        }
+                                    },
+                                )
+                                if (spk.isSecondary) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(start = 78.dp, end = 20.dp, bottom = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Text("Speaker sync:", style = typo().bodySmall, color = colors.subtitle)
+                                        TextButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    handoffManager.sendRemoteSpeakerCommand(
+                                                        hub,
+                                                        RemoteSpeakerCommand("delay", spk.id, spk.delayMs - 20),
+                                                    )
+                                                }
+                                            },
+                                        ) {
+                                            Text("−20ms", style = typo().labelSmall, color = colors.content)
+                                        }
+                                        Text("${spk.delayMs} ms", style = typo().labelSmall, color = colors.content)
+                                        TextButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    handoffManager.sendRemoteSpeakerCommand(
+                                                        hub,
+                                                        RemoteSpeakerCommand("delay", spk.id, spk.delayMs + 20),
+                                                    )
+                                                }
+                                            },
+                                        ) {
+                                            Text("+20ms", style = typo().labelSmall, color = colors.content)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        OutputRow(
+                            icon = SimpIcons.Speaker,
+                            name = "Multi-Speaker (Dual Audio / Auracast)",
+                            status = "Samsung S23: swipe down → Media output → check both speakers",
+                            selected = outputs.count { it.isActive } > 1,
+                            colors = colors,
+                            onClick = {
+                                if (castState.isRemote) cast.disconnect()
+                                // Clear single-speaker pin so Samsung Dual Audio / Auracast controls all BT speakers.
+                                mediaPlayer.selectAudioOutput(null)
+                                systemMultiSpeakerLauncher()
+                                closeSheet()
+                            },
+                        )
+                    }
                 if (cast.receivers.isNotEmpty()) {
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),

@@ -102,6 +102,7 @@ actual class PlaybackHandoffTransport actual constructor() {
                                         isPlaying = beacon.isPlaying,
                                         activeRoomCode = beacon.activeRoomCode,
                                         wholeHomeGroupId = beacon.wholeHomeGroupId,
+                                        speakers = beacon.speakers,
                                     ),
                                 )
                             }
