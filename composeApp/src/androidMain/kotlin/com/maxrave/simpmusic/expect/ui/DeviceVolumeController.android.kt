@@ -1,7 +1,11 @@
 package com.maxrave.simpmusic.expect.ui
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
+import android.media.MediaRouter2
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +58,52 @@ actual fun rememberDeviceVolumeController(): DeviceVolumeController? {
                 // Reflect immediately rather than waiting on the next poll tick, so the slider
                 // doesn't lag behind the finger.
                 fraction = clamped
+            }
+        }
+    }
+}
+
+@Composable
+actual fun rememberSystemMultiSpeakerLauncher(): (() -> Unit)? {
+    val context = LocalContext.current
+    return remember(context) {
+        {
+            var opened = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                opened =
+                    runCatching {
+                        MediaRouter2.getInstance(context).showSystemOutputSwitcher()
+                    }.getOrDefault(false)
+            }
+            if (!opened && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                opened =
+                    runCatching {
+                        val activityIntent =
+                            Intent("com.android.systemui.action.LAUNCH_MEDIA_OUTPUT_DIALOG").apply {
+                                setPackage("com.android.systemui")
+                                putExtra("package_name", context.packageName)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                        context.startActivity(activityIntent)
+                        true
+                    }.getOrElse {
+                        runCatching {
+                            val broadcastIntent =
+                                Intent("com.android.systemui.action.LAUNCH_MEDIA_OUTPUT_DIALOG").apply {
+                                    setPackage("com.android.systemui")
+                                    putExtra("package_name", context.packageName)
+                                }
+                            context.sendBroadcast(broadcastIntent)
+                            true
+                        }.getOrDefault(false)
+                    }
+            }
+            if (!opened) {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
             }
         }
     }

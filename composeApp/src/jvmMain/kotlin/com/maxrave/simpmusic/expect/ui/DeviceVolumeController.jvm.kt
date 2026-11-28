@@ -6,3 +6,6 @@ import androidx.compose.runtime.Composable
 // mixer sits outside the app. Null hides the Apple Music style's volume row on this platform.
 @Composable
 actual fun rememberDeviceVolumeController(): DeviceVolumeController? = null
+
+@Composable
+actual fun rememberSystemMultiSpeakerLauncher(): (() -> Unit)? = null

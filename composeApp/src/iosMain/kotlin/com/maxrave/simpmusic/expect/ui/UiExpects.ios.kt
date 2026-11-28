@@ -98,6 +98,9 @@ actual fun DiscordWebView(
 actual fun rememberDeviceVolumeController(): DeviceVolumeController? = null
 
 @Composable
+actual fun rememberSystemMultiSpeakerLauncher(): (() -> Unit)? = null
+
+@Composable
 actual fun filePickerResult(onResultUri: (String?) -> Unit): FilePickerLauncher =
     remember {
         object : FilePickerLauncher {

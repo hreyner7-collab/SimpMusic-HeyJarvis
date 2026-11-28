@@ -20,3 +20,11 @@ interface DeviceVolumeController {
  */
 @Composable
 expect fun rememberDeviceVolumeController(): DeviceVolumeController?
+
+/**
+ * Returns a launcher that opens the platform's system Multi-Speaker / Dual Audio / Auracast
+ * output switcher (Android 11+ / Samsung One UI Media Output), or null on platforms where
+ * multi-speaker toggles live directly inside SimpMusic.
+ */
+@Composable
+expect fun rememberSystemMultiSpeakerLauncher(): (() -> Unit)?

@@ -23,9 +23,11 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -53,6 +55,7 @@ import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.ui.DeviceVolumeController
 import com.maxrave.simpmusic.expect.ui.rememberCastReceivers
 import com.maxrave.simpmusic.expect.ui.rememberDeviceVolumeController
+import com.maxrave.simpmusic.expect.ui.rememberSystemMultiSpeakerLauncher
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.handoff.PlaybackHandoffManager
 import com.maxrave.simpmusic.smarthome.SmartSpeakerManager
@@ -139,6 +142,10 @@ internal fun AppleMusicOutputSheet(
     val smartSpeakerState by smartSpeakerManager.state.collectAsStateWithLifecycle()
     val wholeHomeManager = koinInject<WholeHomeAudioManager>()
     val wholeHomeState by wholeHomeManager.state.collectAsStateWithLifecycle()
+    val mediaPlayer = koinInject<MediaPlayerHandler>().player
+    val secondaryOutputIds by mediaPlayer.secondaryAudioOutputIds.collectAsStateWithLifecycle()
+    val outputDelaysMs by mediaPlayer.audioOutputDelaysMs.collectAsStateWithLifecycle()
+    val systemMultiSpeakerLauncher = rememberSystemMultiSpeakerLauncher()
     // Devices coming and going update the list on their own; the system's own route changing does not.
     LaunchedEffect(Unit) {
         onRefresh()
@@ -181,18 +188,99 @@ internal fun AppleMusicOutputSheet(
                     modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 6.dp),
                 )
                 outputs.forEach { output ->
-                    val playingHere = output.isActive && !castState.isRemote
+                    val isSecondary = mediaPlayer.multiOutputSupported && output.id in secondaryOutputIds
+                    val playingHere = (output.isActive || isSecondary) && !castState.isRemote
+                    val canMultiAdd =
+                        mediaPlayer.multiOutputSupported &&
+                            output.id != "auto" &&
+                            !(output.isActive && !isSecondary)
                     OutputRow(
                         icon = output.icon(),
                         name = output.displayName(),
-                        status = if (playingHere) stringResource(Res.string.audio_output_playing_here) else output.kindLabel(),
+                        status =
+                            when {
+                                isSecondary -> "Synced Multi-Speaker (${outputDelaysMs[output.id] ?: 0} ms)"
+                                playingHere -> stringResource(Res.string.audio_output_playing_here)
+                                else -> output.kindLabel()
+                            },
                         selected = playingHere,
                         colors = colors,
+                        trailingAction =
+                            if (canMultiAdd) {
+                                {
+                                    FilledTonalButton(
+                                        onClick = { mediaPlayer.toggleSecondaryAudioOutput(output.id) },
+                                        colors =
+                                            ButtonDefaults.filledTonalButtonColors(
+                                                containerColor =
+                                                    if (isSecondary) {
+                                                        Color(0xFF1DB954).copy(alpha = 0.25f)
+                                                    } else {
+                                                        Color.White.copy(alpha = 0.12f)
+                                                    },
+                                                contentColor = colors.content,
+                                            ),
+                                        modifier = Modifier.padding(end = 6.dp),
+                                    ) {
+                                        Text(
+                                            text = if (isSecondary) "✓ Added" else "+ Add",
+                                            style = typo().labelSmall,
+                                        )
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                         onClick = {
-                            // Coming back from a receiver: end the Cast session first, or the pick
-                            // would route a local player that is not the one playing.
+                            if (isSecondary) {
+                                mediaPlayer.toggleSecondaryAudioOutput(output.id)
+                            } else {
+                                // Coming back from a receiver: end the Cast session first, or the pick
+                                // would route a local player that is not the one playing.
+                                if (castState.isRemote) cast.disconnect()
+                                onSelectOutput(output)
+                                closeSheet()
+                            }
+                        },
+                    )
+                    if (isSecondary) {
+                        val currentDelay = outputDelaysMs[output.id] ?: 0
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 78.dp, end = 20.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = "Speaker sync:",
+                                style = typo().bodySmall,
+                                color = colors.subtitle,
+                            )
+                            TextButton(onClick = { mediaPlayer.setAudioOutputDelayMs(output.id, currentDelay - 20) }) {
+                                Text("−20ms", style = typo().labelSmall, color = colors.content)
+                            }
+                            Text(
+                                text = "${currentDelay} ms",
+                                style = typo().labelSmall,
+                                color = colors.content,
+                            )
+                            TextButton(onClick = { mediaPlayer.setAudioOutputDelayMs(output.id, currentDelay + 20) }) {
+                                Text("+20ms", style = typo().labelSmall, color = colors.content)
+                            }
+                        }
+                    }
+                }
+                if (systemMultiSpeakerLauncher != null) {
+                    OutputRow(
+                        icon = SimpIcons.Speaker,
+                        name = "Multi-Speaker (Dual Audio / Auracast)",
+                        status = "Play on JBL Go 4 + Alexa or multiple Bluetooth speakers",
+                        selected = outputs.count { it.isActive } > 1,
+                        colors = colors,
+                        onClick = {
                             if (castState.isRemote) cast.disconnect()
-                            onSelectOutput(output)
+                            // Clear single-speaker pin so Samsung Dual Audio / Auracast controls all BT speakers.
+                            mediaPlayer.selectAudioOutput(null)
+                            systemMultiSpeakerLauncher()
                             closeSheet()
                         },
                     )
@@ -459,6 +547,7 @@ private fun OutputRow(
     status: String?,
     selected: Boolean,
     colors: SurfaceDarkColors,
+    trailingAction: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Row(
@@ -478,6 +567,9 @@ private fun OutputRow(
             if (status != null) {
                 Text(text = status, style = typo().bodySmall, color = colors.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+        if (trailingAction != null) {
+            trailingAction()
         }
         AnimatedVisibility(visible = selected, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut()) {
             Icon(imageVector = SimpIcons.Check, contentDescription = null, tint = colors.content, modifier = Modifier.size(24.dp))
